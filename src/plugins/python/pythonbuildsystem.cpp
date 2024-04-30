@@ -183,14 +183,14 @@ void PythonBuildSystem::triggerParsing()
         python = kitPython->command;
 
     const FilePath projectFile = projectFilePath();
-    const QString displayName = projectFile.relativePathFrom(projectDirectory()).toUserOutput();
+    const QString displayName = projectFilePath().fileName();
     newRoot->addNestedNode(
         std::make_unique<PythonFileNode>(projectFile, displayName, FileType::Project));
 
     bool hasQmlFiles = false;
 
     for (const FileEntry &entry : std::as_const(m_files)) {
-        const QString displayName = entry.filePath.relativePathFrom(projectDirectory()).toUserOutput();
+        const QString displayName = entry.filePath.fileName();
         const FileType fileType = getFileType(entry.filePath);
 
         hasQmlFiles |= fileType == FileType::QML;

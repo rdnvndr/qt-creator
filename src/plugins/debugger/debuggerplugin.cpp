@@ -618,6 +618,8 @@ public:
                             int lineNumber, QMenu *menu);
 
     void setOrRemoveBreakpoint();
+    void setMessageTracepoint();
+    void editBreakpoint();
     void enableOrDisableBreakpoint();
     void updateDebugWithoutDeployMenu();
 
@@ -672,6 +674,8 @@ public:
     QAction m_setOrRemoveBreakpointAction{Tr::tr("Set or Remove Breakpoint")};
     QAction m_enableOrDisableBreakpointAction{Tr::tr("Enable or Disable Breakpoint")};
     QAction m_reloadDebuggingHelpersAction{Tr::tr("Reload Debugging Helpers")};
+    QAction m_setMessageTracepointAction{tr("Set Message Tracepoint...")};
+    QAction m_editBreakpoint{tr("Edit Breakpoint...")};
 
     BreakpointManager m_breakpointManager;
     QString m_lastPermanentStatusMessage;
@@ -1105,12 +1109,24 @@ DebuggerPluginPrivate::DebuggerPluginPrivate(const QStringList &arguments)
     connect(&m_setOrRemoveBreakpointAction, &QAction::triggered,
             this, &DebuggerPluginPrivate::setOrRemoveBreakpoint);
 
+    cmd = ActionManager::registerAction(&m_setMessageTracepointAction, "Debugger.SetMessageTracepoint");
+    debugMenu->addAction(cmd);
+    cmd->setDefaultKeySequence(QKeySequence(tr("F8")));
+    connect(&m_setMessageTracepointAction, &QAction::triggered,
+            this, &DebuggerPluginPrivate::setMessageTracepoint);
+
     cmd = ActionManager::registerAction(&m_enableOrDisableBreakpointAction,
                                         "Debugger.EnableOrDisableBreakpoint");
     cmd->setDefaultKeySequence(QKeySequence(useMacShortcuts ? Tr::tr("Ctrl+F8") : Tr::tr("Ctrl+F9")));
     debugMenu->addAction(cmd);
     connect(&m_enableOrDisableBreakpointAction, &QAction::triggered,
             this, &DebuggerPluginPrivate::enableOrDisableBreakpoint);
+            
+    cmd = ActionManager::registerAction(&m_editBreakpoint, "EditBreakpoint");
+    cmd->setDefaultKeySequence(QKeySequence(tr("Ctrl+Shift+F9")));
+    debugMenu->addAction(cmd);
+    connect(&m_editBreakpoint, &QAction::triggered,
+            this, &DebuggerPluginPrivate::editBreakpoint);
 
     debugMenu->addSeparator();
 
@@ -1574,7 +1590,9 @@ void DebuggerPluginPrivate::updatePresetState()
 
     m_watchAction.setEnabled(state != DebuggerFinished && state != DebuggerNotReady);
     m_setOrRemoveBreakpointAction.setEnabled(true);
+    m_setMessageTracepointAction.setEnabled(true);
     m_enableOrDisableBreakpointAction.setEnabled(true);
+    m_editBreakpoint.setEnabled(true);
 }
 
 void DebuggerPluginPrivate::onStartupProjectChanged(Project *project)
@@ -1847,7 +1865,9 @@ void DebuggerPluginPrivate::updateBreakMenuItem(IEditor *editor)
 {
     BaseTextEditor *textEditor = qobject_cast<BaseTextEditor *>(editor);
     m_setOrRemoveBreakpointAction.setEnabled(textEditor != nullptr);
+    m_setMessageTracepointAction.setEnabled(textEditor != nullptr);
     m_enableOrDisableBreakpointAction.setEnabled(textEditor != nullptr);
+    m_editBreakpoint.setEnabled(textEditor != nullptr);
 }
 
 void DebuggerPluginPrivate::requestContextMenu(TextEditorWidget *widget,
@@ -1943,6 +1963,22 @@ void DebuggerPluginPrivate::requestContextMenu(TextEditorWidget *widget,
     }
 }
 
+void DebuggerPluginPrivate::editBreakpoint()
+{
+    const BaseTextEditor *textEditor = BaseTextEditor::currentTextEditor();
+    QTC_ASSERT(textEditor, return);
+    const int lineNumber = textEditor->currentLine();
+    ContextData location = getLocationContext(textEditor->textDocument(), lineNumber);    
+    if (location.isValid()) {
+        GlobalBreakpoint gbp = BreakpointManager::findBreakpointFromContext(location);
+        if (!gbp) {
+            BreakpointManager::setOrRemoveBreakpoint(location);
+            gbp = BreakpointManager::findBreakpointFromContext(location);
+        }
+        BreakpointManager::editBreakpoint(gbp, ICore::dialogParent());
+    }         
+}
+
 void DebuggerPluginPrivate::setOrRemoveBreakpoint()
 {
     const BaseTextEditor *textEditor = BaseTextEditor::currentTextEditor();
@@ -1951,6 +1987,41 @@ void DebuggerPluginPrivate::setOrRemoveBreakpoint()
     ContextData location = getLocationContext(textEditor->textDocument(), lineNumber);
     if (location.isValid())
         BreakpointManager::setOrRemoveBreakpoint(location);
+}
+
+void DebuggerPluginPrivate::setMessageTracepoint()
+{
+    const BaseTextEditor *textEditor = BaseTextEditor::currentTextEditor();
+    QTC_ASSERT(textEditor, return);
+    const int lineNumber = textEditor->currentLine();
+    ContextData location = getLocationContext(textEditor->textDocument(), lineNumber);    
+    if (location.isValid()) {
+        GlobalBreakpoint gbp = BreakpointManager::findBreakpointFromContext(location);
+        if (gbp)
+            return;
+            
+        QString message;
+        if (location.type == LocationByAddress) {
+            //: Message tracepoint: Address hit.
+            message = tr("0x%1 hit").arg(location.address, 0, 16);
+        } else {
+            //: Message tracepoint: %1 file, %2 line %3 function hit.
+            message = tr("%1:%2 %3() hit").arg(location.fileName.fileName()).
+                    arg(location.textPosition.line).
+                    arg(cppFunctionAt(location.fileName, location.textPosition.line));
+        }
+        QInputDialog dialog; // Create wide input dialog.
+        dialog.setWindowFlags(dialog.windowFlags()
+          & ~(Qt::MSWindowsFixedSizeDialogHint));
+        dialog.resize(600, dialog.height());
+        dialog.setWindowTitle(tr("Add Message Tracepoint"));
+        dialog.setLabelText (tr("Message:"));
+        dialog.setTextValue(message);
+        if (dialog.exec() != QDialog::Accepted || dialog.textValue().isEmpty())
+            return;
+        message = dialog.textValue();
+        BreakpointManager::setOrRemoveBreakpoint(location, message);
+    }
 }
 
 void DebuggerPluginPrivate::enableOrDisableBreakpoint()
@@ -1984,6 +2055,7 @@ void DebuggerPluginPrivate::setInitialState()
 
     m_watchAction.setEnabled(false);
     m_setOrRemoveBreakpointAction.setEnabled(false);
+    m_setMessageTracepointAction.setEnabled(false);
     m_enableOrDisableBreakpointAction.setEnabled(false);
     //m_snapshotAction.setEnabled(false);
 

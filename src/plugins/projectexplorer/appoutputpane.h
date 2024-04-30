@@ -17,6 +17,8 @@ QT_BEGIN_NAMESPACE
 class QToolButton;
 class QAction;
 class QPoint;
+class QStackedWidget;
+class QComboBox;
 QT_END_NAMESPACE
 
 namespace Core { class OutputWindow; }
@@ -29,7 +31,6 @@ class Project;
 namespace Internal {
 
 class ShowOutputTaskHandler;
-class TabWidget;
 
 class AppOutputPane : public Core::IOutputPane
 {
@@ -119,18 +120,17 @@ private:
     void loadSettings();
     void storeSettings() const;
 
-    TabWidget *m_tabWidget;
+    QStackedWidget *m_tabWidget;
     QVector<RunControlTab> m_runControlTabs;
     int m_runControlCount = 0;
     QAction *m_stopAction;
-    QAction *m_closeCurrentTabAction;
-    QAction *m_closeAllTabsAction;
-    QAction *m_closeOtherTabsAction;
     QToolButton *m_reRunButton;
     QToolButton *m_stopButton;
     QToolButton *m_attachButton;
     QToolButton * const m_settingsButton;
     QWidget *m_formatterWidget;
+    QComboBox *m_tabComboBox;
+    QToolButton *m_closeCurrentTabButton;
     ShowOutputTaskHandler * const m_handler;
     AppOutputSettings m_settings;
 };

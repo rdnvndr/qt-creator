@@ -868,7 +868,7 @@ std::unique_ptr<Node> FolderNode::takeNode(Node *node)
 
 bool FolderNode::showInSimpleTree() const
 {
-    return false;
+    return true;
 }
 
 bool FolderNode::showWhenEmpty() const
