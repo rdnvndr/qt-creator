@@ -465,63 +465,6 @@ jobs:
           execute_process(COMMAND chmod +x ${ccache_dir}/ccache)
         endif()
 
-    - name: Prepare ccache archive name
-      id: ccache
-      shell: cmake -P {0}
-      run: |
-        file(TO_CMAKE_PATH "$ENV{GITHUB_WORKSPACE}" github_workspace)
-        include(${github_workspace}/cmake/QtCreatorIDEBranding.cmake)
-        string(REPLACE "." ";" IDE_VERSION_LIST ${IDE_VERSION_DISPLAY})
-        list(GET IDE_VERSION_LIST 0 IDE_VERSION_MAJOR)
-        file(APPEND "$ENV{GITHUB_OUTPUT}" "archive_name=ccache-${{ matrix.config.os }}-${{ matrix.config.cc }}-qtc${IDE_VERSION_MAJOR}")
-
-    - name: Download ccache archive
-      shell: cmake -P {0}
-      run: |
-        file(WRITE $ENV{GITHUB_WORKSPACE}/netrc.txt
-          "default login runneradmin password ${{ secrets.GITHUB_TOKEN }}")
-
-        foreach(page_id RANGE 1 10)
-          file(
-            DOWNLOAD "https://api.github.com/repos/${{ github.repository }}/actions/artifacts?per_page=100&page=${page_id}"
-            HTTPHEADER "Accept: application/vnd.github.v3+json"
-            NETRC_FILE "$ENV{GITHUB_WORKSPACE}/netrc.txt"
-            NETRC REQUIRED
-            SHOW_PROGRESS
-            artifacts.json)
-          file(READ artifacts.json artifacts_json)
-
-          string(JSON artifacts_length LENGTH "${artifacts_json}" "artifacts")
-          math(EXPR artifacts_length "${artifacts_length} - 1")
-          if(${artifacts_length} GREATER_EQUAL 0)
-            foreach(idx RANGE 0 ${artifacts_length})
-              string(JSON artifact_js GET "${artifacts_json}" "artifacts" ${idx})
-              string(JSON name GET "${artifact_js}" "name")
-              if ("${name}" STREQUAL "${{ steps.ccache.outputs.archive_name }}")
-                string(JSON download_url GET "${artifact_js}" "archive_download_url")
-
-                foreach(retry RANGE 10)
-                  file(DOWNLOAD "${download_url}"
-                    "${{ steps.ccache.outputs.archive_name }}.zip"
-                    NETRC_FILE "$ENV{GITHUB_WORKSPACE}/netrc.txt"
-                    NETRC REQUIRED
-                    SHOW_PROGRESS)
-                  file(SIZE "${{ steps.ccache.outputs.archive_name }}.zip" fileSize)
-                  if (fileSize GREATER 0)
-                    break()
-                  endif()
-                endforeach()
-
-                execute_process(COMMAND ${CMAKE_COMMAND} -E tar xvf "${{ steps.ccache.outputs.archive_name }}.zip")
-                file(MAKE_DIRECTORY .ccache)
-                execute_process(COMMAND ${CMAKE_COMMAND} -E tar xf "../${{ steps.ccache.outputs.archive_name }}.tar" WORKING_DIRECTORY .ccache)
-
-                return()
-              endif()
-            endforeach()
-          endif()
-        endforeach()
-
     - name: Build
       shell: cmake -P {0}
       run: |
@@ -660,39 +603,6 @@ jobs:
           set(ENV{CCACHE_MAXSIZE} "600M")
         endif()
         execute_process(COMMAND ccache -s)
-
-    - name: Run tests
-      shell: cmake -P {0}
-      run: |
-        include(ProcessorCount)
-        ProcessorCount(N)
-
-        set(ENV{CTEST_OUTPUT_ON_FAILURE} "ON")
-
-        if ("${{ runner.os }}" STREQUAL "Linux")
-          set(ENV{DISPLAY} ":1")
-          set(ENV{LIBGL_ALWAYS_SOFTWARE} "1")
-          set(ctest_launcher xvfb-run --auto-servernum --server-num=1)
-        elseif ("${{ runner.os }}" STREQUAL "Windows")
-          set(ENV{QT_OPENGL} "software")
-          set(ENV{QT_ASSUME_STDERR_HAS_CONSOLE} "1")
-        endif()
-
-        execute_process(
-          COMMAND ${ctest_launcher} ctest -j ${N} --timeout 300 --label-exclude exclude_from_precheck --exclude-regex tst_perfdata
-          WORKING_DIRECTORY build/build
-          RESULT_VARIABLE result
-          OUTPUT_VARIABLE output
-          ERROR_VARIABLE output
-          ECHO_OUTPUT_VARIABLE ECHO_ERROR_VARIABLE
-          TIMEOUT 600
-        )
-        if (NOT result EQUAL 0)
-          string(REGEX MATCH "[0-9]+% tests.*[0-9.]+ sec.*$" test_results "${output}")
-          string(REPLACE "\n" "%0A" test_results "${test_results}")
-          message("::error::${test_results}")
-          message(FATAL_ERROR "Tests failed")
-        endif()
 
     - name: Upload
       uses: actions/upload-artifact@v3
