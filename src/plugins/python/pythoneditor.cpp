@@ -324,7 +324,7 @@ public:
 
         setDocumentCreator([]() { return new PythonDocument; });
         setEditorWidgetCreator([]() { return new PythonEditorWidget; });
-        setIndenterCreator(&createPythonIndenter);
+//        setIndenterCreator(&createPythonIndenter);
         setSyntaxHighlighterCreator(&createPythonHighlighter);
         setCommentDefinition(CommentDefinition::HashStyle);
         setParenthesesMatchingEnabled(true);
