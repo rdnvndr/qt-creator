@@ -45,7 +45,7 @@ static QStringList checksArguments(const AnalyzeUnit &unit, const AnalyzeInputDa
             // The argument "-config={}" stops stating/evaluating the .clang-tidy file.
             return {"-config={}", "-checks=-clang-diagnostic-*"};
         case ClangDiagnosticConfig::TidyMode::UseCustomChecks:
-            return {"-config=" + input.config.clangTidyChecksAsJson()};
+            return {"-config=" + input.config.clangTidyChecksAsJson().replace("/", "")};
         }
     }
     const QString clazyChecks = input.config.checks(ClangToolType::Clazy);

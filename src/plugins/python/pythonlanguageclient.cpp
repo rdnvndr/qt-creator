@@ -89,6 +89,9 @@ static PythonLanguageServerState checkPythonLanguageServer(const FilePath &pytho
     using namespace std::chrono_literals;
     pythonProcess.runBlocking(2s);
     bool pipAvailable = pythonProcess.allOutput().startsWith("pip ");
+    
+    if (FilePath("/usr/bin/pylsp").withExecutableSuffix().exists())
+        return {PythonLanguageServerState::Installed, lspPath};
 
     if (lspPath.pathAppended("bin").pathAppended("pylsp").withExecutableSuffix().exists()) {
         if (pipAvailable) {
@@ -334,8 +337,7 @@ void PyLSConfigureAssistant::installPythonLanguageServer(const FilePath &python,
 void PyLSConfigureAssistant::openDocument(const FilePath &python, TextEditor::TextDocument *document)
 {
     resetEditorInfoBar(document);
-    if (!PythonSettings::pylsEnabled() || !python.exists()
-        || !Core::DocumentModel::entryForDocument(document)) {
+    if (!PythonSettings::pylsEnabled() || !python.exists()) {
         return;
     }
 

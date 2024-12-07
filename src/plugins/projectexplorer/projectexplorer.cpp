@@ -120,6 +120,7 @@
 
 #include <extensionsystem/pluginmanager.h>
 #include <extensionsystem/pluginspec.h>
+#include <extensionsystem/invoker.h>
 
 #include <texteditor/findinfiles.h>
 #include <texteditor/tabsettings.h>
@@ -3032,6 +3033,16 @@ void ProjectExplorerPlugin::runProject(Project *pro, Id mode, const bool forceSk
 {
     if (!pro)
         return;
+        
+    for (auto *rc : ProjectExplorerPlugin::instance()->allRunControls()) {
+        if (rc->isRunning() && rc->project() == pro && 
+            mode == ProjectExplorer::Constants::DEBUG_RUN_MODE) {
+            ExtensionSystem::Invoker<void>(
+                ExtensionSystem::PluginManager::getObjectByName("DebuggerPlugin"), 
+                "attachExternalApplication", rc);
+            return;
+        }
+    }
 
     if (Target *target = pro->activeTarget())
         if (RunConfiguration *rc = target->activeRunConfiguration())

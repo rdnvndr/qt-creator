@@ -297,8 +297,7 @@ PythonDocument::PythonDocument()
 
 void PythonDocument::updateCurrentPython()
 {
-    if (Core::DocumentModel::entryForDocument(this))
-        updatePython(detectPython(filePath()));
+    updatePython(detectPython(filePath()));
 }
 
 void PythonDocument::updatePython(const FilePath &python)
