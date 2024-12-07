@@ -45,6 +45,9 @@
 
 namespace QmlDesigner {
 
+constexpr char deleteActionId[] = "QmlDesigner.Delete";
+constexpr char duplicateActionId[] = "QmlDesigner.Duplicate";
+
 static DesignDocument *currentDesignDocument()
 {
     return QmlDesignerPlugin::instance()->currentDesignDocument();
@@ -107,7 +110,10 @@ void ShortCutManager::registerActions(const Core::Context &qmlDesignerMainContex
     connect(&m_saveAsAction, &QAction::triggered, em, &Core::EditorManager::saveDocumentAs);
 
     //Export as Image
-    command = Core::ActionManager::registerAction(&m_exportAsImageAction, QmlDesigner::Constants::EXPORT_AS_IMAGE, qmlDesignerMainContext);
+    static constexpr char exportAsImageActionId[] = "QmlDesigner.ExportAsImage";
+    command = Core::ActionManager::registerAction(&m_exportAsImageAction,
+                                                  exportAsImageActionId,
+                                                  qmlDesignerMainContext);
     command->setAttribute(Core::Command::CA_Hide);
     connect(&m_exportAsImageAction, &QAction::triggered, [] {
         QmlDesignerPlugin::instance()->viewManager().exportAsImage();
@@ -124,8 +130,8 @@ void ShortCutManager::registerActions(const Core::Context &qmlDesignerMainContex
     });
     action->setEnabled(false);
 
-    command = Core::ActionManager::registerAction(&m_takeScreenshotAction,
-                                                  QmlDesigner::Constants::TAKE_SCREENSHOT);
+    static constexpr char takeScreenShotActionId[] = "QmlDesigner.TakeScreenshot";
+    command = Core::ActionManager::registerAction(&m_takeScreenshotAction, takeScreenShotActionId);
     connect(&m_takeScreenshotAction, &QAction::triggered, [] {
         const auto folder = Utils::FilePath::fromString(
                                 QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation))
@@ -144,7 +150,8 @@ void ShortCutManager::registerActions(const Core::Context &qmlDesignerMainContex
     Core::ActionContainer *exportMenu = Core::ActionManager::actionContainer(
         QmlProjectManager::Constants::EXPORT_MENU);
 
-    exportMenu->addAction(command, QmlProjectManager::Constants::G_EXPORT_CONVERT);
+    if (exportMenu)
+        exportMenu->addAction(command, QmlProjectManager::Constants::G_EXPORT_CONVERT);
 
     //Close Editor
     Core::ActionManager::registerAction(&m_closeCurrentEditorAction, Core::Constants::CLOSE, qmlDesignerMainContext);
@@ -175,7 +182,9 @@ void ShortCutManager::registerActions(const Core::Context &qmlDesignerMainContex
 
     m_deleteAction.setIcon(QIcon::fromTheme(QLatin1String("edit-cut"), Utils::Icons::EDIT_CLEAR_TOOLBAR.icon()));
 
-    command = Core::ActionManager::registerAction(&m_deleteAction, QmlDesigner::Constants::C_DELETE, qmlDesignerMainContext);
+    command = Core::ActionManager::registerAction(&m_deleteAction,
+                                                  deleteActionId,
+                                                  qmlDesignerMainContext);
     command->setDefaultKeySequences({Qt::Key_Backspace, Qt::Key_Delete});
 
     command->setAttribute(Core::Command::CA_Hide); // don't show delete in other modes
@@ -204,9 +213,15 @@ void ShortCutManager::registerActions(const Core::Context &qmlDesignerMainContex
     editMenu->addAction(command, Core::Constants::G_EDIT_COPYPASTE);
     designerActionManager.addCreatorCommand(command, ComponentCoreConstants::editCategory, 12, Utils::Icons::PASTE_TOOLBAR.icon());
 
-    Core::ActionManager::registerAction(&m_duplicateAction,  Constants::C_DUPLICATE, qmlDesignerFormEditorContext);
-    Core::ActionManager::registerAction(&m_duplicateAction,  Constants::C_DUPLICATE, qmlDesignerEditor3DContext);
-    command = Core::ActionManager::registerAction(&m_duplicateAction, Constants::C_DUPLICATE, qmlDesignerMainContext);
+    Core::ActionManager::registerAction(&m_duplicateAction,
+                                        duplicateActionId,
+                                        qmlDesignerFormEditorContext);
+    Core::ActionManager::registerAction(&m_duplicateAction,
+                                        duplicateActionId,
+                                        qmlDesignerEditor3DContext);
+    command = Core::ActionManager::registerAction(&m_duplicateAction,
+                                                  duplicateActionId,
+                                                  qmlDesignerMainContext);
     editMenu->addAction(command, Core::Constants::G_EDIT_COPYPASTE);
     designerActionManager.addCreatorCommand(command, ComponentCoreConstants::editCategory, 15);
 
@@ -229,11 +244,12 @@ void ShortCutManager::registerActions(const Core::Context &qmlDesignerMainContex
     });
 
     connect(Core::ICore::instance(), &Core::ICore::contextChanged, this, [&](const Core::Context &context) {
-        isMatBrowserActive = context.contains(Constants::C_QMLMATERIALBROWSER);
-        isAssetsLibraryActive = context.contains(Constants::C_QMLASSETSLIBRARY);
+        isMatBrowserActive = context.contains(Constants::qmlMaterialBrowserContextId);
+        isAssetsLibraryActive = context.contains(Constants::qmlAssetsLibraryContextId);
 
-        if (!context.contains(Constants::C_QMLFORMEDITOR) && !context.contains(Constants::C_QMLEDITOR3D)
-         && !context.contains(Constants::C_QMLNAVIGATOR)) {
+        if (!context.contains(Constants::qmlFormEditorContextId)
+            && !context.contains(Constants::qml3DEditorContextId)
+            && !context.contains(Constants::qmlNavigatorContextId)) {
             m_deleteAction.setEnabled(isMatBrowserActive || isAssetsLibraryActive);
             m_cutAction.setEnabled(false);
             m_copyAction.setEnabled(false);
@@ -286,15 +302,13 @@ void ShortCutManager::redo()
 
 void ShortCutManager::deleteSelected()
 {
-   if (isMatBrowserActive) {
-       DesignerActionManager &designerActionManager = QmlDesignerPlugin::instance()->viewManager().designerActionManager();
-       designerActionManager.view()->emitCustomNotification("delete_selected_material");
-   } else if (isAssetsLibraryActive) {
-       DesignerActionManager &designerActionManager = QmlDesignerPlugin::instance()->viewManager().designerActionManager();
-       designerActionManager.view()->emitCustomNotification("delete_selected_assets");
-   } else if (currentDesignDocument()) {
+    auto &actionManager = QmlDesignerPlugin::instance()->viewManager().designerActionManager();
+    if (isMatBrowserActive)
+        actionManager.view()->emitCustomNotification("delete_selected_material");
+    else if (isAssetsLibraryActive)
+        actionManager.view()->emitCustomNotification("delete_selected_assets");
+    else if (currentDesignDocument())
         currentDesignDocument()->deleteSelected();
-   }
 }
 
 void ShortCutManager::cutSelected()

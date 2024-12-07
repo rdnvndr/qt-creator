@@ -9,9 +9,8 @@
 #include "navigatortreeview.h"
 #include "navigatorwidget.h"
 #include "choosefrompropertylistdialog.h"
-#include "qproxystyle.h"
-
-#include <model/modelutils.h>
+#include <modelutils.h>
+#include <dialogutils.h>
 #include <modelnodecontextmenu.h>
 #include <theme.h>
 #include <qmldesignerconstants.h>
@@ -57,7 +56,7 @@ static QPixmap generateWavyPixmap(qreal maxRadius, const QPen &pen)
         QPen wavePen = pen;
         wavePen.setCapStyle(Qt::SquareCap);
 
-        // This is to protect against making the line too fat, as happens on Mac OS X
+        // This is to protect against making the line too fat, as happens on macOS
         // due to it having a rather thick width for the regular underline.
         const qreal maxPenWidth = .8 * radius;
         if (wavePen.widthF() > maxPenWidth)
@@ -169,8 +168,7 @@ static void setId(const QModelIndex &index, const QString &newId)
         return;
 
     if (!ModelNode::isValidId(newId)) {
-        Core::AsynchronousMessageBox::warning(NavigatorTreeView::tr("Invalid Id"),
-                                              NavigatorTreeView::tr("%1 is an invalid id.").arg(newId));
+        DialogUtils::showWarningForInvalidId(newId);
     } else if (modelNode.view()->hasId(newId)) {
         Core::AsynchronousMessageBox::warning(NavigatorTreeView::tr("Invalid Id"),
                                               NavigatorTreeView::tr("%1 already exists.").arg(newId));
@@ -218,14 +216,23 @@ void NameItemDelegate::paint(QPainter *painter,
             QByteArray dragType = widget->dragType();
             const NodeMetaInfo metaInfo = node.metaInfo();
 
+            auto isValid3dTextureTarget = [&metaInfo, &node]() -> bool {
+                Model *model = node.model();
+                return metaInfo.isBasedOn(model->qtQuick3DModelMetaInfo(),
+                                          model->qtQuick3DTextureMetaInfo(),
+                                          model->qtQuick3DSceneEnvironmentMetaInfo(),
+                                          model->qtQuick3DTextureInputMetaInfo(),
+                                          model->qtQuick3DParticles3DSpriteParticle3DMetaInfo());
+            };
+
             bool validDrop = false;
-            if (dragType == Constants::MIME_TYPE_BUNDLE_TEXTURE) {
-                validDrop = metaInfo.isQtQuick3DModel();
-            } else if (dragType == Constants::MIME_TYPE_ASSET_TEXTURE3D) {
-                validDrop = metaInfo.isQtQuick3DModel() || metaInfo.isQtQuick3DTexture();
-            } else if (dragType == Constants::MIME_TYPE_ASSET_IMAGE) {
-                validDrop = metaInfo.isQtQuick3DModel() || metaInfo.isQtQuick3DTexture()
-                        || metaInfo.isQtQuickImage() || metaInfo.isQtQuickBorderImage();
+            if (dragType == Constants::MIME_TYPE_ASSET_TEXTURE3D) {
+                validDrop = isValid3dTextureTarget();
+            } else if (dragType == Constants::MIME_TYPE_ASSET_IMAGE
+                       || dragType == Constants::MIME_TYPE_BUNDLE_TEXTURE) {
+                Model *model = node.model();
+                validDrop = isValid3dTextureTarget() || metaInfo.isBasedOn(model->qtQuickImageMetaInfo(),
+                                                                           model->qtQuickBorderImageMetaInfo());
             } else {
                 const NodeMetaInfo dragInfo = node.model()->metaInfo(dragType);
                 ChooseFromPropertyListFilter *filter = new ChooseFromPropertyListFilter(dragInfo, metaInfo, true);

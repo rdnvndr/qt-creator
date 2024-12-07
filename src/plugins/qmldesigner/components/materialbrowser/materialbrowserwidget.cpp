@@ -3,25 +3,28 @@
 
 #include "materialbrowserwidget.h"
 
-#include "asset.h"
-#include "assetimageprovider.h"
-#include "createtexture.h"
-#include "documentmanager.h"
-#include "hdrimage.h"
 #include "materialbrowsermodel.h"
 #include "materialbrowsertexturesmodel.h"
 #include "materialbrowserview.h"
-#include "qmldesignerconstants.h"
-#include "qmldesignerplugin.h"
-#include "theme.h"
-#include "variantproperty.h"
+
+#include <asset.h>
+#include <assetimageprovider.h>
+#include <bundlehelper.h>
+#include <createtexture.h>
+#include <designmodewidget.h>
+#include <documentmanager.h>
+#include <hdrimage.h>
+#include <qmldesignerconstants.h>
+#include <qmldesignerplugin.h>
+#include <studioquickwidget.h>
+#include <theme.h>
+#include <variantproperty.h>
 
 #include <coreplugin/icore.h>
 
-#include <studioquickwidget.h>
-
 #include <utils/algorithm.h>
 #include <utils/environment.h>
+#include <utils/fileutils.h>
 #include <utils/qtcassert.h>
 #include <utils/stylehelper.h>
 
@@ -31,6 +34,8 @@
 #include <QQuickItem>
 #include <QShortcut>
 #include <QVBoxLayout>
+
+using namespace Core;
 
 namespace QmlDesigner {
 
@@ -54,6 +59,13 @@ public:
     void setPixmap(const ModelNode &node, const QPixmap &pixmap)
     {
         m_pixmaps.insert(node.internalId(), pixmap);
+    }
+
+    QPixmap getPixmap(const ModelNode &node)
+    {
+        QTC_ASSERT(node, return {});
+
+        return m_pixmaps.value(node.internalId());
     }
 
     void clearPixmapCache()
@@ -97,14 +109,18 @@ bool MaterialBrowserWidget::eventFilter(QObject *obj, QEvent *event)
             QMouseEvent *me = static_cast<QMouseEvent *>(event);
             if ((me->globalPosition().toPoint() - m_dragStartPoint).manhattanLength() > 20) {
                 bool isMaterial = m_materialToDrag.isValid();
-                QMimeData *mimeData = new QMimeData;
+                auto mimeData = std::make_unique<QMimeData>();
                 QByteArray internalId;
 
                 if (isMaterial) {
                     internalId.setNum(m_materialToDrag.internalId());
                     mimeData->setData(Constants::MIME_TYPE_MATERIAL, internalId);
-                    model->startDrag(mimeData, m_previewImageProvider->requestPixmap(
-                                     QString::number(m_materialToDrag.internalId()), nullptr, {128, 128}));
+                    model->startDrag(std::move(mimeData),
+                                     m_previewImageProvider->requestPixmap(
+                                         QString::number(m_materialToDrag.internalId()),
+                                         nullptr,
+                                         {128, 128}),
+                                     this);
                 } else {
                     internalId.setNum(m_textureToDrag.internalId());
                     mimeData->setData(Constants::MIME_TYPE_TEXTURE, internalId);
@@ -122,7 +138,7 @@ bool MaterialBrowserWidget::eventFilter(QObject *obj, QEvent *event)
                         pixmap = Utils::StyleHelper::dpiSpecificImageFile(iconPath);
                     if (pixmap.isNull())
                         pixmap = Utils::StyleHelper::dpiSpecificImageFile(":/textureeditor/images/texture_default.png");
-                    model->startDrag(mimeData, pixmap.scaled({128, 128}));
+                    model->startDrag(std::move(mimeData), pixmap.scaled({128, 128}), this);
                 }
                 m_materialToDrag = {};
                 m_textureToDrag = {};
@@ -143,8 +159,9 @@ MaterialBrowserWidget::MaterialBrowserWidget(AsynchronousImageCache &imageCache,
     : m_materialBrowserView(view)
     , m_materialBrowserModel(new MaterialBrowserModel(view, this))
     , m_materialBrowserTexturesModel(new MaterialBrowserTexturesModel(view, this))
-    , m_quickWidget(new StudioQuickWidget(this))
+    , m_quickWidget(Utils::makeUniqueObjectPtr<StudioQuickWidget>(this))
     , m_previewImageProvider(new PreviewImageProvider())
+    , m_bundleHelper(std::make_unique<BundleHelper>(view, this))
 {
     QImage defaultImage;
     defaultImage.load(Utils::StyleHelper::dpiSpecificImageFile(":/textureeditor/images/texture_default.png"));
@@ -153,7 +170,7 @@ MaterialBrowserWidget::MaterialBrowserWidget(AsynchronousImageCache &imageCache,
     setWindowTitle(tr("Material Browser", "Title of material browser widget"));
     setMinimumWidth(120);
 
-    Core::Context context(Constants::C_QMLMATERIALBROWSER);
+    Core::Context context(Constants::qmlMaterialBrowserContextId);
     m_context = new Core::IContext(this);
     m_context->setContext(context);
     m_context->setWidget(this);
@@ -172,22 +189,22 @@ MaterialBrowserWidget::MaterialBrowserWidget(AsynchronousImageCache &imageCache,
     auto layout = new QVBoxLayout(this);
     layout->setContentsMargins({});
     layout->setSpacing(0);
-    layout->addWidget(m_quickWidget.data());
+    layout->addWidget(m_quickWidget.get());
 
     updateSearch();
 
     setStyleSheet(Theme::replaceCssColors(
         QString::fromUtf8(Utils::FileReader::fetchQrc(":/qmldesigner/stylesheet.css"))));
 
-    m_qmlSourceUpdateShortcut = new QShortcut(QKeySequence(Qt::CTRL + Qt::Key_F8), this);
+    m_qmlSourceUpdateShortcut = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_F8), this);
     connect(m_qmlSourceUpdateShortcut, &QShortcut::activated, this, &MaterialBrowserWidget::reloadQmlSource);
 
-    connect(m_materialBrowserModel, &MaterialBrowserModel::isEmptyChanged, this, [&] {
+    connect(m_materialBrowserModel, &MaterialBrowserModel::isEmptyChanged, this, [this] {
         if (m_materialBrowserModel->isEmpty())
             focusMaterialSection(false);
     });
 
-    connect(m_materialBrowserTexturesModel, &MaterialBrowserTexturesModel::isEmptyChanged, this, [&] {
+    connect(m_materialBrowserTexturesModel, &MaterialBrowserTexturesModel::isEmptyChanged, this, [this] {
         if (m_materialBrowserTexturesModel->isEmpty())
             focusMaterialSection(true);
     });
@@ -205,6 +222,10 @@ MaterialBrowserWidget::MaterialBrowserWidget(AsynchronousImageCache &imageCache,
     reloadQmlSource();
 
     setFocusProxy(m_quickWidget->quickWidget());
+
+    IContext::attach(this,
+                     Context(Constants::qmlMaterialBrowserContextId, Constants::qtQuickToolsMenuContextId),
+                     [this](const IContext::HelpCallback &callback) { contextHelp(callback); });
 }
 
 void MaterialBrowserWidget::updateMaterialPreview(const ModelNode &node, const QPixmap &pixmap)
@@ -304,7 +325,7 @@ void MaterialBrowserWidget::acceptBundleTextureDropOnMaterial(int matIndex, cons
 
 void MaterialBrowserWidget::acceptAssetsDrop(const QList<QUrl> &urls)
 {
-    QStringList assetPaths = Utils::transform(urls, [](const QUrl &url) { return url.toLocalFile(); });
+    QStringList assetPaths = Utils::transform(urls, &QUrl::toLocalFile);
     m_materialBrowserView->createTextures(assetPaths);
     if (m_materialBrowserView->model())
         m_materialBrowserView->model()->endDrag();
@@ -357,6 +378,24 @@ void MaterialBrowserWidget::focusMaterialSection(bool focusMatSec)
     }
 }
 
+void MaterialBrowserWidget::addMaterialToContentLibrary()
+{
+    QmlDesignerPlugin::instance()->mainWidget()->showDockWidget("ContentLibrary");
+    ModelNode mat = m_materialBrowserModel->selectedMaterial();
+    m_materialBrowserView->emitCustomNotification("add_material_to_content_lib", {mat},
+                                                  {m_previewImageProvider->getPixmap(mat)}); // to ContentLibrary
+}
+
+void MaterialBrowserWidget::importMaterial()
+{
+    m_bundleHelper->importBundleToProject();
+}
+void MaterialBrowserWidget::exportMaterial()
+{
+    ModelNode mat = m_materialBrowserModel->selectedMaterial();
+    m_bundleHelper->exportBundle(mat, m_previewImageProvider->getPixmap(mat));
+}
+
 QString MaterialBrowserWidget::qmlSourcesPath()
 {
 #ifdef SHARE_QML_PATH
@@ -397,7 +436,7 @@ void MaterialBrowserWidget::setIsDragging(bool val)
 
 StudioQuickWidget *MaterialBrowserWidget::quickWidget() const
 {
-    return m_quickWidget.data();
+    return m_quickWidget.get();
 }
 
 void MaterialBrowserWidget::clearPreviewCache()

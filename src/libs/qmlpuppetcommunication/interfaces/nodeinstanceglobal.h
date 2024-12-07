@@ -5,13 +5,16 @@
 
 #include <QByteArray>
 #include <QList>
+#include <QVarLengthArray>
 
 #include <vector>
 
 namespace QmlDesigner {
 
 using PropertyName = QByteArray;
+using PropertyNameView = QByteArrayView;
 using PropertyNameList = QList<PropertyName>;
+using PropertyNameViews = QVarLengthArray<PropertyNameView, 64>;
 using PropertyNames = std::vector<PropertyName>;
 using TypeName = QByteArray;
 
@@ -20,7 +23,8 @@ enum class AuxiliaryDataType {
     Temporary,
     Document,
     NodeInstancePropertyOverwrite,
-    NodeInstanceAuxiliary
+    NodeInstanceAuxiliary,
+    Persistent
 };
 
 enum class View3DActionType {
@@ -36,9 +40,11 @@ enum class View3DActionType {
     OrientationToggle,
     EditLightToggle,
     ShowGrid,
+    ShowLookAt,
     ShowSelectionBox,
     ShowIconGizmo,
     ShowCameraFrustum,
+    CameraViewMode,
     ShowParticleEmitter,
     Edit3DParticleModeToggle,
     ParticlesPlay,
@@ -46,10 +52,20 @@ enum class View3DActionType {
     ParticlesSeek,
     SyncEnvBackground,
     GetNodeAtPos,
+    GetNodeAtMainScenePos,
     SetBakeLightsView3D,
     SplitViewToggle,
     MaterialOverride,
-    ShowWireframe
+    ShowWireframe,
+    FlyModeToggle,
+    EditCameraRotation,
+    EditCameraMove,
+    EditCameraStopAllMoves,
+    SetLastSceneEnvData,
+    Import3dUpdatePreviewImage,
+    Import3dRotatePreviewModel,
+    Import3dAddPreviewModel,
+    Import3dSetCurrentPreviewModel
 };
 
 constexpr bool isNanotraceEnabled()

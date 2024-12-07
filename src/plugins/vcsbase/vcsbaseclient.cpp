@@ -16,11 +16,13 @@
 #include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/idocument.h>
 
+#include <extensionsystem/shutdownguard.h>
+
 #include <texteditor/textdocument.h>
 
 #include <utils/commandline.h>
 #include <utils/environment.h>
-#include <utils/process.h>
+#include <utils/qtcprocess.h>
 #include <utils/qtcassert.h>
 
 #include <QDebug>
@@ -71,8 +73,7 @@ FilePath VcsBaseClientImpl::vcsBinary(const Utils::FilePath &forDirectory) const
 VcsCommand *VcsBaseClientImpl::createCommand(const FilePath &workingDirectory,
                                              VcsBaseEditorWidget *editor) const
 {
-    auto cmd = createVcsCommand(const_cast<VcsBaseClientImpl *>(this),
-                                workingDirectory, processEnvironment(workingDirectory));
+    auto cmd = createVcsCommand(workingDirectory, processEnvironment(workingDirectory));
     if (editor) {
         editor->setCommand(cmd);
         connect(cmd, &VcsCommand::done, editor, [editor, cmd] {
@@ -125,7 +126,7 @@ QStringList VcsBaseClientImpl::splitLines(const QString &s)
 QString VcsBaseClientImpl::stripLastNewline(const QString &in)
 {
     if (in.endsWith('\n'))
-        return in.left(in.count() - 1);
+        return in.left(in.size() - 1);
     return in;
 }
 
@@ -157,7 +158,7 @@ void VcsBaseClientImpl::annotateRevisionRequested(const FilePath &workingDirecto
 {
     QString changeCopy = change;
     // This might be invoked with a verbose revision description
-    // "SHA1 author subject" from the annotation context menu. Strip the rest.
+    // "hash author subject" from the annotation context menu. Strip the rest.
     const int blankPos = changeCopy.indexOf(QLatin1Char(' '));
     if (blankPos != -1)
         changeCopy.truncate(blankPos);
@@ -211,14 +212,8 @@ int VcsBaseClientImpl::vcsTimeoutS() const
 VcsCommand *VcsBaseClientImpl::createVcsCommand(const FilePath &defaultWorkingDir,
                                                 const Environment &environment)
 {
-    return new VcsCommand(defaultWorkingDir, environment);
-}
-
-VcsCommand *VcsBaseClientImpl::createVcsCommand(QObject *parent, const FilePath &defaultWorkingDir,
-                                                const Environment &environment)
-{
     auto command = new VcsCommand(defaultWorkingDir, environment);
-    command->setParent(parent);
+    command->setParent(ExtensionSystem::shutdownGuard());
     return command;
 }
 

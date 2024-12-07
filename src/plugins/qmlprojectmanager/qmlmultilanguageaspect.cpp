@@ -21,7 +21,7 @@ namespace QmlProjectManager {
 
 static bool isMultilanguagePresent()
 {
-    const QVector<ExtensionSystem::PluginSpec *> &specs = ExtensionSystem::PluginManager::plugins();
+    const ExtensionSystem::PluginSpecs &specs = ExtensionSystem::PluginManager::plugins();
     return std::find_if(specs.cbegin(), specs.cend(),
                         [](ExtensionSystem::PluginSpec *spec) {
                             return spec->name() == "MultiLanguage";
@@ -29,23 +29,13 @@ static bool isMultilanguagePresent()
            != specs.cend();
 }
 
-static FilePath getMultilanguageDatabaseFilePath(ProjectExplorer::Target *target)
+static QObject *getPlugin(const QString &pluginName)
 {
-    if (target) {
-        auto filePath = target->project()->projectDirectory().pathAppended("translations.db");
-        if (filePath.exists())
-            return filePath;
-    }
-    return {};
-}
-
-static QObject *getPreviewPlugin()
-{
-    const QVector<ExtensionSystem::PluginSpec *> &specs = ExtensionSystem::PluginManager::plugins();
-    const auto pluginIt = std::find_if(specs.cbegin(), specs.cend(),
-                                 [](const ExtensionSystem::PluginSpec *p) {
-                                     return p->name() == "QmlPreview";
-                                 });
+    const ExtensionSystem::PluginSpecs &specs = ExtensionSystem::PluginManager::plugins();
+    const auto pluginIt = std::find_if(
+        specs.cbegin(), specs.cend(), [pluginName](const ExtensionSystem::PluginSpec *p) {
+                                           return p->name() == pluginName;
+                                       });
 
     if (pluginIt != specs.cend())
         return (*pluginIt)->plugin();
@@ -69,7 +59,7 @@ QmlMultiLanguageAspect::QmlMultiLanguageAspect(AspectContainer *container)
 
     connect(this, &BoolAspect::changed, this, [this] {
         for (RunControl *runControl : ProjectExplorerPlugin::allRunControls()) {
-            if (auto aspect = runControl->aspect<QmlMultiLanguageAspect>()) {
+            if (auto aspect = runControl->aspectData<QmlMultiLanguageAspect>()) {
                 if (auto origin = aspect->origin; origin == this)
                     runControl->initiateStop();
             }
@@ -91,7 +81,7 @@ void QmlMultiLanguageAspect::setCurrentLocale(const QString &locale)
     if (m_currentLocale == locale)
         return;
     m_currentLocale = locale;
-    if (auto previewPlugin = getPreviewPlugin())
+    if (auto previewPlugin = getPlugin("QmlPreview"))
         previewPlugin->setProperty("localeIsoCode", locale);
 }
 
@@ -102,9 +92,11 @@ QString QmlMultiLanguageAspect::currentLocale() const
 
 Utils::FilePath QmlMultiLanguageAspect::databaseFilePath() const
 {
-    if (m_databaseFilePath.isEmpty())
-        m_databaseFilePath = getMultilanguageDatabaseFilePath(m_target);
-    return m_databaseFilePath;
+    if (auto previewPlugin = getPlugin("MultiLanguage")) {
+        const auto multilanguageDatabaseFilePath = previewPlugin->property("multilanguageDatabaseFilePath");
+        return Utils::FilePath::fromString(multilanguageDatabaseFilePath.toString());
+    }
+    return {};
 }
 
 void QmlMultiLanguageAspect::toMap(Store &map) const

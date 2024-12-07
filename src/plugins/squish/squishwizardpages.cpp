@@ -319,7 +319,7 @@ bool SquishFileGenerator::setup(const QVariant &data, QString *errorMessage)
     if (data.isNull())
         return false;
 
-    if (data.typeId() != QVariant::Map) {
+    if (data.typeId() != QMetaType::QVariantMap) {
         *errorMessage = Tr::tr("Key is not an object.");
         return false;
     }
@@ -417,50 +417,13 @@ bool SquishFileGenerator::allDone(const JsonWizard *wizard,
     return true;
 }
 
-class SquishGeneratorFactory final : public JsonWizardGeneratorFactory
-{
-public:
-    SquishGeneratorFactory()
-    {
-        setTypeIdsSuffix("SquishSuiteGenerator");
-    }
-
-    JsonWizardGenerator *create(Id typeId, const QVariant &data,
-                                const QString &path, Id platform,
-                                const QVariantMap &variables) final
-    {
-        Q_UNUSED(path)
-        Q_UNUSED(platform)
-        Q_UNUSED(variables)
-        QTC_ASSERT(canCreate(typeId), return nullptr);
-
-        auto generator = new SquishFileGenerator;
-        QString errorMessage;
-        generator->setup(data, &errorMessage);
-
-        if (!errorMessage.isEmpty()) {
-            qWarning() << "SquishSuiteGenerator setup error:" << errorMessage;
-            delete generator;
-            return nullptr;
-        }
-        return generator;
-    }
-
-    bool validateData(Id typeId, const QVariant &data, QString *errorMessage) final
-    {
-        QTC_ASSERT(canCreate(typeId), return false);
-
-        QScopedPointer<SquishFileGenerator> generator(new SquishFileGenerator);
-        return generator->setup(data, errorMessage);
-    }
-};
-
 void setupSquishWizardPages()
 {
     static SquishToolkitsPageFactory theSquishToolkitsPageFactory;
     static SquishScriptLanguagePageFactory theSquishScriptLanguagePageFactory;
     static SquishAUTPageFactory theSquishAUTPageFactory;
-    static SquishGeneratorFactory theSquishGeneratorFactory;
+    static JsonWizardGeneratorTypedFactory<SquishFileGenerator>
+        theSquishGeneratorFactory("SquishSuiteGenerator");
 }
 
 } // Squish::Internal

@@ -33,9 +33,10 @@
 
 #include <abstractproperty.h>
 #include <bindingeditor.h>
-#include <variantproperty.h>
 #include <qmldesignerconstants.h>
 #include <qmldesignerplugin.h>
+#include <qmlstate.h>
+#include <variantproperty.h>
 
 #include <coreplugin/messagebox.h>
 #include <utils/qtcassert.h>
@@ -102,19 +103,19 @@ QVariant DynamicPropertiesProxyModel::data(const QModelIndex &index, int role) c
         QTC_ASSERT(property.isValid(), return QVariant());
 
         if (role == propertyNameRole)
-            return property.name();
+            return property.name().toByteArray();
 
         if (propertyTypeRole)
             return property.dynamicTypeName();
 
         if (role == propertyValueRole) {
-            QmlObjectNode objectNode = property.parentQmlObjectNode();
+            QmlObjectNode objectNode = property.parentModelNode();
             return objectNode.modelValue(property.name());
         }
 
         if (role == propertyBindingRole) {
             if (property.isBindingProperty())
-                return property.parentQmlObjectNode().expression(property.name());
+                return QmlObjectNode{property.parentModelNode()}.expression(property.name());
 
             return {};
         }
@@ -143,7 +144,7 @@ QString DynamicPropertiesProxyModel::newPropertyName() const
 {
     DynamicPropertiesModel *propsModel = dynamicPropertiesModel();
 
-    return QString::fromUtf8(uniquePropertyName("property", propsModel->singleSelectedNode()));
+    return QString::fromUtf8(uniquePropertyName("newName", propsModel->singleSelectedNode()));
 }
 
 void DynamicPropertiesProxyModel::createProperty(const QString &name, const QString &type)
@@ -167,6 +168,10 @@ void DynamicPropertiesProxyModel::createProperty(const QString &name, const QStr
                     QVariant value = defaultValueForType(typeName);
                     VariantProperty variantProp = modelNode.variantProperty(name.toUtf8());
                     variantProp.setDynamicTypeNameAndValue(typeName, value);
+                } else if (type == "signal") {
+                    SignalDeclarationProperty signalDeclarationProperty
+                        = modelNode.signalDeclarationProperty(name.toUtf8());
+                    signalDeclarationProperty.setSignature("()");
                 } else {
                     QString expression = defaultExpressionForType(typeName);
 
@@ -270,6 +275,8 @@ PropertyEditorValue *DynamicPropertyRow::createProxyBackendValue()
     auto *newValue = new PropertyEditorValue(this);
     m_proxyBackendValues.append(newValue);
 
+    QQmlEngine::setObjectOwnership(newValue, QJSEngine::CppOwnership);
+
     return newValue;
 }
 
@@ -295,9 +302,9 @@ void DynamicPropertyRow::setupBackendValue()
     if (node != m_backendValue->modelNode())
         m_backendValue->setModelNode(node);
 
-    QVariant modelValue = property.parentQmlObjectNode().modelValue(property.name());
+    QVariant modelValue = QmlObjectNode{property.parentModelNode()}.modelValue(property.name());
 
-    const bool isBound = property.parentQmlObjectNode().hasBindingProperty(property.name());
+    const bool isBound = QmlObjectNode{property.parentModelNode()}.hasBindingProperty(property.name());
 
     if (modelValue != m_backendValue->value()) {
         m_backendValue->setValue({});
@@ -305,7 +312,7 @@ void DynamicPropertyRow::setupBackendValue()
     }
 
     if (isBound) {
-        QString expression = property.parentQmlObjectNode().expression(property.name());
+        QString expression = QmlObjectNode{property.parentModelNode()}.expression(property.name());
         if (m_backendValue->expression() != expression)
             m_backendValue->setExpression(expression);
     }
@@ -340,14 +347,14 @@ void DynamicPropertyRow::commitValue(const QVariant &value)
             convertBindingToVariantProperty(property.toBindingProperty(), value);
         } else if (property.isVariantProperty()) {
             VariantProperty variantProperty = property.toVariantProperty();
-            QmlObjectNode objectNode = variantProperty.parentQmlObjectNode();
-            if (view->currentState().isBaseState()
-                    && !(objectNode.timelineIsActive() && objectNode.currentTimeline().isRecording())) {
+            QmlObjectNode objectNode = variantProperty.parentModelNode();
+            if (QmlModelState::isBaseState(view->currentStateNode())
+                && !(objectNode.timelineIsActive() && objectNode.currentTimeline().isRecording())) {
                 if (variantProperty.value() != value)
                     variantProperty.setDynamicTypeNameAndValue(variantProperty.dynamicTypeName(), value);
             } else {
                 QTC_CHECK(objectNode.isValid());
-                PropertyName name = variantProperty.name();
+                PropertyNameView name = variantProperty.name();
                 if (objectNode.isValid() && objectNode.modelValue(name) != value)
                     objectNode.setVariantProperty(name, value);
             }
@@ -386,15 +393,15 @@ void DynamicPropertyRow::commitExpression(const QString &expression)
         if (theExpression.isEmpty())
             theExpression = "null";
 
-        if (view->currentState().isBaseState()) {
+        if (QmlModelState::isBaseState(view->currentStateNode())) {
             if (bindingProperty.expression() != theExpression) {
                 bindingProperty.setDynamicTypeNameAndExpression(bindingProperty.dynamicTypeName(),
                                                                 theExpression);
             }
         } else {
-            QmlObjectNode objectNode = bindingProperty.parentQmlObjectNode();
+            QmlObjectNode objectNode = bindingProperty.parentModelNode();
             QTC_CHECK(objectNode.isValid());
-            PropertyName name = bindingProperty.name();
+            PropertyNameView name = bindingProperty.name();
             if (objectNode.isValid() && objectNode.expression(name) != theExpression)
                 objectNode.setBindingProperty(name, theExpression);
         }
@@ -422,7 +429,7 @@ void DynamicPropertyRow::resetValue()
     AbstractProperty property = propertiesModel->propertyForRow(m_row);
     TypeName typeName = property.dynamicTypeName();
 
-    if (view->currentState().isBaseState()) {
+    if (QmlModelState::isBaseState(view->currentStateNode())) {
         if (isDynamicVariantPropertyType(typeName)) {
             QVariant value = defaultValueForType(typeName);
             commitValue(value);
@@ -436,9 +443,9 @@ void DynamicPropertyRow::resetValue()
 
         RewriterTransaction transaction = view->beginRewriterTransaction(__FUNCTION__);
         try {
-            QmlObjectNode objectNode = property.parentQmlObjectNode();
+            QmlObjectNode objectNode = property.parentModelNode();
             QTC_CHECK(objectNode.isValid());
-            PropertyName name = property.name();
+            PropertyNameView name = property.name();
             if (objectNode.isValid() && objectNode.propertyAffectedByCurrentState(name))
                 objectNode.removeProperty(name);
 

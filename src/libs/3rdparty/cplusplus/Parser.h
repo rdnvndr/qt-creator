@@ -117,7 +117,7 @@ public:
     bool parseNamespaceAliasDefinition(DeclarationAST *&node);
     bool parseNewArrayDeclarator(NewArrayDeclaratorListAST *&node);
     bool parseNewExpression(ExpressionAST *&node);
-    bool parseExpressionListParen(ExpressionAST *&node);
+    bool parseExpressionListParen(ExpressionAST *&node, bool allowEmpty);
     bool parseNewInitializer(ExpressionAST *&node);
     bool parseNewTypeId(NewTypeIdAST *&node);
     bool parseOperator(OperatorAST *&node);
@@ -273,7 +273,7 @@ public:
     const Identifier *className(ClassSpecifierAST *ast) const;
     const Identifier *identifier(NameAST *name) const;
 
-    void match(int kind, int *token);
+    bool match(int kind, int *token);
 
     bool maybeAmbiguousStatement(DeclarationStatementAST *ast, StatementAST *&node);
     bool maybeForwardOrClassDeclaration(SpecifierListAST *decl_specifier_seq) const;

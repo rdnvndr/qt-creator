@@ -46,6 +46,7 @@ DebuggerSettings::DebuggerSettings() :
     showQmlObjectTree{commonSettings().showQmlObjectTree},
     stationaryEditorWhileStepping{commonSettings().stationaryEditorWhileStepping},
     forceLoggingToConsole{commonSettings().forceLoggingToConsole},
+    showUnsupportedBreakpointWarning{commonSettings().showUnsupportedBreakpointWarning},
 
     sourcePathMap{commonSettings().sourcePathMap},
     registerForPostMortem{*commonSettings().registerForPostMortem},
@@ -60,6 +61,7 @@ DebuggerSettings::DebuggerSettings() :
     intelFlavor{gdbSettings().intelFlavor},
     usePseudoTracepoints{gdbSettings().usePseudoTracepoints},
     useIndexCache{gdbSettings().useIndexCache},
+    useDebugInfoD{gdbSettings().useDebugInfoD},
     gdbStartupCommands{gdbSettings().gdbStartupCommands},
     gdbPostAttachCommands{gdbSettings().gdbPostAttachCommands},
     targetAsync{gdbSettings().targetAsync},
@@ -74,6 +76,7 @@ DebuggerSettings::DebuggerSettings() :
 
     // Page 4
     useDebuggingHelpers{localsAndExpressionSettings().useDebuggingHelpers},
+    allowInferiorCalls{localsAndExpressionSettings().allowInferiorCalls},
     useCodeModel{localsAndExpressionSettings().useCodeModel},
     showThreadNames{localsAndExpressionSettings().showThreadNames},
     extraDumperFile{localsAndExpressionSettings().extraDumperFile},   // For loading a file. Recommended.

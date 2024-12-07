@@ -68,6 +68,7 @@ public:
     void appendInitialBuildStep(Utils::Id id);
     void appendInitialCleanStep(Utils::Id id);
 
+    virtual BuildConfiguration *clone(Target *target) const;
     void fromMap(const Utils::Store &map) override;
     void toMap(Utils::Store &map) const override;
 
@@ -110,15 +111,12 @@ public:
 
     void doInitialize(const BuildInfo &info);
 
-    Utils::MacroExpander *macroExpander() const;
-
     bool createBuildDirectory();
 
 signals:
     void environmentChanged();
     void buildDirectoryInitialized();
     void buildDirectoryChanged();
-    void enabledChanged();
     void buildTypeChanged();
 
 protected:
@@ -150,13 +148,12 @@ public:
     BuildConfiguration *create(Target *parent, const BuildInfo &info) const;
 
     static BuildConfiguration *restore(Target *parent, const Utils::Store &map);
-    static BuildConfiguration *clone(Target *parent, const BuildConfiguration *source);
 
     static BuildConfigurationFactory *find(const Kit *k, const Utils::FilePath &projectPath);
     static BuildConfigurationFactory *find(Target *parent);
 
-    using IssueReporter
-        = std::function<Tasks(Kit *, const Utils::FilePath &, const Utils::FilePath &)>;
+    using IssueReporter = std::function<
+        Tasks(Kit *, const Utils::FilePath &projectDir, const Utils::FilePath &buildDirectory)>;
     void setIssueReporter(const IssueReporter &issueReporter);
     const Tasks reportIssues(ProjectExplorer::Kit *kit,
                              const Utils::FilePath &projectPath,

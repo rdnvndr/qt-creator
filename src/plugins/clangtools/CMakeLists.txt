@@ -21,6 +21,7 @@ add_qtc_plugin(ClangTools
     clangtool.cpp clangtool.h
     clangtoolrunner.cpp clangtoolrunner.h
     clangtools_global.h
+    clangtoolscompilationdb.cpp clangtoolscompilationdb.h
     clangtoolstr.h
     clangtoolsconstants.h
     clangtoolsdiagnostic.cpp clangtoolsdiagnostic.h
@@ -38,6 +39,7 @@ add_qtc_plugin(ClangTools
     documentquickfixfactory.cpp documentquickfixfactory.h
     executableinfo.cpp executableinfo.h
     filterdialog.cpp filterdialog.h
+    inlinesuppresseddiagnostics.cpp inlinesuppresseddiagnostics.h
     runsettingswidget.cpp runsettingswidget.h
     settingswidget.cpp settingswidget.h
     virtualfilesystemoverlay.cpp virtualfilesystemoverlay.h

@@ -8,17 +8,9 @@
 
 #include <coreplugin/icontext.h>
 
-#include <memory>
-
 namespace TextEditor { class BaseTextEditor; }
 
-namespace Utils { class CrumblePath; }
-
 namespace QmlDesigner {
-
-namespace Internal {
-class TextEditorContext;
-}
 
 class TextEditorWidget;
 
@@ -48,6 +40,7 @@ public:
     void documentMessagesChanged(const QList<DocumentMessage> &errors, const QList<DocumentMessage> &warnings) override;
 
     // TextEditorView
+    bool hasWidget() const override { return true; }
     WidgetInfo widgetInfo() override;
 
     void qmlJSEditorContextHelp(const Core::IContext::HelpCallback &callback) const;
@@ -85,7 +78,6 @@ public:
 
 private:
     QPointer<TextEditorWidget> m_widget;
-    Internal::TextEditorContext *m_textEditorContext;
     bool m_errorState = false;
 };
 

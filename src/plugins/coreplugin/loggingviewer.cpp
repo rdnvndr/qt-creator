@@ -92,6 +92,7 @@ signals:
 
 private:
     LogCategoryRegistry() = default;
+    ~LogCategoryRegistry() { QLoggingCategory::installFilter(s_oldFilter); }
 
     void onFilter(QLoggingCategory *category)
     {
@@ -715,7 +716,7 @@ LoggingViewManagerWidget::LoggingViewManagerWidget(QWidget *parent)
         Splitter {
             bindTo(&splitter),
             Column {
-                noMargin(),
+                noMargin,
                 Row {
                     spacing(0),
                     save,
@@ -729,7 +730,7 @@ LoggingViewManagerWidget::LoggingViewManagerWidget(QWidget *parent)
                 m_logView
             },
             Column {
-                noMargin(),
+                noMargin,
                 Row {
                     qtInternal,
                     filterEdit,

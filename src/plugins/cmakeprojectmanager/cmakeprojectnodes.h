@@ -23,17 +23,30 @@ public:
 
 class CMakeListsNode : public ProjectExplorer::ProjectNode
 {
+    bool m_hasSubprojectBuildSupport{false};
+
 public:
     CMakeListsNode(const Utils::FilePath &cmakeListPath);
 
     bool showInSimpleTree() const final;
     std::optional<Utils::FilePath> visibleAfterAddFileAction() const override;
+
+    bool canAddSubProject(const Utils::FilePath &subProjectFilePath) const override;
+    bool addSubProject(const Utils::FilePath &subProjectFilePath) override;
+    QStringList subProjectFileNamePatterns() const override;
+
+    bool hasSubprojectBuildSupport() const;
+    void setHasSubprojectBuildSupport(bool hasSubprojectBuildSupport);
 };
 
 class CMakeProjectNode : public ProjectExplorer::ProjectNode
 {
 public:
     CMakeProjectNode(const Utils::FilePath &directory);
+
+    bool canAddSubProject(const Utils::FilePath &subProjectFilePath) const override;
+    bool addSubProject(const Utils::FilePath &subProjectFilePath) override;
+    QStringList subProjectFileNamePatterns() const override;
 
     QString tooltip() const final;
 };
@@ -57,11 +70,14 @@ public:
     QVariant data(Utils::Id role) const override;
     void setConfig(const CMakeConfig &config);
 
+    void setVisibleAfterAddFileAction(bool visibleAfterAddFileAction);
+
 private:
     QString m_tooltip;
     Utils::FilePath m_buildDirectory;
     Utils::FilePath m_artifact;
     CMakeConfig m_config;
+    bool m_visibleAfterAddFileAction = true;
 };
 
 } // CMakeProjectManager::Internal

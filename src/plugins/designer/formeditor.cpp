@@ -1,7 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
-#include "designercontext.h"
 #include "designertr.h"
 #include "editordata.h"
 #include "editorwidget.h"
@@ -91,8 +90,7 @@ using namespace Core;
 using namespace Designer::Constants;
 using namespace Utils;
 
-namespace Designer {
-namespace Internal {
+namespace Designer::Internal {
 
 /* A stub-like, read-only text editor which displays UI files as text. Could be used as a
   * read/write editor too, but due to lack of XML editor, highlighting and other such
@@ -370,7 +368,7 @@ void FormEditorData::fullInit()
     initDesignerSubWindows();
     m_integration = new QtCreatorIntegration(m_formeditor, this);
     m_formeditor->setIntegration(m_integration);
-    // Connect Qt Designer help request to HelpManager.
+    // Connect Qt Widgets Designer help request to HelpManager.
     QObject::connect(m_integration, &QtCreatorIntegration::creatorHelpRequested,
                      HelpManager::Signals::instance(),
                      [](const QUrl &url) { HelpManager::showHelpUrl(url, HelpManager::HelpModeAlways); });
@@ -378,7 +376,7 @@ void FormEditorData::fullInit()
     /**
      * This will initialize our TabOrder, Signals and slots and Buddy editors.
      */
-    const QList<QObject *> plugins = QPluginLoader::staticInstances() + m_formeditor->pluginInstances();
+    const QObjectList plugins = QPluginLoader::staticInstances() + m_formeditor->pluginInstances();
     for (QObject *plugin : plugins) {
         if (QDesignerFormEditorPluginInterface *formEditorPlugin = qobject_cast<QDesignerFormEditorPluginInterface*>(plugin)) {
             if (!formEditorPlugin->isInitialized())
@@ -430,7 +428,11 @@ void FormEditorData::fullInit()
 
     Context designerContexts = m_contexts;
     designerContexts.add(Core::Constants::C_EDITORMANAGER);
-    ICore::addContextObject(new DesignerContext(designerContexts, m_modeWidget, this));
+
+    IContext::attach(m_modeWidget, designerContexts, [](const IContext::HelpCallback &callback) {
+        const QDesignerFormEditorInterface *core = designerEditor();
+        callback(core->integration()->contextHelpId());
+    });
 
     DesignMode::registerDesignWidget(m_modeWidget,
                                      QStringList(Utils::Constants::FORM_MIMETYPE),
@@ -657,7 +659,7 @@ void FormEditorData::setupActions()
                   QString(), Core::Constants::G_DEFAULT_THREE);
 
     mformtools->addSeparator(m_contexts, Core::Constants::G_DEFAULT_THREE);
-    m_actionAboutPlugins = new QAction(Tr::tr("About Qt Designer Plugins..."), d);
+    m_actionAboutPlugins = new QAction(Tr::tr("About Qt Widgets Designer Plugins..."), d);
     addToolAction(m_actionAboutPlugins, m_contexts, "FormEditor.AboutPlugins", mformtools,
                   QString(), Core::Constants::G_DEFAULT_THREE);
     QObject::connect(m_actionAboutPlugins, &QAction::triggered,
@@ -707,7 +709,7 @@ ActionContainer *FormEditorData::createPreviewStyleMenu(QActionGroup *actionGrou
         QString name = menuId;
         name += dot;
         const QVariant data = a->data();
-        const bool isDeviceProfile = data.typeId() == QVariant::Int;
+        const bool isDeviceProfile = data.typeId() == QMetaType::Int;
         if (isDeviceProfile) {
             name += deviceProfilePrefix;
             name += dot;
@@ -983,7 +985,6 @@ void addPluginPath(const QString &pluginPath)
     sAdditionalPluginPaths->append(pluginPath);
 }
 
-} // namespace Internal
-} // namespace Designer
+} // namespace Designer::Internal
 
 Q_DECLARE_METATYPE(Designer::Internal::ToolData)

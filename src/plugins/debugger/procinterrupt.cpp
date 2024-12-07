@@ -49,7 +49,7 @@ static BOOL isWow64Process(HANDLE hproc)
 }
 
 // Open the process and break into it
-bool Debugger::Internal::interruptProcess(qint64 pID, int engineType, QString *errorMessage, const bool engineExecutableIs64Bit)
+bool Debugger::Internal::interruptProcess(qint64 pID, QString *errorMessage)
 {
     bool ok = false;
     HANDLE inferior = NULL;
@@ -73,9 +73,7 @@ bool Debugger::Internal::interruptProcess(qint64 pID, int engineType, QString *e
     Windows 64 bit has a 32 bit subsystem (WOW64) which makes it possible to run a
     32 bit application inside a 64 bit environment.
     When GDB is used DebugBreakProcess must be called from the same system (32/64 bit) running
-    the inferior. If CDB is used we could in theory break wow64 processes,
-    but the break is actually a wow64 breakpoint. CDB is configured to ignore these
-    breakpoints, because they also appear on module loading.
+    the inferior.
     Therefore we need helper executables (win(32/64)interrupt.exe) on Windows 64 bit calling
     DebugBreakProcess from the correct system.
 
@@ -90,9 +88,6 @@ bool Debugger::Internal::interruptProcess(qint64 pID, int engineType, QString *e
           | QtCreator 32bit | QtCreator 32bit                   | QtCreator 64bit
           | Inferior 32bit  | Inferior 32bit  | Inferior 64bit  | Inferior 32bit  | Inferior 64bit |
 ----------|-----------------|-----------------|-----------------|-----------------|----------------|
-CDB 32bit | Api             | Api             | NA              | Win32           | NA             |
-    64bit | NA              | Win64           | Win64           | Api             | Api            |
-----------|-----------------|-----------------|-----------------|-----------------|----------------|
 GDB 32bit | Api             | Api             | NA              | Win32           | NA             |
     64bit | NA              | Api             | Win64           | Win32           | Api            |
 ----------|-----------------|-----------------|-----------------|-----------------|----------------|
@@ -101,16 +96,11 @@ GDB 32bit | Api             | Api             | NA              | Win32         
 
         DebugBreakApi breakApi = UseDebugBreakApi;
 #ifdef Q_OS_WIN64
-        if ((engineType == GdbEngineType && isWow64Process(inferior))
-                || (engineType == CdbEngineType && !engineExecutableIs64Bit)) {
+        if (isWow64Process(inferior))
             breakApi = UseWin32Interrupt;
-        }
 #else
-        if (isWow64Process(GetCurrentProcess())
-                && ((engineType == CdbEngineType && engineExecutableIs64Bit)
-                    || (engineType == GdbEngineType && !isWow64Process(inferior)))) {
+        if (isWow64Process(GetCurrentProcess()) && !isWow64Process(inferior))
             breakApi = UseWin64Interrupt;
-        }
 #endif
         if (breakApi == UseDebugBreakApi) {
             ok = DebugBreakProcess(inferior);
@@ -159,8 +149,7 @@ GDB 32bit | Api             | Api             | NA              | Win32         
 #include <errno.h>
 #include <string.h>
 
-bool Debugger::Internal::interruptProcess(qint64 pID, int /* engineType */,
-                                          QString *errorMessage, const bool /*engineExecutableIs64Bit*/)
+bool Debugger::Internal::interruptProcess(qint64 pID, QString *errorMessage)
 {
     if (pID <= 0) {
         *errorMessage = msgCannotInterrupt(pID, QString::fromLatin1("Invalid process id."));

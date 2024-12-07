@@ -8,13 +8,16 @@ def verifyProjectsMode(expectedKits):
     bAndRIndex = getQModelIndexStr("text='Build & Run'",
                                    ":Projects.ProjectNavigationTreeView")
     foundKits = dumpItems(treeView.model(), waitForObject(bAndRIndex))
-    relevantKits = list(filter(lambda x: 'Python' not in x,foundKits)) # ignore Python kits
+    # ignore Python kits and non-kit item
+    excludes = ('Python', 'Hide Inactive Kits', 'Show All Kits')
+    relevantKits = list(filter(lambda x: all(ex not in x for ex in excludes), foundKits))
     test.compare(len(relevantKits), len(expectedKits), "Verify number of listed kits.")
     test.compare(set(relevantKits), set(expectedKits), "Verify if expected kits are listed.")
     hasKits = len(expectedKits) > 0
     test.verify(checkIfObjectExists(":scrollArea.Edit build configuration:_QLabel", hasKits),
                 "Verify if build settings are being displayed.")
-    test.verify(checkIfObjectExists(":No valid kits found._QLabel", not hasKits),
+    squishFunct = test.xverify if JIRA.isBugStillOpen(31809) and not hasKits else test.verify
+    squishFunct(checkIfObjectExists(":No valid kits found._QLabel", not hasKits),
                 "Verify if Creator reports missing kits.")
 
 kitNameTemplate = "Manual.%s"

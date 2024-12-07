@@ -5,14 +5,12 @@
 
 #include "clangformatsettings.h"
 
-#include <utils/fileutils.h>
+#include <utils/filepath.h>
 #include <utils/id.h>
 
 #include <clang/Format/Format.h>
 
 #include <QFile>
-
-#include <fstream>
 
 namespace TextEditor {
 class ICodeStylePreferences;
@@ -20,6 +18,7 @@ class TabSettings;
 }
 namespace ProjectExplorer { class Project; }
 namespace CppEditor { class CppCodeStyleSettings; }
+
 namespace ClangFormat {
 
 QString projectUniqueId(ProjectExplorer::Project *project);
@@ -33,8 +32,9 @@ ClangFormatSettings::Mode getProjectIndentationOrFormattingSettings(
     const ProjectExplorer::Project *project);
 ClangFormatSettings::Mode getCurrentIndentationOrFormattingSettings(const Utils::FilePath &filePath);
 
-Utils::FilePath configForFile(const Utils::FilePath &fileName);
-Utils::FilePath findConfig(const Utils::FilePath &fileName);
+TextEditor::ICodeStylePreferences *preferencesForFile(const Utils::FilePath &filePath);
+Utils::FilePath configForFile(const Utils::FilePath &filePath);
+Utils::FilePath findConfig(const Utils::FilePath &filePath);
 
 void fromTabSettings(clang::format::FormatStyle &style, const TextEditor::TabSettings &settings);
 void fromCppCodeStyleSettings(clang::format::FormatStyle &style,
@@ -49,7 +49,8 @@ clang::format::FormatStyle currentQtStyle(const TextEditor::ICodeStylePreference
 Utils::FilePath filePathToCurrentSettings(const TextEditor::ICodeStylePreferences *codeStyle);
 
 Utils::expected_str<void> parseConfigurationContent(const std::string &fileContent,
-                                                    clang::format::FormatStyle &style);
+                                                    clang::format::FormatStyle &style,
+                                                    bool allowUnknownOptions = false);
 Utils::expected_str<void> parseConfigurationFile(const Utils::FilePath &filePath,
                                                  clang::format::FormatStyle &style);
 

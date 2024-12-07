@@ -41,21 +41,26 @@ public:
     static void restartClient(Client *client);
 
     static void shutdownClient(Client *client);
-    static void deleteClient(Client *client);
+    static void deleteClient(Client *client, bool unexpected = false);
 
     static void shutdown();
     static bool isShutdownFinished();
 
     static LanguageClientManager *instance();
 
-    static QList<Client *> clientsSupportingDocument(const TextEditor::TextDocument *doc);
+    static QList<Client *> clientsSupportingDocument(
+        const TextEditor::TextDocument *doc, bool onlyReachable = true);
 
     static void applySettings();
+    static void applySettings(BaseSettings *settings);
+    static void writeSettings();
     static QList<BaseSettings *> currentSettings();
     static void registerClientSettings(BaseSettings *settings);
     static void enableClientSettings(const QString &settingsId, bool enable = true);
     static QList<Client *> clientsForSetting(const BaseSettings *setting);
+    static QList<Client *> clientsForSettingId(const QString &settingsId);
     static const BaseSettings *settingForClient(Client *setting);
+    static QList<Client *> clientsByName(const QString &name);
     static void updateWorkspaceConfiguration(const ProjectExplorer::Project *project,
                                              const QJsonValue &json);
 
@@ -87,7 +92,7 @@ public slots:
 signals:
     void clientAdded(Client *client);
     void clientInitialized(Client *client);
-    void clientRemoved(Client *client);
+    void clientRemoved(Client *client, bool unexpected);
     void shutdownFinished();
     void openCallHierarchy();
 

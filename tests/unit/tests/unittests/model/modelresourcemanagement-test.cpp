@@ -72,7 +72,7 @@ protected:
 protected:
     NiceMock<AbstractViewMock> viewMock;
     NiceMock<SourcePathCacheMockWithPaths> pathCacheMock{"/path/foo.qml"};
-    NiceMock<ProjectStorageMockWithQtQtuick> projectStorageMock{pathCacheMock.sourceId};
+    NiceMock<ProjectStorageMockWithQtQuick> projectStorageMock{pathCacheMock.sourceId, "/path"};
     QmlDesigner::ModelResourceManagement management;
     QmlDesigner::Model model{{projectStorageMock, pathCacheMock},
                              "Item",
@@ -280,7 +280,6 @@ INSTANTIATE_TEST_SUITE_P(
     ForTarget,
     testing::Values(TargetData{"QtQuick.Item", "QtQuick.PropertyChanges", "target"},
                     TargetData{"QtQuick.Item", "QtQuick.Timeline.KeyframeGroup", "target"},
-                    TargetData{"FlowView.FlowTransition", "FlowView.FlowActionArea", "target"},
                     TargetData{"QtQuick.Item", "QtQuick.PropertyAnimation", "target"},
                     TargetData{"FlowView.FlowItem", "FlowView.FlowTransition", "to"},
                     TargetData{"FlowView.FlowItem", "FlowView.FlowTransition", "from"}));

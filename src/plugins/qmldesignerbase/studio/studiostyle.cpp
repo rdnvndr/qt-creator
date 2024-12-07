@@ -11,6 +11,8 @@
 #include <QMenu>
 #include <QPainter>
 #include <QStyleOption>
+#include <QtGui/private/qguiapplication_p.h>
+#include <QtGui/qpa/qplatformtheme.h>
 
 #define ANIMATE_SCROLLBARS QT_CONFIG(animation)
 using namespace Utils;
@@ -29,7 +31,7 @@ inline QColor studioTextColor(bool enabled,
                        : Theme::DStextColor)
                     : Theme::DStextColorDisabled;
 
-    return creatorTheme()->color(themePenColorId);
+    return creatorColor(themePenColorId);
 }
 
 inline QColor studioButtonBgColor(bool enabled,
@@ -51,7 +53,7 @@ inline QColor studioButtonBgColor(bool enabled,
                  )
             : Theme::DScontrolBackgroundDisabled;
 
-    return creatorTheme()->color(themePenColorId);
+    return creatorColor(themePenColorId);
 }
 
 inline QColor studioButtonOutlineColor(bool enabled,
@@ -67,7 +69,7 @@ inline QColor studioButtonOutlineColor(bool enabled,
                : Theme::DScontrolOutline)
             : Theme::DScontrolOutlineDisabled;
 
-    return creatorTheme()->color(themePenColorId);
+    return creatorColor(themePenColorId);
 }
 
 inline bool anyParentsFocused(const QWidget *widget)
@@ -109,6 +111,17 @@ bool isQmlEditorMenu(const QWidget *widget)
     return false;
 }
 
+bool hasHoverFrame(const QStyleOption *option)
+{
+    return option->styleObject && option->styleObject->property("_qdss_hoverFrame").toBool();
+}
+
+bool isHovered(const QStyleOption *option)
+{
+    return option->state
+           && option->state.testFlags({QStyle::State_Enabled, QStyle::State_MouseOver});
+}
+
 inline QPixmap getPixmapFromIcon(
     const QIcon &icon, const QSize &size, bool enabled, bool active, bool checked)
 {
@@ -134,6 +147,37 @@ inline QRect expandScrollRect(const QRect &ref,
         return ref.adjusted(newDiff, 0, 0, 0);
     }
 }
+
+namespace FusionStyleHelper {
+bool isMacSystemPalette(const QPalette &pal)
+{
+    if (!Utils::HostOsInfo::isMacHost())
+        return false;
+
+    const QPalette *themePalette = QGuiApplicationPrivate::platformTheme()->palette();
+    return themePalette
+           && themePalette->color(QPalette::Normal, QPalette::Highlight)
+                  == pal.color(QPalette::Normal, QPalette::Highlight)
+           && themePalette->color(QPalette::Normal, QPalette::HighlightedText)
+                  == pal.color(QPalette::Normal, QPalette::HighlightedText);
+}
+
+QColor highlight(const QPalette &pal)
+{
+    if (isMacSystemPalette(pal))
+        return QColor(60, 140, 230);
+    return pal.color(QPalette::Highlight);
+}
+
+QColor highlightedOutline(const QPalette &pal)
+{
+    QColor highlightedOutline = highlight(pal).darker(125);
+    if (highlightedOutline.value() > 160)
+        highlightedOutline.setHsl(highlightedOutline.hue(), highlightedOutline.saturation(), 160);
+    return highlightedOutline;
+}
+
+} // namespace FusionStyleHelper
 
 } // namespace
 
@@ -187,15 +231,25 @@ void StudioStyle::drawPrimitive(
     case PE_FrameMenu:
     case PE_PanelMenu:
         if (isQmlEditorMenu(widget))
-            painter->fillRect(option->rect, creatorTheme()->color(Theme::DSsubPanelBackground));
+            painter->fillRect(option->rect, creatorColor(Theme::DSsubPanelBackground));
         else
             Super::drawPrimitive(element, option, painter, widget);
         break;
 
-    case PE_PanelButtonCommand:
-        if (!isQmlEditorMenu(widget))
-            Super::drawPrimitive(element, option, painter, widget);
-        break;
+    case PE_PanelButtonCommand: {
+        if (isQmlEditorMenu(widget))
+            break;
+
+        if (hasHoverFrame(option) && isHovered(option)) {
+            painter->save();
+            painter->setPen(FusionStyleHelper::highlightedOutline(option->palette));
+            painter->setBrush(Qt::NoBrush);
+            painter->drawRect(QRectF(option->rect).adjusted(0.5, 0.5, -0.5, -0.5));
+            painter->restore();
+            break;
+        }
+        Super::drawPrimitive(element, option, painter, widget);
+    } break;
     case PE_FrameDefaultButton: {
         if (const auto button = qstyleoption_cast<const QStyleOptionButton *>(option)) {
             bool enabled = button->state & QStyle::State_Enabled;
@@ -241,7 +295,7 @@ void StudioStyle::drawPrimitive(
         }
 
         // The separator color is currently the same as toolbar bg
-        painter->fillRect(colorRect, creatorTheme()->color(Theme::DStoolbarBackground));
+        painter->fillRect(colorRect, creatorColor(Theme::DStoolbarBackground));
     } break;
 
     default: {
@@ -282,7 +336,7 @@ void StudioStyle::drawControl(
             QStyleOptionMenuItem item = *mbi;
 
             if (isActive) {
-                painter->fillRect(item.rect, creatorTheme()->color(Theme::DSinteraction));
+                painter->fillRect(item.rect, creatorColor(Theme::DSinteraction));
             }
             forwardX += startMargin;
 
@@ -294,7 +348,7 @@ void StudioStyle::drawControl(
                                       item.rect.right() - additionalMargin,
                                       commonHeight);
 
-                painter->setPen(creatorTheme()->color(Theme::DSstateSeparatorColor));
+                painter->setPen(creatorColor(Theme::DSstateSeparatorColor));
                 painter->drawLine(separatorLine);
                 item.text.clear();
                 painter->restore();
@@ -458,7 +512,7 @@ void StudioStyle::drawComplexControl(
                           : Theme::DSpopupBackground // Idle
                     : Theme::DSpopupBackground; // Disabled
 
-            QColor frameColor = creatorTheme()->color(themeframeColor);
+            QColor frameColor = creatorColor(themeframeColor);
 
             if ((option->subControls & SC_SliderGroove) && groove.isValid()) {
                 Theme::Color themeBgPlusColor = enabled
@@ -494,9 +548,9 @@ void StudioStyle::drawComplexControl(
 
                 painter->save();
                 painter->setPen(Qt::NoPen);
-                painter->setBrush(creatorTheme()->color(themeBgPlusColor));
+                painter->setBrush(creatorColor(themeBgPlusColor));
                 painter->drawRoundedRect(plusRect, borderRadius, borderRadius);
-                painter->setBrush(creatorTheme()->color(themeBgMinusColor));
+                painter->setBrush(creatorColor(themeBgMinusColor));
                 painter->drawRoundedRect(minusRect, borderRadius, borderRadius);
                 painter->restore();
             }
@@ -509,7 +563,7 @@ void StudioStyle::drawComplexControl(
                         : Theme::DScontrolBackgroundDisabled;
 
                 painter->setBrush(Qt::NoBrush);
-                painter->setPen(creatorTheme()->color(tickPen));
+                painter->setPen(creatorColor(tickPen));
                 int tickSize = proxy()->pixelMetric(PM_SliderTickmarkOffset, option, widget);
                 int available = proxy()->pixelMetric(PM_SliderSpaceAvailable, slider, widget);
                 int interval = slider->tickInterval;
@@ -577,7 +631,7 @@ void StudioStyle::drawComplexControl(
                 int halfSliderThickness = horizontal
                         ? handle.width() / 2
                         : handle.height() / 2;
-                painter->setBrush(creatorTheme()->color(handleColor));
+                painter->setBrush(creatorColor(handleColor));
                 painter->setPen(Qt::NoPen);
                 painter->drawRoundedRect(handle,
                                         halfSliderThickness,
@@ -594,7 +648,15 @@ void StudioStyle::drawComplexControl(
         }
     } break;
     case CC_ComboBox: {
-        painter->fillRect(option->rect, standardPalette().brush(QPalette::ColorRole::Base));
+        if (hasHoverFrame(option)) {
+            if (isHovered(option)) {
+                painter->fillRect(
+                    QRectF(option->rect).adjusted(0.5, 0.5, -0.5, -0.5),
+                    FusionStyleHelper::highlight(option->palette));
+            }
+        } else {
+            painter->fillRect(option->rect, standardPalette().brush(QPalette::ColorRole::Base));
+        }
         Super::drawComplexControl(control, option, painter, widget);
     } break;
 
@@ -733,7 +795,7 @@ void StudioStyle::drawComplexControl(
             bool enabled = scrollBar->state & QStyle::State_Enabled;
             bool hovered = enabled && scrollBar->state & QStyle::State_MouseOver;
 
-            QColor buttonColor = creatorTheme()->color(hovered ? Theme::DSscrollBarHandle
+            QColor buttonColor = creatorColor(hovered ? Theme::DSscrollBarHandle
                                                                : Theme::DSscrollBarHandle_idle);
             QColor gradientStartColor = buttonColor.lighter(118);
             QColor gradientStopColor = buttonColor;
@@ -753,12 +815,12 @@ void StudioStyle::drawComplexControl(
                 painter->save();
                 painter->setPen(Qt::NoPen);
                 if (hasTransientStyle) {
-                    QColor brushColor(creatorTheme()->color(Theme::DSscrollBarTrack));
+                    QColor brushColor(creatorColor(Theme::DSscrollBarTrack));
                     brushColor.setAlpha(0.3 * 255);
                     painter->setBrush(QBrush(brushColor));
                     painter->drawRoundedRect(scrollBarGroove, 4, 4);
                 } else {
-                    painter->setBrush(QBrush(creatorTheme()->color(Theme::DSscrollBarTrack)));
+                    painter->setBrush(QBrush(creatorColor(Theme::DSscrollBarTrack)));
                     painter->drawRect(rect);
                 }
                 painter->restore();
@@ -973,15 +1035,6 @@ QRect StudioStyle::subControlRect(
         SubControl subControl,
         const QWidget *widget) const
 {
-#if QT_VERSION < QT_VERSION_CHECK(6, 2, 5)
-    // Workaround for QTBUG-101581, can be removed when building with Qt 6.2.5 or higher
-    if (control == CC_ScrollBar) {
-        const auto scrollbar = qstyleoption_cast<const QStyleOptionSlider *>(option);
-        if (scrollbar && qint64(scrollbar->maximum) - scrollbar->minimum > INT_MAX)
-            return QRect(); // breaks the scrollbar, but avoids the crash
-    }
-#endif
-
     switch (control) {
     case CC_Slider: {
         if (const auto slider = qstyleoption_cast<const QStyleOptionSlider *>(option)) {

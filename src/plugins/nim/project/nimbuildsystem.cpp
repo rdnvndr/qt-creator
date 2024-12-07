@@ -25,14 +25,6 @@ const char EXCLUDED_FILES_KEY[] = "ExcludedFiles";
 NimProjectScanner::NimProjectScanner(Project *project)
     : m_project(project)
 {
-    m_scanner.setFilter([this](const Utils::MimeType &, const FilePath &fp) {
-        const QString path = fp.toString();
-        return excludedFiles().contains(path)
-                || path.endsWith(".nimproject")
-                || path.contains(".nimproject.user")
-                || path.contains(".nimble.user");
-    });
-
     connect(&m_directoryWatcher, &FileSystemWatcher::directoryChanged,
             this, &NimProjectScanner::directoryChanged);
     connect(&m_directoryWatcher, &FileSystemWatcher::fileChanged,
@@ -44,8 +36,8 @@ NimProjectScanner::NimProjectScanner(Project *project)
     connect(&m_scanner, &TreeScanner::finished, this, [this] {
         // Collect scanned nodes
         std::vector<std::unique_ptr<FileNode>> nodes;
-        const TreeScanner::Result scanResult = m_scanner.release();
-        for (FileNode *node : scanResult.allFiles) {
+        TreeScanner::Result scanResult = m_scanner.release();
+        for (FileNode *node : scanResult.takeAllFiles()) {
             if (!node->path().endsWith(".nim") && !node->path().endsWith(".nimble"))
                 node->setEnabled(false); // Disable files that do not end in .nim
             nodes.emplace_back(node);
@@ -91,6 +83,13 @@ void NimProjectScanner::saveSettings()
 
 void NimProjectScanner::startScan()
 {
+    m_scanner.setFilter(
+        [excludedFiles = excludedFiles()](const Utils::MimeType &, const FilePath &fp) {
+            const QString path = fp.toString();
+            return excludedFiles.contains(path) || path.endsWith(".nimproject")
+                   || path.contains(".nimproject.user") || path.contains(".nimble.user");
+        });
+
     m_scanner.asyncScanForFiles(m_project->projectDirectory());
 }
 
@@ -139,6 +138,32 @@ bool NimProjectScanner::renameFile(const QString &, const QString &to)
 
     return true;
 }
+
+// NimBuildSystem
+
+class NimBuildSystem final : public BuildSystem
+{
+public:
+    explicit NimBuildSystem(Target *target);
+
+    bool supportsAction(Node *, ProjectAction action, const Node *node) const final;
+    bool addFiles(Node *node, const FilePaths &filePaths, FilePaths *) final;
+    RemovedFilesFromProject removeFiles(Node *node,
+                                        const FilePaths &filePaths,
+                                        FilePaths *) final;
+    bool deleteFiles(Node *, const FilePaths &) final;
+    bool renameFiles(
+        Node *,
+        const Utils::FilePairs &filesToRename,
+        Utils::FilePaths *notRenamed) final;
+    QString name() const final { return QLatin1String("nim"); }
+
+    void triggerParsing() final;
+
+protected:
+    ParseGuard m_guard;
+    NimProjectScanner m_projectScanner;
+};
 
 NimBuildSystem::NimBuildSystem(Target *target)
     : BuildSystem(target), m_projectScanner(target->project())
@@ -215,9 +240,22 @@ bool NimBuildSystem::deleteFiles(Node *, const FilePaths &)
     return true;
 }
 
-bool NimBuildSystem::renameFile(Node *, const FilePath &oldFilePath, const FilePath &newFilePath)
+bool NimBuildSystem::renameFiles(Node *, const FilePairs &filesToRename, FilePaths *notRenamed)
 {
-    return m_projectScanner.renameFile(oldFilePath.toString(), newFilePath.toString());
+    bool success = true;
+    for (const auto &[oldFilePath, newFilePath] : filesToRename) {
+        if (!m_projectScanner.renameFile(oldFilePath.toString(), newFilePath.toString())) {
+            success = false;
+            if (notRenamed)
+                *notRenamed << oldFilePath;
+        }
+    }
+    return success;
+}
+
+BuildSystem *createNimBuildSystem(Target *target)
+{
+    return new NimBuildSystem(target);
 }
 
 } // namespace Nim

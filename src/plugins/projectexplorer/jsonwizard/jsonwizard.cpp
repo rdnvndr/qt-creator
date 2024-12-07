@@ -16,6 +16,9 @@
 #include <coreplugin/editormanager/ieditor.h>
 #include <coreplugin/messagemanager.h>
 
+#include <extensionsystem/pluginmanager.h>
+#include <extensionsystem/pluginspec.h>
+
 #include <utils/algorithm.h>
 #include <utils/itemviews.h>
 #include <utils/qtcassert.h>
@@ -143,6 +146,9 @@ JsonWizard::JsonWizard(QWidget *parent)
     // override default JS macro by custom one that adds Wizard specific features
     m_jsExpander.registerObject("Wizard", new Internal::JsonWizardJsExtension(this));
     m_jsExpander.engine().evaluate("var value = Wizard.value");
+    m_jsExpander.engine().evaluate("var isPluginRunning = Wizard.isPluginRunning");
+    m_jsExpander.engine().evaluate("var isAnyPluginRunning = Wizard.isAnyPluginRunning");
+
     m_jsExpander.registerForExpander(&m_expander);
 }
 
@@ -219,14 +225,14 @@ QString JsonWizard::stringValue(const QString &n) const
     if (!v.isValid())
         return {};
 
-    if (v.typeId() == QVariant::String) {
+    if (v.typeId() == QMetaType::QString) {
         QString tmp = m_expander.expand(v.toString());
         if (tmp.isEmpty())
             tmp = QString::fromLatin1(""); // Make sure isNull() is *not* true.
         return tmp;
     }
 
-    if (v.typeId() == QVariant::StringList)
+    if (v.typeId() == QMetaType::QStringList)
         return stringListToArrayString(v.toStringList(), &m_expander);
 
     return v.toString();
@@ -277,7 +283,7 @@ QVariant JsonWizard::value(const QString &n) const
 
 bool JsonWizard::boolFromVariant(const QVariant &v, MacroExpander *expander)
 {
-    if (v.typeId() == QVariant::String) {
+    if (v.typeId() == QMetaType::QString) {
         const QString tmp = expander->expand(v.toString());
         return !(tmp.isEmpty() || tmp == QLatin1String("false"));
     }
@@ -419,7 +425,7 @@ void JsonWizard::handleError(const QString &message)
 
 QString JsonWizard::stringify(const QVariant &v) const
 {
-    if (v.typeId() == QVariant::StringList)
+    if (v.typeId() == QMetaType::QStringList)
         return stringListToArrayString(v.toStringList(), &m_expander);
     return Wizard::stringify(v);
 }
@@ -435,7 +441,7 @@ void JsonWizard::openFiles(const JsonWizard::GeneratorFiles &files)
     bool openedSomething = stringValue("DoNotOpenFile") == "true";
     static const auto formatFile = [](Core::IEditor *editor) {
         editor->document()->formatContents();
-        editor->document()->save(nullptr);
+        editor->document()->save();
     };
     for (const JsonWizard::GeneratorFile &f : files) {
         const Core::GeneratedFile &file = f.file;
@@ -534,6 +540,25 @@ JsonWizardJsExtension::JsonWizardJsExtension(JsonWizard *wizard)
 QVariant JsonWizardJsExtension::value(const QString &name) const
 {
     return m_wizard->expander()->expandVariant(m_wizard->value(name));
+}
+
+bool JsonWizardJsExtension::isPluginRunning(const QString &id) const
+{
+    return Internal::isAnyPluginRunning({id});
+}
+bool JsonWizardJsExtension::isAnyPluginRunning(const QStringList &ids) const
+{
+    return Internal::isAnyPluginRunning(ids);
+}
+
+bool isAnyPluginRunning(const QStringList &ids)
+{
+    QTC_CHECK(Utils::allOf(ids, [](const QString &id) { return id.isLower(); }));
+
+    return Utils::anyOf(
+        ExtensionSystem::PluginManager::plugins(), [ids](const ExtensionSystem::PluginSpec *s) {
+            return s->state() == ExtensionSystem::PluginSpec::Running && ids.contains(s->id());
+        });
 }
 
 } // namespace Internal

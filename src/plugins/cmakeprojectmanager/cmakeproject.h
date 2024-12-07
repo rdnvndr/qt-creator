@@ -4,6 +4,7 @@
 #pragma once
 
 #include "cmake_global.h"
+#include "cmakespecificsettings.h"
 #include "presetsparser.h"
 
 #include <projectexplorer/project.h>
@@ -30,9 +31,12 @@ public:
 
     Internal::PresetsData presetsData() const;
     void readPresets();
+    Utils::FilePath buildDirectoryToImport() const;
 
     void setOldPresetKits(const QList<ProjectExplorer::Kit *> &presetKits) const;
     QList<ProjectExplorer::Kit *> oldPresetKits() const;
+
+    Internal::CMakeSpecificSettings &settings();
 
 protected:
     bool setupTarget(ProjectExplorer::Target *t) final;
@@ -50,6 +54,8 @@ private:
 
     ProjectExplorer::Tasks m_issues;
     Internal::PresetsData m_presetsData;
+    Internal::CMakeSpecificSettings m_settings;
+    Utils::FilePath m_buildDirToImport;
 };
 
 } // namespace CMakeProjectManager

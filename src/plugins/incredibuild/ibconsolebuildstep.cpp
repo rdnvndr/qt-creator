@@ -34,9 +34,12 @@ public:
     BoolAspect keepJobNum{this};
 
     TextDisplay t2{this, "<i>" + Tr::tr("Enter the appropriate arguments to your build command.")};
-    TextDisplay t3{this, "<i>" + Tr::tr("Make sure the build command's "
-                                        "multi-job parameter value is large enough (such as "
-                                        "-j200 for the JOM or Make build tools)")};
+    TextDisplay
+        t3{this,
+           "<i>"
+               + Tr::tr("Make sure the build command's "
+                        "multi-job parameter value is large enough (such as "
+                        "-j200 for the JOM or Make build tools).")};
 
     TextDisplay t4{this, "<b>" + Tr::tr("IncrediBuild Distribution Control")};
 
@@ -97,12 +100,21 @@ void IBConsoleBuildStep::setupOutputFormatter(OutputFormatter *formatter)
 
 // IBConsoleStepFactory
 
-IBConsoleStepFactory::IBConsoleStepFactory()
+class IBConsoleStepFactory final : public BuildStepFactory
 {
-    registerStep<IBConsoleBuildStep>(IncrediBuild::Constants::IBCONSOLE_BUILDSTEP_ID);
-    setDisplayName(Tr::tr("IncrediBuild for Linux"));
-    setSupportedStepLists({ProjectExplorer::Constants::BUILDSTEPS_BUILD,
-                           ProjectExplorer::Constants::BUILDSTEPS_CLEAN});
+public:
+    IBConsoleStepFactory()
+    {
+        registerStep<IBConsoleBuildStep>(IncrediBuild::Constants::IBCONSOLE_BUILDSTEP_ID);
+        setDisplayName(Tr::tr("IncrediBuild for Linux"));
+        setSupportedStepLists({ProjectExplorer::Constants::BUILDSTEPS_BUILD,
+                               ProjectExplorer::Constants::BUILDSTEPS_CLEAN});
+    }
+};
+
+void setupIBConsoleStep()
+{
+    static IBConsoleStepFactory theIBConsoleStepFactory;
 }
 
 } // IncrediBuild::Internal

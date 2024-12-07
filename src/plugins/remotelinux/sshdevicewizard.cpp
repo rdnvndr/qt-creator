@@ -19,6 +19,7 @@
 #include <utils/utilsicons.h>
 
 #include <QLabel>
+#include <QLayout>
 #include <QPushButton>
 #include <QSpinBox>
 
@@ -76,7 +77,7 @@ private:
                && !m_userNameLineEdit->text().trimmed().isEmpty();
     }
     bool validatePage() final {
-        m_device->settings()->displayName.setValue(m_nameLineEdit->text().trimmed());
+        m_device->setDisplayName(m_nameLineEdit->text().trimmed());
         SshParameters sshParams = m_device->sshParameters();
         sshParams.setHost(m_hostNameLineEdit->text().trimmed());
         sshParams.setUserName(m_userNameLineEdit->text().trimmed());

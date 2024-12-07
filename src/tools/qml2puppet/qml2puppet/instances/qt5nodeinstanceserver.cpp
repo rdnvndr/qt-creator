@@ -89,6 +89,7 @@ void Qt5NodeInstanceServer::initializeView()
 
     m_viewData.renderControl = new QQuickRenderControl;
     m_viewData.window = new QQuickWindow(m_viewData.renderControl);
+    m_viewData.window->setColor(Qt::transparent);
     setPipelineCacheConfig(m_viewData.window);
     m_viewData.renderControl->initialize();
     m_qmlEngine = new QQmlEngine;
@@ -379,9 +380,11 @@ QImage Qt5NodeInstanceServer::grabRenderControl([[maybe_unused]] RenderViewData 
     QRhiReadbackResult readResult;
     readResult.completed = [&] {
         readCompleted = true;
-        QImage wrapperImage(reinterpret_cast<const uchar *>(readResult.data.constData()),
-                            readResult.pixelSize.width(), readResult.pixelSize.height(),
-                            QImage::Format_RGBA8888_Premultiplied);
+        QImage wrapperImage(
+            reinterpret_cast<const uchar *>(readResult.data.constData()),
+            readResult.pixelSize.width(),
+            readResult.pixelSize.height(),
+            QImage::Format_RGBA8888_Premultiplied);
         if (viewData.rhi->isYUpInFramebuffer())
             renderImage = wrapperImage.mirrored();
         else
@@ -436,9 +439,17 @@ QQuickItem *Qt5NodeInstanceServer::parentEffectItem(QQuickItem *item)
     return nullptr;
 }
 
-static bool isEffectItem(QQuickItem *item, QQuickShaderEffectSource *sourceItem)
+static bool isEffectItem(QQuickItem *item, QQuickShaderEffectSource *sourceItem, QQuickItem *target)
 {
     QQuickItemPrivate *pItem = QQuickItemPrivate::get(sourceItem);
+
+    if (item) {
+         QQmlProperty prop(item, "__effect");
+         if (prop.read().toBool()) {
+             prop = QQmlProperty(item, "source");
+             return prop.read().value<QQuickItem *>() == target;
+         }
+    }
 
     if (!pItem || !pItem->layer())
         return false;
@@ -477,7 +488,7 @@ QImage Qt5NodeInstanceServer::grabItem([[maybe_unused]] QQuickItem *item)
             if (auto parent = item->parentItem()) {
                 const auto siblings = parent->childItems();
                 for (auto sibling : siblings) {
-                    if (isEffectItem(sibling, pItem->layer()->effectSource()))
+                    if (isEffectItem(sibling, pItem->layer()->effectSource(), item))
                         return grabItem(sibling);
                 }
             }

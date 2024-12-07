@@ -27,7 +27,7 @@
 #include <qmldebug/qmloutputparser.h>
 
 #include <utils/fileutils.h>
-#include <utils/process.h>
+#include <utils/qtcprocess.h>
 #include <utils/stringutils.h>
 #include <utils/url.h>
 #include <utils/utilsicons.h>
@@ -62,7 +62,7 @@ namespace Ios::Internal {
 
 static QString identifierForRunControl(RunControl *runControl)
 {
-    const IosDeviceTypeAspect::Data *data = runControl->aspect<IosDeviceTypeAspect>();
+    const IosDeviceTypeAspect::Data *data = runControl->aspectData<IosDeviceTypeAspect>();
     return data ? data->deviceType.identifier : QString();
 }
 
@@ -125,7 +125,7 @@ DeviceCtlRunner::DeviceCtlRunner(RunControl *runControl)
     : RunWorker(runControl)
 {
     setId("IosDeviceCtlRunner");
-    const IosDeviceTypeAspect::Data *data = runControl->aspect<IosDeviceTypeAspect>();
+    const IosDeviceTypeAspect::Data *data = runControl->aspectData<IosDeviceTypeAspect>();
     QTC_ASSERT(data, return);
     m_bundlePath = data->bundleDirectory;
     m_arguments = ProcessArgs::splitArgs(runControl->commandLine().arguments(), OsTypeMac);
@@ -222,11 +222,7 @@ GroupItem DeviceCtlRunner::killProcess(Storage<AppInfo> &appInfo)
                              QString::number(appInfo->processIdentifier)}});
         return SetupResult::Continue;
     };
-    const auto onDone = [] {
-        // we tried our best and don't care at this point
-        return DoneResult::Success;
-    };
-    return ProcessTask(onSetup, onDone);
+    return ProcessTask(onSetup, DoneResult::Success); // we tried our best and don't care at this point
 }
 
 GroupItem DeviceCtlRunner::launchTask(const QString &bundleIdentifier)
@@ -237,17 +233,17 @@ GroupItem DeviceCtlRunner::launchTask(const QString &bundleIdentifier)
             return SetupResult::StopWithError;
         }
         process.setCommand({FilePath::fromString("/usr/bin/xcrun"),
-                            QStringList{"devicectl",
-                                        "device",
-                                        "process",
-                                        "launch",
-                                        "--device",
-                                        m_device->uniqueInternalDeviceId(),
-                                        "--quiet",
-                                        "--json-output",
-                                        "-",
-                                        bundleIdentifier}
-                                + m_arguments});
+                            {"devicectl",
+                             "device",
+                             "process",
+                             "launch",
+                             "--device",
+                             m_device->uniqueInternalDeviceId(),
+                             "--quiet",
+                             "--json-output",
+                             "-",
+                             bundleIdentifier,
+                             m_arguments}});
         return SetupResult::Continue;
     };
     const auto onDone = [this](const Process &process, DoneWith result) {
@@ -425,6 +421,7 @@ private:
     void handleGotInferiorPid(Ios::IosToolHandler *handler, const FilePath &bundlePath,
                               const QString &deviceId, qint64 pid);
     void handleAppOutput(Ios::IosToolHandler *handler, const QString &output);
+    void handleMessage(const QString &msg);
     void handleErrorMsg(Ios::IosToolHandler *handler, const QString &msg);
     void handleToolExited(Ios::IosToolHandler *handler, int code);
     void handleFinished(Ios::IosToolHandler *handler);
@@ -447,7 +444,7 @@ IosRunner::IosRunner(RunControl *runControl)
 {
     setId("IosRunner");
     stopRunningRunControl(runControl);
-    const IosDeviceTypeAspect::Data *data = runControl->aspect<IosDeviceTypeAspect>();
+    const IosDeviceTypeAspect::Data *data = runControl->aspectData<IosDeviceTypeAspect>();
     QTC_ASSERT(data, return);
     m_bundleDir = data->bundleDirectory;
     m_device = DeviceKitAspect::device(runControl->kit());
@@ -533,8 +530,8 @@ void IosRunner::start()
     m_toolHandler = new IosToolHandler(m_deviceType, this);
     connect(m_toolHandler, &IosToolHandler::appOutput,
             this, &IosRunner::handleAppOutput);
-    connect(m_toolHandler, &IosToolHandler::errorMsg,
-            this, &IosRunner::handleErrorMsg);
+    connect(m_toolHandler, &IosToolHandler::message, this, &IosRunner::handleMessage);
+    connect(m_toolHandler, &IosToolHandler::errorMsg, this, &IosRunner::handleErrorMsg);
     connect(m_toolHandler, &IosToolHandler::gotServerPorts,
             this, &IosRunner::handleGotServerPorts);
     connect(m_toolHandler, &IosToolHandler::gotInferiorPid,
@@ -631,6 +628,16 @@ void IosRunner::handleAppOutput(IosToolHandler *handler, const QString &output)
     appendMessage(output, StdOutFormat);
 }
 
+void IosRunner::handleMessage(const QString &msg)
+{
+    QString res(msg);
+    QRegularExpression qmlPortRe("QML Debugger: Waiting for connection on port ([0-9]+)...");
+    const QRegularExpressionMatch match = qmlPortRe.match(msg);
+    if (match.hasMatch() && m_qmlServerPort.isValid())
+        res.replace(match.captured(1), QString::number(m_qmlServerPort.number()));
+    appendMessage(res, StdOutFormat);
+}
+
 void IosRunner::handleErrorMsg(IosToolHandler *handler, const QString &msg)
 {
     Q_UNUSED(handler)
@@ -644,11 +651,6 @@ void IosRunner::handleErrorMsg(IosToolHandler *handler, const QString &msg)
         TaskHub::addTask(DeploymentTask(Task::Error, message));
         res.replace(lockedErr, message);
     }
-    QRegularExpression qmlPortRe("QML Debugger: Waiting for connection on port ([0-9]+)...");
-    const QRegularExpressionMatch match = qmlPortRe.match(msg);
-    if (match.hasMatch() && m_qmlServerPort.isValid())
-       res.replace(match.captured(1), QString::number(m_qmlServerPort.number()));
-
     appendMessage(res, StdErrFormat);
 }
 
@@ -813,14 +815,17 @@ void IosDebugSupport::start()
         setStartMode(AttachToRemoteProcess);
         setIosPlatform("remote-ios");
         const QString osVersion = dev->osVersion();
+        const QString productType = dev->productType();
         const QString cpuArchitecture = dev->cpuArchitecture();
-        const FilePaths symbolsPathCandidates = {
-            FilePath::fromString(QDir::homePath() + "/Library/Developer/Xcode/iOS DeviceSupport/"
-                                 + osVersion + " " + cpuArchitecture + "/Symbols"),
-            FilePath::fromString(QDir::homePath() + "/Library/Developer/Xcode/iOS DeviceSupport/"
-                                 + osVersion + "/Symbols"),
-            IosConfigurations::developerPath().pathAppended(
-                "Platforms/iPhoneOS.platform/DeviceSupport/" + osVersion + "/Symbols")};
+        const FilePath home = FilePath::fromString(QDir::homePath());
+        const FilePaths symbolsPathCandidates
+            = {home / "Library/Developer/Xcode/iOS DeviceSupport" / (productType + " " + osVersion)
+                   / "Symbols",
+               home / "Library/Developer/Xcode/iOS DeviceSupport"
+                   / (osVersion + " " + cpuArchitecture) / "Symbols",
+               home / "Library/Developer/Xcode/iOS DeviceSupport" / osVersion / "Symbols",
+               IosConfigurations::developerPath() / "Platforms/iPhoneOS.platform/DeviceSupport"
+                   / osVersion / "Symbols"};
         const FilePath deviceSdk = Utils::findOrDefault(symbolsPathCandidates, &FilePath::isDir);
 
         if (deviceSdk.isEmpty()) {
@@ -837,7 +842,7 @@ void IosDebugSupport::start()
         setIosPlatform("ios-simulator");
     }
 
-    const IosDeviceTypeAspect::Data *data = runControl()->aspect<IosDeviceTypeAspect>();
+    const IosDeviceTypeAspect::Data *data = runControl()->aspectData<IosDeviceTypeAspect>();
     QTC_ASSERT(data, reportFailure("Broken IosDeviceTypeAspect setup."); return);
 
     setRunControlName(data->applicationName);

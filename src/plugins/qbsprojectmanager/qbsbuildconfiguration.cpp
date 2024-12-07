@@ -26,10 +26,10 @@
 #include <qtsupport/qtkitaspect.h>
 
 #include <utils/mimeconstants.h>
-#include <utils/process.h>
+#include <utils/fileutils.h>
+#include <utils/qtcprocess.h>
 #include <utils/qtcassert.h>
 
-#include <QCoreApplication>
 #include <QCryptographicHash>
 
 using namespace ProjectExplorer;
@@ -44,8 +44,7 @@ static FilePath defaultBuildDirectory(const FilePath &projectFilePath, const Kit
 {
     const QString projectName = projectFilePath.completeBaseName();
     return BuildConfiguration::buildDirectoryFromTemplate(
-                Project::projectDirectory(projectFilePath),
-                projectFilePath, projectName, k, bcName, buildType, "qbs");
+        projectFilePath.absolutePath(), projectFilePath, projectName, k, bcName, buildType, "qbs");
 }
 
 // ---------------------------------------------------------------------------

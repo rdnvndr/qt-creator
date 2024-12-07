@@ -15,6 +15,7 @@ public:
     MOCK_METHOD(QString, qmlPuppetFallbackDirectory, (), (const, override));
     MOCK_METHOD(QString, defaultPuppetToplevelBuildDirectory, (), (const, override));
     MOCK_METHOD(QUrl, projectUrl, (), (const, override));
+    MOCK_METHOD(QString, projectName, (), (const, override));
     MOCK_METHOD(QString, currentProjectDirPath, (), (const, override));
     MOCK_METHOD(QUrl, currentResourcePath, (), (const, override));
     MOCK_METHOD(void, parseItemLibraryDescriptions, (), (override));
@@ -40,4 +41,6 @@ public:
     MOCK_METHOD(bool, isQtForMcusProject, (), (const, override));
     MOCK_METHOD(QString, qtQuickVersion, (), (const, override));
     MOCK_METHOD(Utils::FilePath, resourcePath, (const QString &relativePath), (const, override));
+    MOCK_METHOD(QString, userResourcePath, (QStringView relativePath), (const, override));
+    MOCK_METHOD(QWidget *, mainWindow, (), (const, override));
 };

@@ -65,16 +65,23 @@ public:
             const QString &filterText,
             Qt::CaseSensitivity caseSensitivity,
             bool regexp,
-            bool isInverted);
+            bool isInverted,
+            int beforeContext,
+            int afterContext);
+
+    void setOutputFileNameHint(const QString &fileName);
 
 signals:
     void wheelZoom();
+    void outputDiscarded();
 
 public slots:
     void setWordWrapEnabled(bool wrap);
+    void setDiscardExcessiveOutput(bool discard);
 
 protected:
     virtual void handleLink(const QPoint &pos);
+    virtual void adaptContextMenu(QMenu *menu, const QPoint &pos);
 
 private:
     QMimeData *createMimeDataFromSelection() const override;
@@ -85,13 +92,24 @@ private:
     void resizeEvent(QResizeEvent *e) override;
     void showEvent(QShowEvent *) override;
     void wheelEvent(QWheelEvent *e) override;
+    void contextMenuEvent(QContextMenuEvent *event) override;
 
     using QPlainTextEdit::setFont; // call setBaseFont instead, which respects the zoom factor
     void enableUndoRedo();
     void filterNewContent();
     void handleNextOutputChunk();
-    void handleOutputChunk(const QString &output, Utils::OutputFormat format);
+
+    enum class ChunkCompleteness { Complete, Split };
+    void handleOutputChunk(
+        const QString &output, Utils::OutputFormat format, ChunkCompleteness completeness);
+
+    void discardExcessiveOutput();
+    void discardPendingToolOutput();
     void updateAutoScroll();
+    int totalQueuedSize() const;
+
+    using TextMatchingFunction = std::function<bool(const QString &text)>;
+    TextMatchingFunction makeMatchingFunction() const;
 
     Internal::OutputWindowPrivate *d = nullptr;
 };

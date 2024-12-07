@@ -27,9 +27,10 @@
 #include <texteditor/texteditor.h>
 
 #include <utils/aspects.h>
+#include <utils/fileutils.h>
 #include <utils/layoutbuilder.h>
 #include <utils/pathchooser.h>
-#include <utils/process.h>
+#include <utils/qtcprocess.h>
 
 #include <QAction>
 #include <QCheckBox>
@@ -225,6 +226,8 @@ public:
             settings().apply();
             s.save();
         });
+
+        setOnCancel([] { settings().cancel(); });
     }
 };
 
@@ -252,8 +255,9 @@ public:
             .addToContainer(menuId)
             .addOnTriggered(this, &Uncrustify::formatSelectedText);
 
-        connect(&settings().supportedMimeTypes, &Utils::BaseAspect::changed,
-                this, [this] { updateActions(Core::EditorManager::currentEditor()); });
+        settings().supportedMimeTypes.addOnChanged(this, [this] {
+            updateActions(Core::EditorManager::currentEditor());
+        });
     }
 
     QString id() const final

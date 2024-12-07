@@ -13,9 +13,7 @@
 
 #include <utils/cpplanguage_details.h>
 #include <utils/environment.h>
-#include <utils/fileutils.h>
-
-#include <QPointer>
+#include <utils/store.h>
 
 #include <functional>
 
@@ -52,7 +50,7 @@ class PROJECTEXPLORER_EXPORT RawProjectPart
 public:
     void setDisplayName(const QString &displayName);
 
-    void setProjectFileLocation(const QString &projectFile, int line = -1, int column = -1);
+    void setProjectFileLocation(const Utils::FilePath &projectFile, int line = -1, int column = -1);
     void setConfigFileName(const QString &configFileName);
     void setCallGroupId(const QString &id);
 
@@ -81,7 +79,7 @@ public:
 public:
     QString displayName;
 
-    QString projectFile;
+    Utils::FilePath projectFile;
     int projectFileLine = -1;
     int projectFileColumn = -1;
     QString callGroupId;
@@ -170,9 +168,13 @@ public:
     Utils::FilePath buildRoot;
     RawProjectParts rawProjectParts;
     RppGenerator rppGenerator;
+    Utils::Store cppSettings;
 
     ToolchainInfo cToolchainInfo;
     ToolchainInfo cxxToolchainInfo;
 };
+
+using CppSettingsRetriever = std::function<Utils::Store(const Project *)>;
+void PROJECTEXPLORER_EXPORT provideCppSettingsRetriever(const CppSettingsRetriever &retriever);
 
 } // namespace ProjectExplorer

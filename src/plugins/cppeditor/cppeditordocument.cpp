@@ -6,12 +6,13 @@
 #include "baseeditordocumentparser.h"
 #include "cppcodeformatter.h"
 #include "cppeditorconstants.h"
+#include "cppeditorlogging.h"
 #include "cppeditortr.h"
 #include "cppmodelmanager.h"
 #include "cppeditorconstants.h"
 #include "cppeditortr.h"
 #include "cpphighlighter.h"
-#include "cppquickfixassistant.h"
+#include "quickfixes/cppquickfixassistant.h"
 
 #include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/session.h>
@@ -20,7 +21,6 @@
 #include <texteditor/storagesettings.h>
 #include <texteditor/textdocumentlayout.h>
 #include <texteditor/texteditorsettings.h>
-#include <texteditor/syntaxhighlighterrunner.h>
 
 #include <utils/infobar.h>
 #include <utils/mimeconstants.h>
@@ -164,7 +164,7 @@ QByteArray CppEditorDocument::contentsText() const
 
 void CppEditorDocument::applyFontSettings()
 {
-    if (TextEditor::SyntaxHighlighterRunner *highlighter = syntaxHighlighterRunner())
+    if (TextEditor::SyntaxHighlighter *highlighter = syntaxHighlighter())
         highlighter->clearAllExtraFormats(); // Clear all additional formats since they may have changed
     TextDocument::applyFontSettings(); // rehighlights and updates additional formats
     if (m_processor)
@@ -308,6 +308,66 @@ void CppEditorDocument::setExtraPreprocessorDirectives(const QByteArray &directi
     }
 }
 
+void CppEditorDocument::setIfdefedOutBlocks(const QList<TextEditor::BlockRange> &blocks)
+{
+    if (syntaxHighlighter() && !syntaxHighlighter()->syntaxHighlighterUpToDate()) {
+        connect(syntaxHighlighter(),
+            &SyntaxHighlighter::finished,
+            this,
+            [this, blocks] { setIfdefedOutBlocks(blocks); },
+            Qt::SingleShotConnection);
+        return;
+    }
+
+    auto documentLayout = qobject_cast<TextDocumentLayout*>(document()->documentLayout());
+    QTC_ASSERT(documentLayout, return);
+
+    QTextBlock block = document()->firstBlock();
+    bool needUpdate = false;
+    int rangeNumber = 0;
+    int previousBraceDepth = 0;
+    while (block.isValid()) {
+        bool resetToPrevious = false;
+        if (rangeNumber < blocks.size()) {
+            const BlockRange &range = blocks.at(rangeNumber);
+            if (block.position() >= range.first()
+                && ((block.position() + block.length() - 1) <= range.last() || !range.last())) {
+                TextDocumentLayout::setIfdefedOut(block);
+                resetToPrevious = true;
+            } else {
+                TextDocumentLayout::clearIfdefedOut(block);
+                previousBraceDepth = TextDocumentLayout::braceDepth(block);
+                resetToPrevious = false;
+            }
+            if (block.contains(range.last()))
+                ++rangeNumber;
+        } else {
+            TextDocumentLayout::clearIfdefedOut(block);
+            resetToPrevious = false;
+        }
+
+        // Do not change brace depth and folding indent in ifdefed-out code.
+        if (resetToPrevious) {
+            const int currentBraceDepth = TextDocumentLayout::braceDepth(block);
+            const int currentFoldingIndent = TextDocumentLayout::foldingIndent(block);
+            if (currentBraceDepth != previousBraceDepth
+                || currentFoldingIndent != previousBraceDepth) {
+                TextDocumentLayout::setBraceDepth(block, previousBraceDepth);
+                TextDocumentLayout::setFoldingIndent(block, previousBraceDepth);
+                needUpdate = true;
+                qCDebug(highlighterLog)
+                    << "changing brace depth and folding indent to" << previousBraceDepth
+                    << "for line" << (block.blockNumber() + 1) << "in ifdefed out code";
+            }
+        }
+
+        block = block.next();
+    }
+
+    if (needUpdate)
+        documentLayout->requestUpdate();
+}
+
 void CppEditorDocument::setPreferredParseContext(const QString &parseContextId)
 {
     const BaseEditorDocumentParser::Ptr parser = processor()->parser();
@@ -408,7 +468,7 @@ BaseEditorDocumentProcessor *CppEditorDocument::processor()
         connect(m_processor.data(), &BaseEditorDocumentProcessor::cppDocumentUpdated, this,
                 [this](const CPlusPlus::Document::Ptr document) {
                     // Update syntax highlighter
-                    if (SyntaxHighlighterRunner *highlighter = syntaxHighlighterRunner())
+                    if (SyntaxHighlighter *highlighter = syntaxHighlighter())
                         highlighter->setLanguageFeaturesFlags(document->languageFeatures().flags);
 
                     m_overviewModel.update(usesClangd() ? nullptr : document);
@@ -429,10 +489,10 @@ TextEditor::TabSettings CppEditorDocument::tabSettings() const
     return indenter()->tabSettings().value_or(TextEditor::TextDocument::tabSettings());
 }
 
-bool CppEditorDocument::saveImpl(QString *errorString, const FilePath &filePath, bool autoSave)
+Result CppEditorDocument::saveImpl(const FilePath &filePath, bool autoSave)
 {
     if (!indenter()->formatOnSave() || autoSave)
-        return TextEditor::TextDocument::saveImpl(errorString, filePath, autoSave);
+        return TextEditor::TextDocument::saveImpl(filePath, autoSave);
 
     auto *layout = qobject_cast<TextEditor::TextDocumentLayout *>(document()->documentLayout());
     const int documentRevision = layout->lastSaveRevision;
@@ -470,12 +530,12 @@ bool CppEditorDocument::saveImpl(QString *errorString, const FilePath &filePath,
     settings.m_cleanWhitespace = false;
     setStorageSettings(settings);
 
-    return TextEditor::TextDocument::saveImpl(errorString, filePath, autoSave);
+    return TextEditor::TextDocument::saveImpl(filePath, autoSave);
 }
 
 bool CppEditorDocument::usesClangd() const
 {
-    return CppModelManager::usesClangd(this);
+    return CppModelManager::usesClangd(this).has_value();
 }
 
 void CppEditorDocument::onDiagnosticsChanged(const FilePath &fileName, const QString &kind)

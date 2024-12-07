@@ -17,6 +17,7 @@
 #include <projectexplorer/buildmanager.h>
 #include <projectexplorer/buildsteplist.h>
 #include <projectexplorer/gnumakeparser.h>
+#include <projectexplorer/kitaspects.h>
 #include <projectexplorer/makestep.h>
 #include <projectexplorer/processparameters.h>
 #include <projectexplorer/projectexplorer.h>
@@ -27,6 +28,7 @@
 
 #include <coreplugin/icore.h>
 #include <coreplugin/icontext.h>
+
 #include <qtsupport/qtkitaspect.h>
 #include <qtsupport/qtversionmanager.h>
 #include <qtsupport/qtsupportconstants.h>
@@ -36,9 +38,8 @@
 #include <utils/algorithm.h>
 #include <utils/hostosinfo.h>
 #include <utils/layoutbuilder.h>
-#include <utils/process.h>
+#include <utils/qtcprocess.h>
 #include <utils/utilsicons.h>
-#include <utils/variablechooser.h>
 
 #include <QDir>
 #include <QLabel>
@@ -68,7 +69,6 @@ QMakeStep::QMakeStep(BuildStepList *bsl, Id id)
     buildType.addOption(Tr::tr("Debug"));
     buildType.addOption(Tr::tr("Release"));
 
-    userArguments.setMacroExpander(macroExpander());
     userArguments.setSettingsKey(QMAKE_ARGUMENTS_KEY);
     userArguments.setLabelText(Tr::tr("Additional arguments:"));
 
@@ -188,7 +188,7 @@ bool QMakeStep::init()
     else
         workingDirectory = qmakeBc->buildDirectory();
 
-    m_qmakeCommand = CommandLine{qtVersion->qmakeFilePath(), allArguments(qtVersion), CommandLine::Raw};
+    m_qmakeCommand = {qtVersion->qmakeFilePath(), allArguments(qtVersion), CommandLine::Raw};
     m_runMakeQmake = (qtVersion->qtVersion() >= QVersionNumber(5, 0 ,0));
 
     // The Makefile is used by qmake and make on the build device, from that
@@ -216,7 +216,7 @@ bool QMakeStep::init()
                            OutputFormat::ErrorMessage);
             return false;
         }
-        m_makeCommand = CommandLine{make, makeArguments(makeFile.path()), CommandLine::Raw};
+        m_makeCommand = {make, makeArguments(makeFile.path()), CommandLine::Raw};
     } else {
         m_makeCommand = {};
     }
@@ -298,13 +298,12 @@ Tasking::GroupItem QMakeStep::runRecipe()
         m_needToRunQMake = false;
     };
 
-    QList<GroupItem> processList = {onGroupSetup(onSetup),
-                                    onGroupDone(onDone, CallDoneIf::Success),
-                                    ProcessTask(onQMakeSetup, onProcessDone)};
-    if (m_runMakeQmake)
-        processList << ProcessTask(onMakeQMakeSetup, onProcessDone);
-
-    return Group(processList);
+    return Group {
+        onGroupSetup(onSetup),
+        ProcessTask(onQMakeSetup, onProcessDone),
+        m_runMakeQmake ? ProcessTask(onMakeQMakeSetup, onProcessDone) : nullItem,
+        onGroupDone(onDone, CallDoneIf::Success)
+    };
 }
 
 void QMakeStep::setForced(bool b)
@@ -428,7 +427,7 @@ QWidget *QMakeStep::createConfigWidget()
     builder.addRow({userArguments});
     builder.addRow({effectiveCall});
     builder.addRow({abisLabel, abisListWidget});
-    builder.addItem(Layouting::noMargin);
+    builder.setNoMargins();
     auto widget = builder.emerge();
 
     qmakeBuildConfigChanged();
@@ -479,8 +478,6 @@ QWidget *QMakeStep::createConfigWidget()
         abisLabel = nullptr;
         abisListWidget = nullptr;
     });
-
-    VariableChooser::addSupportForChildWidgets(widget, macroExpander());
 
     return widget;
 }
@@ -648,12 +645,6 @@ void QMakeStep::updateAbiWidgets()
                             break;
                         }
                     }
-                }
-            } else if (qtVersion->hasAbi(Abi::DarwinOS) && !isIos(target()->kit()) && HostOsInfo::isRunningUnderRosetta()) {
-                // Automatically select arm64 when running under Rosetta
-                for (const Abi &abi : abis) {
-                    if (abi.architecture() == Abi::ArmArchitecture)
-                        selectedAbis.append(abi.param());
                 }
             }
         }

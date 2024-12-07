@@ -22,7 +22,7 @@
 #include <projectexplorer/target.h>
 #include <projectexplorer/runconfigurationaspects.h>
 
-#include <utils/process.h>
+#include <utils/qtcprocess.h>
 
 using namespace ProjectExplorer;
 using namespace Utils;
@@ -83,7 +83,7 @@ AppManagerInstallPackageStep::AppManagerInstallPackageStep(BuildStepList *bsl, I
             packageFile.setDefaultPathValue(packageFilePath);
         }
 
-        setEnabled(!targetInformation.isBuiltin);
+        setStepEnabled(!targetInformation.isBuiltin);
     };
 
     connect(target(), &Target::activeRunConfigurationChanged, this, updateAspects);

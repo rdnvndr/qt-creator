@@ -43,11 +43,11 @@ McuPackage::McuPackage(const SettingsHandler::Ptr &settingsHandler,
                        const McuPackageVersionDetector *versionDetector,
                        const bool addToSystemPath,
                        const Utils::PathChooser::Kind &valueType,
-                       const bool useNewestVersionKey)
+                       const bool allowNewerVersionKey)
     : settingsHandler(settingsHandler)
     , m_label(label)
     , m_detectionPaths(detectionPaths)
-    , m_settingsKey(settingsHandler->getVersionedKey(settingsKey, QSettings::SystemScope, versions, useNewestVersionKey))
+    , m_settingsKey(settingsKey)
     , m_versionDetector(versionDetector)
     , m_versions(versions)
     , m_cmakeVariableName(cmakeVarName)
@@ -56,8 +56,18 @@ McuPackage::McuPackage(const SettingsHandler::Ptr &settingsHandler,
     , m_addToSystemPath(addToSystemPath)
     , m_valueType(valueType)
 {
-    m_defaultPath = settingsHandler->getPath(m_settingsKey, QSettings::SystemScope, defaultPath);
-    m_path = settingsHandler->getPath(m_settingsKey, QSettings::UserScope, m_defaultPath);
+    // The installer writes versioned keys as well as the plain key as found in the kits.
+    // Use the versioned key in case the plain key was removed by an uninstall operation
+    const Utils::Key versionedKey = settingsHandler->getVersionedKey(settingsKey,
+                                                                     QSettings::SystemScope,
+                                                                     versions,
+                                                                     allowNewerVersionKey);
+    m_defaultPath = settingsHandler->getPath(versionedKey, QSettings::SystemScope, defaultPath);
+    m_path = settingsHandler->getPath(m_settingsKey, QSettings::UserScope, "");
+    // The user settings may have been written with a versioned key in older versions of QtCreator
+    if (m_path.isEmpty()) {
+        m_path = settingsHandler->getPath(versionedKey, QSettings::UserScope, m_defaultPath);
+    }
     if (m_path.isEmpty()) {
         m_path = FilePath::fromUserInput(qtcEnvironmentVariable(m_environmentVariableName));
     }
@@ -304,7 +314,7 @@ QWidget *McuPackage::widget()
     QObject::connect(this, &McuPackage::statusChanged, widget, [this] { updateStatusUi(); });
 
     QObject::connect(m_fileChooser, &PathChooser::textChanged, this, [this] {
-        setPath(m_fileChooser->rawFilePath());
+        setPath(m_fileChooser->unexpandedFilePath());
     });
 
     connect(this, &McuPackage::changed, m_fileChooser, [this] {
@@ -431,62 +441,56 @@ static Toolchain *mingwToolchain(const FilePath &path, Id language)
     return toolChain;
 }
 
+// FIXME: Do not register languages separately.
 static Toolchain *armGccToolchain(const FilePath &path, Id language)
 {
-    Toolchain *toolChain = ToolchainManager::toolchain([&path, language](const Toolchain *t) {
+    Toolchain *toolchain = ToolchainManager::toolchain([&path, language](const Toolchain *t) {
         return t->compilerCommand() == path && t->language() == language;
     });
-    if (!toolChain) {
-        ToolchainFactory *gccFactory
-            = Utils::findOrDefault(ToolchainFactory::allToolchainFactories(),
-                                   [](ToolchainFactory *f) {
-                                       return f->supportedToolchainType()
-                                              == ProjectExplorer::Constants::GCC_TOOLCHAIN_TYPEID;
-                                   });
-        if (gccFactory) {
-            const QList<Toolchain *> detected = gccFactory->detectForImport({path, language});
+    if (!toolchain) {
+        if (ToolchainFactory * const gccFactory = ToolchainFactory::factoryForType(
+                ProjectExplorer::Constants::GCC_TOOLCHAIN_TYPEID)) {
+            QList<Toolchain *> detected = gccFactory->detectForImport({path, language});
             if (!detected.isEmpty()) {
-                toolChain = detected.first();
-                toolChain->setDetection(Toolchain::ManualDetection);
-                toolChain->setDisplayName("Arm GCC");
-                ToolchainManager::registerToolchain(toolChain);
+                toolchain = detected.takeFirst();
+                ToolchainManager::registerToolchains({toolchain});
+                toolchain->setDetection(Toolchain::ManualDetection);
+                toolchain->setDisplayName("Arm GCC");
+                qDeleteAll(detected);
             }
         }
     }
 
-    return toolChain;
+    return toolchain;
 }
 
 static Toolchain *iarToolchain(const FilePath &path, Id language)
 {
-    Toolchain *toolChain = ToolchainManager::toolchain([language](const Toolchain *t) {
+    Toolchain *toolchain = ToolchainManager::toolchain([language](const Toolchain *t) {
         return t->typeId() == BareMetal::Constants::IAREW_TOOLCHAIN_TYPEID
                && t->language() == language;
     });
-    if (!toolChain) {
-        ToolchainFactory *iarFactory
-            = Utils::findOrDefault(ToolchainFactory::allToolchainFactories(),
-                                   [](ToolchainFactory *f) {
-                                       return f->supportedToolchainType()
-                                              == BareMetal::Constants::IAREW_TOOLCHAIN_TYPEID;
-                                   });
-        if (iarFactory) {
+    if (!toolchain) {
+        if (ToolchainFactory * const iarFactory = ToolchainFactory::factoryForType(
+                BareMetal::Constants::IAREW_TOOLCHAIN_TYPEID)) {
             Toolchains detected = iarFactory->autoDetect(
                 {{}, DeviceManager::defaultDesktopDevice(), {}});
             if (detected.isEmpty())
                 detected = iarFactory->detectForImport({path, language});
-            for (auto tc : detected) {
-                if (tc->language() == language) {
-                    toolChain = tc;
-                    toolChain->setDetection(Toolchain::ManualDetection);
-                    toolChain->setDisplayName("IAREW");
-                    ToolchainManager::registerToolchain(toolChain);
-                }
+            Toolchains toRegister;
+            Toolchains toDelete;
+            std::tie(toRegister, toDelete)
+                = Utils::partition(detected, Utils::equal(&Toolchain::language, language));
+            for (Toolchain * const tc : toRegister) {
+                tc->setDetection(Toolchain::ManualDetection);
+                tc->setDisplayName("IAREW");
             }
+            ToolchainManager::registerToolchains(toRegister);
+            qDeleteAll(toDelete);
         }
     }
 
-    return toolChain;
+    return toolchain;
 }
 
 Toolchain *McuToolchainPackage::toolChain(Id language) const
@@ -559,6 +563,10 @@ QVariant McuToolchainPackage::debuggerId() const
     switch (m_type) {
     case ToolchainType::ArmGcc: {
         sub = QString::fromLatin1("bin/arm-none-eabi-gdb-py");
+        const FilePath command = (path() / sub).withExecutableSuffix();
+        if (!command.exists()) {
+            sub = QString::fromLatin1("bin/arm-none-eabi-gdb");
+        }
         displayName = Tr::tr("Arm GDB at %1");
         engineType = Debugger::GdbEngineType;
         break;

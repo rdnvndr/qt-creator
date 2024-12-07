@@ -33,6 +33,21 @@ const char initCommandsKeyC[] = "InitCommands";
 const char resetCommandsKeyC[] = "ResetCommands";
 const char useExtendedRemoteKeyC[] = "UseExtendedRemote";
 
+class GdbServerProviderRunner final : public SimpleTargetRunner
+{
+public:
+    GdbServerProviderRunner(RunControl *runControl, const CommandLine &commandLine)
+        : SimpleTargetRunner(runControl)
+    {
+        setId("BareMetalGdbServer");
+        // Baremetal's GDB servers are launched on the host, not on the target.
+        setStartModifier([this, commandLine] {
+            setCommandLine(commandLine);
+            forceRunOnHost();
+        });
+    }
+};
+
 // GdbServerProvider
 
 GdbServerProvider::GdbServerProvider(const QString &id)
@@ -138,25 +153,21 @@ bool GdbServerProvider::isValid() const
 bool GdbServerProvider::aboutToRun(DebuggerRunTool *runTool, QString &errorMessage) const
 {
     QTC_ASSERT(runTool, return false);
-    const RunControl *runControl = runTool->runControl();
-    const auto exeAspect = runControl->aspect<ExecutableAspect>();
-    QTC_ASSERT(exeAspect, return false);
-
-    const FilePath bin = FilePath::fromString(exeAspect->executable.path());
+    const ProcessRunData runnable = runTool->runControl()->runnable();
+    const FilePath bin = FilePath::fromString(runnable.command.executable().path());
     if (bin.isEmpty()) {
         errorMessage = Tr::tr("Cannot debug: Local executable is not set.");
         return false;
     }
     if (!bin.exists()) {
-        errorMessage = Tr::tr("Cannot debug: Could not find executable for \"%1\".")
-                .arg(bin.toString());
+        errorMessage
+            = Tr::tr("Cannot debug: Could not find executable for \"%1\".").arg(bin.toUserOutput());
         return false;
     }
 
     ProcessRunData inferior;
     inferior.command.setExecutable(bin);
-    if (const auto argAspect = runControl->aspect<ArgumentsAspect>())
-        inferior.command.setArguments(argAspect->arguments);
+    inferior.command.setArguments(runnable.command.arguments());
     runTool->setInferior(inferior);
     runTool->setSymbolFile(bin);
     runTool->setStartMode(AttachToRemoteServer);
@@ -302,20 +313,6 @@ QString GdbServerProviderConfigWidget::defaultResetCommandsTooltip()
 {
     return Tr::tr("Enter GDB commands to reset the hardware. "
                   "The MCU should be halted after these commands.");
-}
-
-// GdbServerProviderRunner
-
-GdbServerProviderRunner::GdbServerProviderRunner(ProjectExplorer::RunControl *runControl,
-                                                 const CommandLine &commandLine)
-    : SimpleTargetRunner(runControl)
-{
-    setId("BareMetalGdbServer");
-    // Baremetal's GDB servers are launched on the host, not on the target.
-    setStartModifier([this, commandLine] {
-        setCommandLine(commandLine);
-        forceRunOnHost();
-    });
 }
 
 } // BareMetal::Internal

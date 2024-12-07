@@ -74,9 +74,9 @@ QtcPlugin {
             "headerpath.h",
             "importwidget.cpp", "importwidget.h",
             "ioutputparser.cpp", "ioutputparser.h",
-            "ipotentialkit.h",
             "itaskhandler.h",
             "kit.cpp", "kit.h",
+            "kitaspect.cpp", "kitaspect.h",
             "kitaspects.cpp", "kitaspects.h",
             "kitchooser.cpp", "kitchooser.h",
             "kitfeatureprovider.h",
@@ -146,6 +146,7 @@ QtcPlugin {
             "toolchain.cpp", "toolchain.h",
             "toolchaincache.h",
             "toolchainconfigwidget.cpp", "toolchainconfigwidget.h",
+            "toolchainkitaspect.cpp", "toolchainkitaspect.h",
             "toolchainmanager.cpp", "toolchainmanager.h",
             "toolchainoptionspage.cpp", "toolchainoptionspage.h",
             "toolchainsettingsaccessor.cpp", "toolchainsettingsaccessor.h",
@@ -154,6 +155,7 @@ QtcPlugin {
             "vcsannotatetaskhandler.cpp", "vcsannotatetaskhandler.h",
             "waitforstopdialog.cpp", "waitforstopdialog.h",
             "windebuginterface.cpp", "windebuginterface.h",
+            "workspaceproject.cpp", "workspaceproject.h",
             "xcodebuildparser.cpp", "xcodebuildparser.h"
         ]
     }
@@ -205,6 +207,7 @@ QtcPlugin {
             "desktopdevicefactory.cpp", "desktopdevicefactory.h",
             "devicecheckbuildstep.cpp", "devicecheckbuildstep.h",
             "devicefactoryselectiondialog.cpp", "devicefactoryselectiondialog.h",
+            "devicekitaspects.cpp", "devicekitaspects.h",
             "devicemanager.cpp", "devicemanager.h",
             "devicemanagermodel.cpp", "devicemanagermodel.h",
             "deviceprocessesdialog.cpp", "deviceprocessesdialog.h",
@@ -221,7 +224,8 @@ QtcPlugin {
             "sshparameters.cpp", "sshparameters.h",
             "sshsettings.cpp", "sshsettings.h",
             "sshsettingspage.cpp", "sshsettingspage.h",
-            "desktopprocesssignaloperation.cpp", "desktopprocesssignaloperation.h"
+            "desktopdeviceconfigurationwidget.cpp", "desktopdeviceconfigurationwidget.h",
+            "desktopprocesssignaloperation.cpp", "desktopprocesssignaloperation.h",
         ]
     }
 

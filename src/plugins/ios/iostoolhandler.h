@@ -62,6 +62,7 @@ signals:
     void deviceInfo(Ios::IosToolHandler *handler, const QString &deviceId,
                     const Ios::IosToolHandler::Dict &info);
     void appOutput(Ios::IosToolHandler *handler, const QString &output);
+    void message(const QString &msg);
     void errorMsg(Ios::IosToolHandler *handler, const QString &msg);
     void toolExited(Ios::IosToolHandler *handler, int code);
     void finished(Ios::IosToolHandler *handler);
@@ -82,12 +83,12 @@ public:
 
 private:
     friend class IosToolTaskAdapter;
-    IosToolHandler *m_iosToolHandler = nullptr;
+    std::unique_ptr<IosToolHandler> m_iosToolHandler;
     StartHandler m_startHandler;
     Internal::IosDeviceType m_deviceType = Internal::IosDeviceType::IosDevice;
 };
 
-class IosToolTaskAdapter : public Tasking::TaskAdapter<IosToolRunner>
+class IosToolTaskAdapter final : public Tasking::TaskAdapter<IosToolRunner>
 {
 public:
     IosToolTaskAdapter();

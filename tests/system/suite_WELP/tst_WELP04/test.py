@@ -33,7 +33,7 @@ def main():
     tutorial = findExampleOrTutorial(listView, ".*", True)
     test.verify(tutorial is None,
                 "Verifying: 'Tutorials' topic is opened and nothing is shown.")
-    bnr = "Building and Running an Example"
+    bnr = "Build and run"
     replaceEditorContent(searchTutorials, bnr.lower())
     listView = __waitForListView__()
     waitFor('findExampleOrTutorial(listView, "%s.*") is not None' % bnr, 3000)
@@ -43,15 +43,15 @@ def main():
     progressBarWait(warn=False)
     # select a text tutorial
     mouseClick(waitForObjectItem(listView, str(tutorial.text)))
-    test.verify("Building and Running an Example" in
+    test.verify("Tutorial: Build and run" in
                 str(waitForObject(":Help Widget_Help::Internal::HelpWidget").windowTitle),
                 "Verifying: The tutorial is opened inside Help.")
     # close help widget again to avoid focus issues
     sendEvent("QCloseEvent", waitForObject(":Help Widget_Help::Internal::HelpWidget"))
     # check a demonstration video link
     mouseClick(searchTutorials)
-    replaceEditorContent(searchTutorials, "embedded device")
-    embeddedTutorial = "How to install and set up Qt for Device Creation.*"
+    replaceEditorContent(searchTutorials, "device")
+    embeddedTutorial = "^Qt Creator for Bare Metal Development"
     listView = __waitForListView__()
     waitFor('findExampleOrTutorial(listView, embeddedTutorial) is not None', 3000)
     tutorial = findExampleOrTutorial(listView, embeddedTutorial, True)

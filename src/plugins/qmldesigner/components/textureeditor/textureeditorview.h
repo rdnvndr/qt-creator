@@ -18,8 +18,10 @@ QT_END_NAMESPACE
 
 namespace QmlDesigner {
 
+class CreateTexture;
 class DynamicPropertiesModel;
 class ModelNode;
+class QmlObjectNode;
 class TextureEditorQmlBackend;
 
 class TextureEditorView : public AbstractView
@@ -52,6 +54,9 @@ public:
                         const NodeAbstractProperty &oldPropertyParent,
                         AbstractView::PropertyChangeFlags propertyChange) override;
     void nodeAboutToBeRemoved(const ModelNode &removedNode) override;
+    void nodeRemoved(const ModelNode &removedNode,
+                     const NodeAbstractProperty &parentProperty,
+                     PropertyChangeFlags propertyChange) override;
 
     void resetView();
     void currentStateChanged(const ModelNode &node) override;
@@ -82,7 +87,7 @@ public slots:
 
 protected:
     void timerEvent(QTimerEvent *event) override;
-    void setValue(const QmlObjectNode &fxObjectNode, const PropertyName &name, const QVariant &value);
+    void setValue(const QmlObjectNode &fxObjectNode, PropertyNameView name, const QVariant &value);
     bool eventFilter(QObject *obj, QEvent *event) override;
 
 private:
@@ -95,12 +100,13 @@ private:
 
     void setupQmlBackend();
 
-    void commitVariantValueToModel(const PropertyName &propertyName, const QVariant &value);
-    void commitAuxValueToModel(const PropertyName &propertyName, const QVariant &value);
-    void removePropertyFromModel(const PropertyName &propertyName);
+    void commitVariantValueToModel(PropertyNameView propertyName, const QVariant &value);
+    void commitAuxValueToModel(PropertyNameView propertyName, const QVariant &value);
+    void removePropertyFromModel(PropertyNameView propertyName);
     void duplicateTexture(const ModelNode &texture);
 
     bool noValidSelection() const;
+    void asyncResetView();
 
     AsynchronousImageCache &m_imageCache;
     ModelNode m_selectedTexture;
@@ -116,8 +122,11 @@ private:
     bool m_hasQuick3DImport = false;
     bool m_hasTextureRoot = false;
     bool m_initializingPreviewData = false;
+    ModelNode m_newSelectedTexture;
+    bool m_selectedTextureChanged = false;
 
     QPointer<QColorDialog> m_colorDialog;
+    QPointer<CreateTexture> m_createTexture;
     DynamicPropertiesModel *m_dynamicPropertiesModel = nullptr;
 };
 

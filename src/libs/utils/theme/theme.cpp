@@ -6,6 +6,7 @@
 #include "../hostosinfo.h"
 #include "../qtcassert.h"
 #include "filepath.h"
+#include "stylehelper.h"
 #ifdef Q_OS_MACOS
 #import "theme_mac.h"
 #endif
@@ -18,8 +19,10 @@
 namespace Utils {
 
 static Theme *m_creatorTheme = nullptr;
+static std::optional<QPalette> m_initialPalette;
 
 ThemePrivate::ThemePrivate()
+    : defaultToolbarStyle(StyleHelper::ToolbarStyle::Compact)
 {
     const QMetaObject &m = Theme::staticMetaObject;
     colors.resize        (m.enumerator(m.indexOfEnumerator("Color")).keyCount());
@@ -32,14 +35,31 @@ Theme *creatorTheme()
     return m_creatorTheme;
 }
 
-Theme *proxyTheme()
+// Convenience
+QColor creatorColor(Theme::Color role)
 {
-    return new Theme(m_creatorTheme);
+    return m_creatorTheme->color(role);
+}
+
+static bool paletteIsDark(const QPalette &pal)
+{
+    return pal.color(QPalette::Window).lightnessF() < pal.color(QPalette::WindowText).lightnessF();
+}
+
+static bool isOverridingPalette(const Theme *theme)
+{
+    if (theme->flag(Theme::DerivePaletteFromTheme))
+        return true;
+    if (theme->flag(Theme::DerivePaletteFromThemeIfNeeded)
+        && paletteIsDark(Theme::initialPalette()) != theme->flag(Theme::DarkUserInterface)) {
+        return true;
+    }
+    return false;
 }
 
 void setThemeApplicationPalette()
 {
-    if (m_creatorTheme && m_creatorTheme->flag(Theme::ApplyThemePaletteGlobally))
+    if (m_creatorTheme && isOverridingPalette(m_creatorTheme))
         QApplication::setPalette(m_creatorTheme->palette());
 }
 
@@ -110,6 +130,11 @@ QStringList Theme::preferredStyles() const
 QString Theme::defaultTextEditorColorScheme() const
 {
     return d->defaultTextEditorColorScheme;
+}
+
+StyleHelper::ToolbarStyle Theme::defaultToolbarStyle() const
+{
+    return d->defaultToolbarStyle;
 }
 
 QString Theme::id() const
@@ -185,7 +210,7 @@ void Theme::setDisplayName(const QString &name)
 
 void Theme::readSettingsInternal(QSettings &settings)
 {
-    const QStringList includes = settings.value("Includes").toString().split(",", Qt::SkipEmptyParts);
+    const QStringList includes = settings.value("Includes").toStringList();
 
     for (const QString &include : includes) {
         FilePath path = FilePath::fromString(d->fileName);
@@ -210,6 +235,9 @@ void Theme::readSettingsInternal(QSettings &settings)
         d->preferredStyles.removeAll(QString());
         d->defaultTextEditorColorScheme
             = settings.value(QLatin1String("DefaultTextEditorColorScheme")).toString();
+        d->defaultToolbarStyle =
+                settings.value(QLatin1String("DefaultToolbarStyle")).toString() == "Relaxed"
+                ? StyleHelper::ToolbarStyle::Relaxed : StyleHelper::ToolbarStyle::Compact;
         d->enforceAccentColorOnMacOS = settings.value("EnforceAccentColorOnMacOS").toString();
     }
 
@@ -288,7 +316,7 @@ void Theme::readSettings(QSettings &settings)
     for (int i = 0, total = e.keyCount(); i < total; ++i) {
         const QString key = QLatin1String(e.key(i));
         if (!d->unresolvedPalette.contains(key)) {
-            if (i < PaletteWindow || i > PalettePlaceholderTextDisabled)
+            if (i < PaletteWindow || i > PaletteAccentDisabled)
                 qWarning("Theme \"%s\" misses color setting for key \"%s\".",
                          qPrintable(d->fileName),
                          qPrintable(key));
@@ -311,7 +339,13 @@ bool Theme::systemUsesDarkMode()
     if (HostOsInfo::isMacHost())
         return macOSSystemIsDark();
 
-    return false;
+    // Avoid enforcing the initial palette.
+    // The initial palette must be set after setting the macOS appearance in setInitialPalette,
+    // but systemUsesDarkMode is used to determine the default theme, which is in turn required
+    // for the setInitialPalette call
+    if (m_initialPalette)
+        return paletteIsDark(*m_initialPalette);
+    return paletteIsDark(QApplication::palette());
 }
 
 // If you copy QPalette, default values stay at default, even if that default is different
@@ -345,16 +379,41 @@ void Theme::setHelpMenu(QMenu *menu)
 #endif
 }
 
+expected_str<Theme::Color> Theme::colorToken(const QString &tokenName,
+                                             [[maybe_unused]] TokenFlags flags)
+{
+    const QString colorName = "Token_" + tokenName;
+    static const QMetaEnum colorEnum = QMetaEnum::fromType<Theme::Color>();
+    bool ok = false;
+    const Color result = static_cast<Color>(colorEnum.keyToValue(colorName.toLatin1(), &ok));
+    if (!ok)
+        return make_unexpected(QString::fromLatin1("%1 - Color token \"%2\" not found.")
+                               .arg(Q_FUNC_INFO).arg(tokenName));
+    return result;
+}
+
+Theme::Color Theme::highlightFor(Color role)
+{
+    QTC_ASSERT(creatorTheme(), return role);
+    static const QMap<QRgb, Theme::Color> map = {
+        { creatorColor(Theme::Token_Text_Muted).rgba(), Theme::Token_Text_Default},
+    };
+    return map.value(creatorColor(role).rgba(), role);
+}
+
 QPalette Theme::initialPalette()
 {
-    static QPalette palette = copyPalette(QApplication::palette());
-    return palette;
+    if (!m_initialPalette) {
+        m_initialPalette = copyPalette(QApplication::palette());
+        QApplication::setPalette(*m_initialPalette);
+    }
+    return *m_initialPalette;
 }
 
 QPalette Theme::palette() const
 {
     QPalette pal = initialPalette();
-    if (!flag(DerivePaletteFromTheme))
+    if (!isOverridingPalette(this))
         return pal;
 
     const static struct {
@@ -403,6 +462,13 @@ QPalette Theme::palette() const
         {PaletteShadowDisabled,            QPalette::Shadow,           QPalette::Disabled, false},
         {PalettePlaceholderText,           QPalette::PlaceholderText,  QPalette::All,      false},
         {PalettePlaceholderTextDisabled,   QPalette::PlaceholderText,  QPalette::Disabled, false},
+#if QT_VERSION < QT_VERSION_CHECK(6, 6, 0)
+        {PaletteAccent,                    QPalette::NoRole,           QPalette::All,      false},
+        {PaletteAccentDisabled,            QPalette::NoRole,           QPalette::Disabled, false},
+#else
+        {PaletteAccent,                    QPalette::Accent,           QPalette::All,      false},
+        {PaletteAccentDisabled,            QPalette::Accent,           QPalette::Disabled, false},
+#endif
     };
 
     for (auto entry: mapping) {

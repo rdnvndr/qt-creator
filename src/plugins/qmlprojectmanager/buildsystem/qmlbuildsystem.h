@@ -6,7 +6,11 @@
 #pragma once
 
 #include "../qmlprojectmanager_global.h"
+
 #include <projectexplorer/buildsystem.h>
+#include <utils/filesystemwatcher.h>
+
+#include "qmlprojectmanager/qmlprojectexporter/exporter.h"
 
 namespace QmlProjectManager {
 
@@ -14,7 +18,7 @@ class QmlProject;
 class QmlProjectItem;
 class QmlProjectFile;
 
-class QMLPROJECTMANAGER_EXPORT QmlBuildSystem : public ProjectExplorer::BuildSystem
+class QMLPROJECTMANAGER_EXPORT QmlBuildSystem final : public ProjectExplorer::BuildSystem
 {
     Q_OBJECT
 
@@ -31,9 +35,9 @@ public:
                   const Utils::FilePaths &filePaths,
                   Utils::FilePaths *notAdded = nullptr) override;
     bool deleteFiles(ProjectExplorer::Node *context, const Utils::FilePaths &filePaths) override;
-    bool renameFile(ProjectExplorer::Node *context,
-                    const Utils::FilePath &oldFilePath,
-                    const Utils::FilePath &newFilePath) override;
+    bool renameFiles(ProjectExplorer::Node *context,
+                     const Utils::FilePairs &filesToRename,
+                     Utils::FilePaths *notRenamed) override;
 
     bool updateProjectFile();
 
@@ -69,10 +73,12 @@ public:
 
     Utils::EnvironmentItems environment() const;
 
+    QStringList allImports() const;
     QStringList importPaths() const;
-    QStringList absoluteImportPaths();
-    QStringList customImportPaths() const;
-    QStringList customFileSelectors() const;
+    QStringList mockImports() const;
+    QStringList absoluteImportPaths() const;
+    QStringList targetImportPaths() const;
+    QStringList fileSelectors() const;
 
     bool multilanguageSupport() const;
     QStringList supportedLanguages() const;
@@ -81,12 +87,17 @@ public:
     QString primaryLanguage() const;
     void setPrimaryLanguage(QString language);
 
+    bool enableCMakeGeneration() const;
+    void setEnableCMakeGeneration(bool enable);
+
+    bool enablePythonGeneration() const;
+    void setEnablePythonGeneration(bool enable);
+
     bool forceFreeType() const;
     bool widgetApp() const;
 
     QStringList shaderToolArgs() const;
     QStringList shaderToolFiles() const;
-    Utils::FilePaths files() const;
 
     QString versionQt() const;
     QString versionQtQuick() const;
@@ -102,6 +113,8 @@ public:
 
     Utils::FilePath getStartupQmlFileWithFallback() const;
 
+    static QmlBuildSystem *getStartupBuildSystem();
+
 signals:
     void projectChanged();
 
@@ -110,16 +123,23 @@ private:
                                      const Utils::FilePath &mainFilePath,
                                      const QString &oldFile);
 
+    // this is the main project item
     QSharedPointer<QmlProjectItem> m_projectItem;
+    // these are the mcu project items which can be found in the project tree
+    QList<QSharedPointer<QmlProjectItem>> m_mcuProjectItems;
+    Utils::FileSystemWatcher m_mcuProjectFilesWatcher;
     bool m_blockFilesUpdate = false;
 
     void initProjectItem();
+    void initMcuProjectItems();
     void parseProjectFiles();
     void generateProjectTree();
 
     void registerMenuButtons();
     void updateDeploymentData();
     friend class FilesUpdateBlocker;
+
+    QmlProjectExporter::Exporter* m_fileGen;
 };
 
 } // namespace QmlProjectManager

@@ -1,4 +1,9 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.20)
+
+option(BUILD_DESIGNSTUDIO "Build and install design studio plugins, examples and settings." OFF)
+if (BUILD_DESIGNSTUDIO)
+    list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/dist/branding/qtdesignstudio")
+endif()
 
 ## Add paths to check for cmake modules:
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
@@ -6,7 +11,6 @@ include(Utils)
 
 env_with_default("QTC_BUILD_WITH_PCH" ENV_QTC_BUILD_WITH_PCH ON)
 env_with_default("QTC_WITH_TESTS" ENV_QTC_WITH_TESTS OFF)
-env_with_default("QTC_WITH_QMLDESIGNER" ENV_QTC_WITH_QMLDESIGNER ON)
 
 option(BUILD_WITH_PCH "Build with precompiled headers" "${ENV_QTC_BUILD_WITH_PCH}")
 
@@ -25,7 +29,7 @@ mark_as_advanced(IDE_REVISION IDE_REVISION_STR IDE_REVISION_URL)
 project(QtCreator VERSION ${IDE_VERSION})
 
 # Force C++ standard, do not fall back, do not use compiler extensions
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -73,12 +77,9 @@ find_package(Qt6
   REQUIRED
 )
 
-if (Qt6_VERSION VERSION_GREATER_EQUAL 6.4.3)
-    option(WITH_QMLDESIGNER "Build QmlDesigner" ${ENV_QTC_WITH_QMLDESIGNER})
-else()
-    option(WITH_QMLDESIGNER "Build QmlDesigner" OFF)
-endif()
-add_feature_info("Build QmlDesigner and related code (only if Qt is 6.4.3 or newer)" ${WITH_QMLDESIGNER} "")
+# depending on Qt version and compiler version enable or disable Qml Designer
+# can be overwritten by variable WITH_QMLDESIGNER / QTC_WITH_QMLDESIGNER (env)
+configure_qml_designer(${Qt6_VERSION})
 
 # hack for Qbs which still supports Qt5 and Qt6
 if (TARGET Qt6::Core5CompatPrivate)
@@ -112,10 +113,9 @@ find_package(Threads)
 find_package(Clang QUIET)
 
 # Crashpad
-set(CRASHPAD_BACKEND_URL "" CACHE STRING "Crashpad backend URL")
+set(CRASHPAD_BACKEND_URL "$ENV{QTC_CRASHPAD_BACKEND_URL}" CACHE STRING "Crashpad backend URL")
 set(BUILD_WITH_CRASHPAD OFF)
 # Linux is not supported for now
-# x86_64;arm64 is not supported for now
 if(CRASHPAD_BACKEND_URL AND (WIN32 OR APPLE)) # Linux is not supported for now
   find_package(Crashpad QUIET)
   if(TARGET Crashpad::Crashpad)
@@ -165,7 +165,9 @@ endif()
 
 add_subdirectory(src)
 add_subdirectory(share)
-add_subdirectory(dist)
+if (NOT BUILD_DESIGNSTUDIO)
+    add_subdirectory(dist)
+endif()
 
 if (WITH_TESTS)
   add_subdirectory(tests)

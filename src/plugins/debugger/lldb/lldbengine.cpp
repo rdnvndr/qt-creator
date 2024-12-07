@@ -32,7 +32,7 @@
 
 #include <utils/algorithm.h>
 #include <utils/environment.h>
-#include <utils/process.h>
+#include <utils/qtcprocess.h>
 #include <utils/processinterface.h>
 #include <utils/qtcassert.h>
 
@@ -211,19 +211,13 @@ void LldbEngine::setupEngine()
     if (runParameters().debugger.workingDirectory.isDir())
         m_lldbProc.setWorkingDirectory(runParameters().debugger.workingDirectory);
 
-    if (HostOsInfo::isRunningUnderRosetta())
-        m_lldbProc.setCommand(CommandLine("/usr/bin/arch", {"-arm64", lldbCmd.toString()}));
-    else
-        m_lldbProc.setCommand(CommandLine(lldbCmd));
+    m_lldbProc.setCommand(CommandLine(lldbCmd));
 
     m_lldbProc.start();
 }
 
 void LldbEngine::handleLldbStarted()
 {
-    using namespace std::chrono_literals;
-    m_lldbProc.waitForReadyRead(1s);
-
     showStatusMessage(Tr::tr("Setting up inferior..."));
 
     const DebuggerRunParameters &rp = runParameters();
@@ -238,7 +232,7 @@ void LldbEngine::handleLldbStarted()
         executeCommand(commands);
 
     const FilePath path = settings().extraDumperFile();
-    if (!path.isEmpty() && path.isReadableFile()) {
+    if (path.isReadableFile()) {
         DebuggerCommand cmd("addDumperModule");
         cmd.arg("path", path.path());
         runCommand(cmd);
@@ -271,7 +265,7 @@ void LldbEngine::handleLldbStarted()
     DebuggerCommand cmd2("setupInferior");
     cmd2.arg("executable", rp.inferior.command.executable().path());
     cmd2.arg("breakonmain", rp.breakOnMain);
-    cmd2.arg("useterminal", bool(terminal()));
+    cmd2.arg("useterminal", usesTerminal());
     cmd2.arg("startmode", rp.startMode);
     cmd2.arg("nativemixed", isNativeMixedActive());
     cmd2.arg("workingdirectory", rp.inferior.workingDirectory.path());
@@ -287,9 +281,9 @@ void LldbEngine::handleLldbStarted()
     cmd2.arg("platform", rp.platform);
     cmd2.arg("symbolfile", rp.symbolFile.path());
 
-    if (terminal()) {
-        const qint64 attachedPID = terminal()->applicationPid();
-        const qint64 attachedMainThreadID = terminal()->applicationMainThreadId();
+    if (usesTerminal()) {
+        const qint64 attachedPID = applicationPid();
+        const qint64 attachedMainThreadID = applicationMainThreadId();
         const QString msg = (attachedMainThreadID != -1)
                 ? QString::fromLatin1("Attaching to %1 (%2)").arg(attachedPID).arg(attachedMainThreadID)
                 : QString::fromLatin1("Attaching to %1").arg(attachedPID);
@@ -346,10 +340,6 @@ void LldbEngine::handleLldbStarted()
 
     cmd2.flags = Silent;
     runCommand(cmd2);
-
-    DebuggerCommand cmd0("setFallbackQtVersion");
-    cmd0.arg("version", rp.fallbackQtVersion);
-    runCommand(cmd0);
 }
 
 void LldbEngine::runEngine()
@@ -407,9 +397,10 @@ void LldbEngine::handleResponse(const QString &response)
         const QString name = item.name();
         if (name == "result") {
             QString msg = item["status"].data();
-            if (!msg.isEmpty())
+            if (!msg.isEmpty()) {
                 msg[0] = msg.at(0).toUpper();
-            showStatusMessage(msg);
+                showStatusMessage(msg);
+            }
 
             int token = item["token"].toInt();
             showMessage(QString("%1^").arg(token), LogOutput);
@@ -767,6 +758,8 @@ void LldbEngine::doUpdateLocals(const UpdateParameters &params)
     cmd.arg("partialvar", params.partialVariable);
     cmd.arg("qobjectnames", s.showQObjectNames());
     cmd.arg("timestamps", s.logTimeStamps());
+    cmd.arg("qtversion", runParameters().qtVersion);
+    cmd.arg("qtnamespace", runParameters().qtNamespace);
 
     StackFrame frame = stackHandler()->currentFrame();
     cmd.arg("context", frame.context);
@@ -1063,7 +1056,7 @@ void LldbEngine::fetchFullBacktrace()
 {
     DebuggerCommand cmd("fetchFullBacktrace");
     cmd.callback = [](const DebuggerResponse &response) {
-        Internal::openTextEditor("Backtrace $", fromHex(response.data["fulltrace"].data()));
+        Internal::openTextEditor("Backtrace$", fromHex(response.data["fulltrace"].data()));
     };
     runCommand(cmd);
 }

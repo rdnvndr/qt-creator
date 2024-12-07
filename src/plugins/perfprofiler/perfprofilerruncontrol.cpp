@@ -16,7 +16,7 @@
 #include <projectexplorer/runcontrol.h>
 #include <projectexplorer/target.h>
 
-#include <utils/process.h>
+#include <utils/qtcprocess.h>
 
 #include <QAction>
 #include <QMessageBox>
@@ -30,7 +30,7 @@ namespace PerfProfiler::Internal {
 class PerfParserWorker final : public RunWorker
 {
 public:
-    PerfParserWorker(RunControl *runControl)
+    explicit PerfParserWorker(RunControl *runControl)
         : RunWorker(runControl)
     {
         setId("PerfParser");
@@ -62,8 +62,9 @@ public:
     {
         CommandLine cmd{findPerfParser()};
         m_reader.addTargetArguments(&cmd, runControl());
-        QUrl url = runControl()->property("PerfConnection").toUrl();
-        if (url.isValid()) {
+        if (usesPerfChannel()) { // The channel is only used with qdb currently.
+            const QUrl url = perfChannel();
+            QTC_CHECK(url.isValid());
             cmd.addArgs({"--host", url.host(), "--port", QString::number(url.port())});
         }
         appendMessage("PerfParser args: " + cmd.arguments(), NormalMessageFormat);
@@ -124,6 +125,7 @@ public:
 
         m_process->setCommand(cmd);
         m_process->setWorkingDirectory(runControl()->workingDirectory());
+        m_process->setEnvironment(runControl()->environment());
         appendMessage("Starting Perf: " + cmd.toUserOutput(), NormalMessageFormat);
         m_process->start();
     }
@@ -183,15 +185,21 @@ public:
                 &PerfProfilerTool::onRunControlFinished);
 
         PerfDataReader *reader = m_perfParserWorker->reader();
+        Process *perfProcess = nullptr;
         if (auto prw = qobject_cast<LocalPerfRecordWorker *>(m_perfRecordWorker)) {
             // That's the local case.
-            Process *recorder = prw->recorder();
-            connect(recorder, &Process::readyReadStandardError, this, [this, recorder] {
-                appendMessage(QString::fromLocal8Bit(recorder->readAllRawStandardError()),
+            perfProcess = prw->recorder();
+        } else {
+            perfProcess = runControl()->property("PerfProcess").value<Process *>();
+        }
+
+        if (perfProcess) {
+            connect(perfProcess, &Process::readyReadStandardError, this, [this, perfProcess] {
+                appendMessage(QString::fromLocal8Bit(perfProcess->readAllRawStandardError()),
                               StdErrFormat);
             });
-            connect(recorder, &Process::readyReadStandardOutput, this, [this, reader, recorder] {
-                if (!reader->feedParser(recorder->readAllRawStandardOutput()))
+            connect(perfProcess, &Process::readyReadStandardOutput, this, [this, reader, perfProcess] {
+                if (!reader->feedParser(perfProcess->readAllRawStandardOutput()))
                     reportFailure(Tr::tr("Failed to transfer Perf data to perfparser."));
             });
         }

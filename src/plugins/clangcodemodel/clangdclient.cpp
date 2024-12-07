@@ -22,6 +22,7 @@
 #include <cplusplus/AST.h>
 #include <cplusplus/ASTPath.h>
 #include <cplusplus/Icons.h>
+#include <cppeditor/compilationdb.h>
 #include <cppeditor/cppcodemodelsettings.h>
 #include <cppeditor/cppeditorconstants.h>
 #include <cppeditor/cppeditorwidget.h>
@@ -46,6 +47,7 @@
 #include <projectexplorer/devicesupport/idevice.h>
 #include <projectexplorer/kitaspects.h>
 #include <projectexplorer/project.h>
+#include <projectexplorer/projectnodes.h>
 #include <projectexplorer/projecttree.h>
 #include <projectexplorer/projectmanager.h>
 #include <projectexplorer/target.h>
@@ -53,10 +55,10 @@
 #include <texteditor/codeassist/assistinterface.h>
 #include <texteditor/codeassist/iassistprocessor.h>
 #include <texteditor/codeassist/iassistprovider.h>
-#include <texteditor/codeassist/textdocumentmanipulatorinterface.h>
 #include <texteditor/texteditor.h>
 #include <utils/algorithm.h>
 #include <utils/async.h>
+#include <utils/clangutils.h>
 #include <utils/environment.h>
 #include <utils/fileutils.h>
 #include <utils/mimeconstants.h>
@@ -142,7 +144,7 @@ private:
         case Qt::ForegroundRole:
             if ((detail().endsWith("class") || detail().endsWith("struct"))
                 && range().end() == selectionRange().end()) {
-                return creatorTheme()->color(Theme::TextColorDisabled);
+                return creatorColor(Theme::TextColorDisabled);
             }
             break;
         }
@@ -207,12 +209,11 @@ static BaseClientInterface *clientInterface(Project *project, const Utils::FileP
                             "--clang-tidy=0"}};
     if (settings.workerThreadLimit() != 0)
         cmd.addArg("-j=" + QString::number(settings.workerThreadLimit()));
-    if (indexingEnabled && Utils::clangdVersion(clangdExePath) >= QVersionNumber(15)) {
+    if (indexingEnabled) {
         cmd.addArg("--background-index-priority="
                    + ClangdSettings::priorityToString(indexingPriority));
     }
-    if (Utils::clangdVersion(clangdExePath) >= QVersionNumber(16))
-        cmd.addArg("--rename-file-limit=0");
+    cmd.addArg("--rename-file-limit=0");
     if (!jsonDbDir.isEmpty())
         cmd.addArg("--compile-commands-dir=" + clangdExePath.withNewMappedPath(jsonDbDir).path());
     if (clangdLogServer().isDebugEnabled())
@@ -348,14 +349,13 @@ public:
 
     ClangdClient * const q;
     const CppEditor::ClangdSettings::Data settings;
-    ClangdFollowSymbol *followSymbol = nullptr;
+    QList<ClangdFollowSymbol *> followSymbolOps;
     ClangdSwitchDeclDef *switchDeclDef = nullptr;
     ClangdFindLocalReferences *findLocalRefs = nullptr;
     std::optional<QVersionNumber> versionNumber;
 
     QHash<TextDocument *, HighlightingData> highlightingData;
     QHash<Utils::FilePath, CppEditor::BaseEditorDocumentParser::Configuration> parserConfigs;
-    QHash<Utils::FilePath, Tasks> issuePaneEntries;
     QHash<Utils::FilePath, int> openedExtraFiles;
 
     VersionedDataCache<const TextDocument *, ClangdAstNode> astCache;
@@ -383,7 +383,7 @@ static void addToCompilationDb(QJsonObject &cdb,
     const QString fileString = sourceFile.path.toUserOutput();
     args.append(fileString);
     QJsonObject value;
-    value.insert("workingDirectory", workingDir.toString());
+    value.insert("workingDirectory", workingDir.path());
     value.insert("compilationCommand", args);
     cdb.insert(fileString, value);
 }
@@ -418,7 +418,8 @@ ClangdClient::ClangdClient(Project *project, const Utils::FilePath &jsonDbDir, c
         CppEditor::CompilerOptionsBuilder optionsBuilder = clangOptionsBuilder(
                     *CppEditor::CppModelManager::fallbackProjectPart(),
                     warningsConfigForProject(nullptr), includeDir, {});
-        const CppEditor::UsePrecompiledHeaders usePch = CppEditor::getPchUsage();
+        const CppEditor::UsePrecompiledHeaders usePch
+            = CppEditor::CppCodeModelSettings::usePrecompiledHeaders(nullptr);
         const QJsonArray projectPartOptions = fullProjectPartOptions(
                     optionsBuilder, globalClangOptions());
         const QJsonArray clangOptions = clangOptionsForFile({}, optionsBuilder.projectPart(),
@@ -500,8 +501,8 @@ ClangdClient::ClangdClient(Project *project, const Utils::FilePath &jsonDbDir, c
 
 ClangdClient::~ClangdClient()
 {
-    if (d->followSymbol)
-        d->followSymbol->clear();
+    for (ClangdFollowSymbol * const followSymbol : std::as_const(d->followSymbolOps))
+        followSymbol->clear();
     delete d;
 }
 
@@ -519,13 +520,20 @@ void ClangdClient::openExtraFile(const Utils::FilePath &filePath, const QString 
         return;
     }
 
-    QFile cxxFile(filePath.toString());
-    if (content.isEmpty() && !cxxFile.open(QIODevice::ReadOnly))
-        return;
+    QString text;
+    if (!content.isEmpty()) {
+        text = content;
+    } else {
+        expected_str<QByteArray> fileContent = filePath.fileContents();
+        if (!fileContent)
+            return;
+        text = QString::fromUtf8(*std::move(fileContent));
+    }
+
     TextDocumentItem item;
     item.setLanguageId("cpp");
     item.setUri(hostPathToServerUri(filePath));
-    item.setText(!content.isEmpty() ? content : QString::fromUtf8(cxxFile.readAll()));
+    item.setText(std::move(text));
     item.setVersion(0);
     sendMessage(DidOpenTextDocumentNotification(DidOpenTextDocumentParams(item)),
                 SendDocUpdates::Ignore);
@@ -556,9 +564,7 @@ void ClangdClient::findUsages(const CppEditor::CursorInEditor &cursor,
     if (searchTerm.isEmpty())
         return;
 
-    if (replacement && versionNumber() >= QVersionNumber(16)
-        && Utils::qtcEnvironmentVariable("QTC_CLANGD_RENAMING") != "0") {
-
+    if (replacement && Utils::qtcEnvironmentVariable("QTC_CLANGD_RENAMING") != "0") {
         // If we have up-to-date highlighting data, we can prevent giving clangd
         // macros or namespaces to rename, which it can't cope with.
         // TODO: Fix this upstream for macros; see https://github.com/clangd/clangd/issues/729.
@@ -599,7 +605,7 @@ void ClangdClient::findUsages(const CppEditor::CursorInEditor &cursor,
         }
     }
 
-    const bool categorize = CppEditor::codeModelSettings()->categorizeFindReferences();
+    const bool categorize = CppEditor::CppCodeModelSettings::categorizeFindReferences();
 
     // If it's a "normal" symbol, go right ahead.
     if (searchTerm != "operator" && Utils::allOf(searchTerm, [](const QChar &c) {
@@ -688,30 +694,14 @@ const LanguageClient::Client::CustomInspectorTabs ClangdClient::createCustomInsp
 
 class ClangdDiagnosticManager : public LanguageClient::DiagnosticManager
 {
-    using LanguageClient::DiagnosticManager::DiagnosticManager;
-
-    ClangdClient *getClient() const { return qobject_cast<ClangdClient *>(client()); }
-
-    bool isCurrentDocument(const Utils::FilePath &filePath) const
+public:
+    ClangdDiagnosticManager(LanguageClient::Client *client)
+        : LanguageClient::DiagnosticManager(client)
     {
-        const IDocument * const doc = EditorManager::currentDocument();
-        return doc && doc->filePath() == filePath;
+        setTaskCategory(Constants::TASK_CATEGORY_DIAGNOSTICS);
+        setForceCreateTasks(false);
     }
-
-    void showDiagnostics(const Utils::FilePath &filePath, int version) override
-    {
-        getClient()->clearTasks(filePath);
-        DiagnosticManager::showDiagnostics(filePath, version);
-        if (isCurrentDocument(filePath))
-            getClient()->switchIssuePaneEntries(filePath);
-    }
-
-    void hideDiagnostics(const Utils::FilePath &filePath) override
-    {
-        DiagnosticManager::hideDiagnostics(filePath);
-        if (isCurrentDocument(filePath))
-            TaskHub::clearTasks(Constants::TASK_CATEGORY_DIAGNOSTICS);
-    }
+private:
 
     QList<Diagnostic> filteredDiagnostics(const QList<Diagnostic> &diagnostics) const override
     {
@@ -727,7 +717,18 @@ class ClangdDiagnosticManager : public LanguageClient::DiagnosticManager
                              const Diagnostic &diagnostic,
                              bool isProjectFile) const override
     {
-        return new ClangdTextMark(doc, diagnostic, isProjectFile, getClient());
+        return new ClangdTextMark(
+                    doc, diagnostic, isProjectFile, qobject_cast<ClangdClient *>(client()));
+    }
+
+    QString taskText(const Diagnostic &diagnostic) const override
+    {
+        QString text = diagnostic.message();
+        auto splitIndex = text.indexOf("\n\n");
+        if (splitIndex >= 0)
+            text.truncate(splitIndex);
+
+        return diagnosticCategoryPrefixRemoved(text);
     }
 };
 
@@ -769,6 +770,15 @@ QList<Text::Range> ClangdClient::additionalDocumentHighlights(
 {
     return CppEditor::symbolOccurrencesInDeclarationComments(
         qobject_cast<CppEditor::CppEditorWidget *>(editorWidget), cursor);
+}
+
+bool ClangdClient::shouldSendDidSave(const TextEditor::TextDocument *doc) const
+{
+    for (const Project * const p : ProjectManager::projects()) {
+        if (const Node * const n  = p->nodeForFilePath(doc->filePath()))
+            return n->asFileNode() && n->asFileNode()->fileType() == FileType::Header;
+    }
+    return CppEditor::ProjectFile::isHeader(doc->filePath());
 }
 
 RefactoringFilePtr ClangdClient::createRefactoringFile(const FilePath &filePath) const
@@ -915,36 +925,24 @@ void ClangdClient::updateParserConfig(const Utils::FilePath &filePath,
     CppEditor::CompilerOptionsBuilder optionsBuilder = clangOptionsBuilder(
                 *projectPart, warningsConfigForProject(project()), includeDir,
                 ProjectExplorer::Macro::toMacros(config.editorDefines));
-    const CppEditor::ProjectFile file(filePath,
-                                      CppEditor::ProjectFile::classify(filePath.toString()));
+    const CppEditor::ProjectFile file(filePath, CppEditor::ProjectFile::classify(filePath));
     const QJsonArray projectPartOptions = fullProjectPartOptions(
                 optionsBuilder, globalClangOptions());
-    addToCompilationDb(cdbChanges, *projectPart, CppEditor::getPchUsage(), projectPartOptions,
-                       filePath.parentDir(), file, optionsBuilder.isClStyle());
+    const auto cppSettings = CppEditor::CppCodeModelSettings::settingsForProject(
+        projectPart->topLevelProject);
+    addToCompilationDb(cdbChanges,
+                       *projectPart,
+                       cppSettings.usePrecompiledHeaders(),
+                       projectPartOptions,
+                       filePath.parentDir(),
+                       file,
+                       optionsBuilder.isClStyle());
     QJsonObject settings;
     addCompilationDb(settings, cdbChanges);
     DidChangeConfigurationParams configChangeParams;
     configChangeParams.setSettings(settings);
     sendMessage(DidChangeConfigurationNotification(configChangeParams));
     emit configChanged();
-}
-
-void ClangdClient::switchIssuePaneEntries(const FilePath &filePath)
-{
-    TaskHub::clearTasks(Constants::TASK_CATEGORY_DIAGNOSTICS);
-    const Tasks tasks = d->issuePaneEntries.value(filePath);
-    for (const Task &t : tasks)
-        TaskHub::addTask(t);
-}
-
-void ClangdClient::addTask(const ProjectExplorer::Task &task)
-{
-    d->issuePaneEntries[task.file] << task;
-}
-
-void ClangdClient::clearTasks(const Utils::FilePath &filePath)
-{
-    d->issuePaneEntries[filePath].clear();
 }
 
 std::optional<bool> ClangdClient::hasVirtualFunctionAt(TextDocument *doc, int revision,
@@ -998,7 +996,7 @@ MessageId ClangdClient::requestSymbolInfo(const Utils::FilePath &filePath, const
 #ifdef WITH_TESTS
 ClangdFollowSymbol *ClangdClient::currentFollowSymbolOperation()
 {
-    return d->followSymbol;
+    return d->followSymbolOps.isEmpty() ? nullptr : d->followSymbolOps.first();
 }
 #endif
 
@@ -1013,8 +1011,21 @@ void ClangdClient::followSymbol(TextDocument *document,
 {
     QTC_ASSERT(documentOpen(document), openDocument(document));
 
-    if (d->followSymbol)
-        d->followSymbol->cancel();
+    const ClangdFollowSymbol::Origin origin
+        = CppEditor::CppCodeModelSettings::isInteractiveFollowSymbol()
+              ? ClangdFollowSymbol::Origin::User
+              : ClangdFollowSymbol::Origin::Code;
+    if (origin == ClangdFollowSymbol::Origin::User) {
+        for (auto it = d->followSymbolOps.begin(); it != d->followSymbolOps.end(); ) {
+            ClangdFollowSymbol * const followSymbol = *it;
+            if (followSymbol->isInteractive()) {
+                it = d->followSymbolOps.erase(it);
+                followSymbol->cancel();
+            } else {
+                ++it;
+            }
+        }
+    }
 
     const QTextCursor adjustedCursor = d->adjustedCursor(cursor, document);
     if (followTo == FollowTo::SymbolDef && !resolveTarget) {
@@ -1028,14 +1039,13 @@ void ClangdClient::followSymbol(TextDocument *document,
 
     qCDebug(clangdLog) << "follow symbol requested" << document->filePath()
                        << adjustedCursor.blockNumber() << adjustedCursor.positionInBlock();
-    auto clangdFollowSymbol = new ClangdFollowSymbol(this, adjustedCursor, editorWidget, document,
-                                                     callback, followTo, openInSplit);
+    auto clangdFollowSymbol = new ClangdFollowSymbol(this, origin, adjustedCursor, editorWidget,
+                                                     document, callback, followTo, openInSplit);
     connect(clangdFollowSymbol, &ClangdFollowSymbol::done, this, [this, clangdFollowSymbol] {
         clangdFollowSymbol->deleteLater();
-        if (clangdFollowSymbol == d->followSymbol)
-            d->followSymbol = nullptr;
+        d->followSymbolOps.removeOne(clangdFollowSymbol);
     });
-    d->followSymbol = clangdFollowSymbol;
+    d->followSymbolOps << clangdFollowSymbol;
 }
 
 void ClangdClient::switchDeclDef(TextDocument *document, const QTextCursor &cursor,
@@ -1497,10 +1507,9 @@ void ClangdClient::Private::setHelpItemForTooltip(const MessageId &token,
         mark = type;
 
     const HelpItem helpItem(helpIds, filePath, mark, category);
+    q->hoverHandler()->setHelpItem(token, helpItem);
     if (isTesting)
-        emit q->helpItemGathered(helpItem);
-    else
-        q->hoverHandler()->setHelpItem(token, helpItem);
+        emit q->helpItemGathered(helpItem, q->hoverHandler()->toolTip());
 }
 
 // Unfortunately, clangd ignores almost everything except symbols when sending
@@ -1528,7 +1537,7 @@ void ClangdClient::Private::handleSemanticTokens(TextDocument *doc,
         return;
     }
     force = force || isTesting;
-    const auto data = highlightingData.find(doc);
+    auto data = highlightingData.find(doc);
     if (data != highlightingData.end()) {
         if (!force && data->previousTokens.first == tokens
                 && data->previousTokens.second == version) {
@@ -1538,61 +1547,50 @@ void ClangdClient::Private::handleSemanticTokens(TextDocument *doc,
         data->previousTokens.first = tokens;
         data->previousTokens.second = version;
     } else {
-        highlightingData.insert(doc, {{tokens, version}, {}});
+        data = highlightingData.insert(doc, {{tokens, version}, {}});
     }
     for (const ExpandedSemanticToken &t : tokens)
         qCDebug(clangdLogHighlight()) << '\t' << t.line << t.column << t.length << t.type
                                       << t.modifiers;
 
-    const auto astHandler = [this, tokens, doc, version](const ClangdAstNode &ast, const MessageId &) {
-        FinalizingSubtaskTimer t(highlightingTimer);
-        if (!q->documentOpen(doc))
-            return;
-        if (version != q->documentVersion(doc->filePath())) {
-            qCInfo(clangdLogHighlight) << "AST not up to date; aborting highlighting procedure"
-                                        << version << q->documentVersion(doc->filePath());
-            return;
+    FinalizingSubtaskTimer ft(highlightingTimer);
+    if (!q->documentOpen(doc))
+        return;
+    if (version != q->documentVersion(doc->filePath())) {
+        qCInfo(clangdLogHighlight) << "AST not up to date; aborting highlighting procedure"
+                                   << version << q->documentVersion(doc->filePath());
+        return;
+    }
+
+    const auto runner = [tokens, filePath = doc->filePath(),
+                         text = doc->document()->toPlainText(),
+                         rev = doc->document()->revision(), this] {
+        try {
+            return Utils::asyncRun(doSemanticHighlighting, filePath, tokens, text,
+                                   rev, highlightingTimer);
+        } catch (const std::exception &e) {
+            qWarning() << "caught" << e.what() << "in main highlighting thread";
+            return QFuture<HighlightingResult>();
         }
-        if (clangdLogAst().isDebugEnabled())
-            ast.print();
-
-        const auto runner = [tokens, filePath = doc->filePath(),
-                             text = doc->document()->toPlainText(), ast,
-                             doc = QPointer(doc), rev = doc->document()->revision(),
-                             clangdVersion = q->versionNumber(),
-                             this] {
-            try {
-                return Utils::asyncRun(doSemanticHighlighting, filePath, tokens, text, ast, doc,
-                                       rev, clangdVersion, highlightingTimer);
-            } catch (const std::exception &e) {
-                qWarning() << "caught" << e.what() << "in main highlighting thread";
-                return QFuture<HighlightingResult>();
-            }
-        };
-
-        if (isTesting) {
-            const auto watcher = new QFutureWatcher<HighlightingResult>(q);
-            connect(watcher, &QFutureWatcher<HighlightingResult>::finished,
-                    q, [this, watcher, fp = doc->filePath()] {
-                emit q->highlightingResultsReady(watcher->future().results(), fp);
-                watcher->deleteLater();
-            });
-            watcher->setFuture(runner());
-            return;
-        }
-
-        auto &data = highlightingData[doc];
-        if (!data.highlighter)
-            data.highlighter = new CppEditor::SemanticHighlighter(doc);
-        else
-            data.highlighter->updateFormatMapFromFontSettings();
-        data.highlighter->setHighlightingRunner(runner);
-        data.highlighter->run();
     };
-    if (q->versionNumber().majorVersion() >= 17)
-        astHandler({}, {});
+
+    if (isTesting) {
+        const auto watcher = new QFutureWatcher<HighlightingResult>(q);
+        connect(watcher, &QFutureWatcher<HighlightingResult>::finished,
+                q, [this, watcher, fp = doc->filePath()] {
+            emit q->highlightingResultsReady(watcher->future().results(), fp);
+            watcher->deleteLater();
+        });
+        watcher->setFuture(runner());
+        return;
+    }
+
+    if (!data->highlighter)
+        data->highlighter = new CppEditor::SemanticHighlighter(doc);
     else
-        getAndHandleAst(doc, astHandler, AstCallbackMode::SyncIfPossible);
+        data->highlighter->updateFormatMapFromFontSettings();
+    data->highlighter->setHighlightingRunner(runner);
+    data->highlighter->run();
 }
 
 std::optional<QList<CodeAction> > ClangdDiagnostic::codeActions() const

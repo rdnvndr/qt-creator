@@ -35,6 +35,7 @@
 #include <utils/algorithm.h>
 #include <utils/basetreeview.h>
 #include <utils/hostosinfo.h>
+#include <utils/fileutils.h>
 #include <utils/navigationtreeview.h>
 #include <utils/qtcassert.h>
 #include <utils/qtcsettings.h>
@@ -206,7 +207,9 @@ void BuildSystemOutputWindow::updateFilter()
                            m_filterActionCaseSensitive.isChecked() ? Qt::CaseSensitive
                                                                     : Qt::CaseInsensitive,
                            m_filterActionRegexp.isChecked(),
-                           m_invertFilterAction.isChecked());
+                           m_invertFilterAction.isChecked(),
+                           0 /* before context */,
+                           0 /* after context */);
 }
 
 class VanishedTargetPanelItem : public TreeItem
@@ -736,8 +739,11 @@ public:
         innerLayout->setSpacing(10);
         innerLayout->setContentsMargins(PanelsWidget::PanelVMargin, innerLayout->spacing(),
                                         PanelsWidget::PanelVMargin, 0);
-
-        QStringList list = Core::ICore::settings()->value("HideOptionCategories").toStringList();
+#ifdef QT_NO_DEBUG
+        const QStringList list = Core::ICore::settings()->value("HideOptionCategories").toStringList();
+#else
+        const QStringList list;
+#endif
         if (!list.contains("Kits")) {
             auto manageKits = new QPushButton(Tr::tr("Manage Kits..."));
             connect(manageKits, &QPushButton::clicked,
@@ -746,7 +752,6 @@ public:
             innerLayout->addWidget(manageKits);
             innerLayout->addSpacerItem(new QSpacerItem(10, 30, QSizePolicy::Maximum, QSizePolicy::Maximum));
         }
-
         innerLayout->addWidget(activeLabel);
         innerLayout->addWidget(m_projectSelection);
         innerLayout->addWidget(m_importBuild);
@@ -1061,7 +1066,7 @@ void SelectorDelegate::paint(QPainter *painter, const QStyleOptionViewItem &opti
     if (TreeItem *item = model->itemForIndex(index)) {
         switch (item->level()) {
         case 2: {
-            QColor col = creatorTheme()->color(Theme::TextColorNormal);
+            QColor col = creatorColor(Theme::TextColorNormal);
             opt.palette.setColor(QPalette::Text, col);
             opt.font = StyleHelper::uiFont(StyleHelper::UiElementH4);
             break;

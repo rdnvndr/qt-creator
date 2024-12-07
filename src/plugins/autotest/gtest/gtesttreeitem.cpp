@@ -8,6 +8,7 @@
 #include "gtestframework.h"
 #include "gtestparser.h"
 #include "../autotesttr.h"
+#include "../autotestplugin.h"
 
 #include <cppeditor/cppmodelmanager.h>
 
@@ -56,20 +57,6 @@ TestTreeItem *GTestTreeItem::copyWithoutChildren()
     return copied;
 }
 
-static QString wildCardPattern(const QString &original)
-{
-    QString pattern = original;
-    pattern.replace('.', "\\.");
-    pattern.replace('$', "\\$");
-    pattern.replace('(', "\\(").replace(')', "\\)");
-    pattern.replace('[', "\\[").replace(']', "\\]");
-    pattern.replace('{', "\\{").replace('}', "\\}");
-    pattern.replace('+', "\\+");
-    pattern.replace('*', ".*");
-    pattern.replace('?', '.');
-    return pattern;
-}
-
 static bool matchesFilter(const QString &filter, const QString &fullTestName)
 {
     QStringList positive;
@@ -87,12 +74,12 @@ static bool matchesFilter(const QString &filter, const QString &fullTestName)
         testName.append('.');
 
     for (const QString &curr : negative) {
-        QRegularExpression regex(wildCardPattern(curr));
+        QRegularExpression regex(wildcardPatternFromString(curr));
         if (regex.match(testName).hasMatch())
             return false;
     }
     for (const QString &curr : positive) {
-        QRegularExpression regex(wildCardPattern(curr));
+        QRegularExpression regex(wildcardPatternFromString(curr));
         if (regex.match(testName).hasMatch())
             return true;
     }
@@ -122,7 +109,7 @@ QVariant GTestTreeItem::data(int column, int role) const
     case Qt::ToolTipRole:
         if (type() == GroupNode
                 && GTestFramework::staticGroupMode() == GTest::Constants::GTestFilter) {
-            const auto tpl = QString("<p>%1</p><p>%2</p>").arg(filePath().toString());
+            const auto tpl = QString("<p>%1</p><p>%2</p>").arg(filePath().path());
             return tpl.arg(Tr::tr("Change GTest filter in use inside the settings."));
         }
         break;
@@ -513,10 +500,10 @@ QSet<QString> internalTargets(const TestTreeItem &item)
     if (projectParts.isEmpty())
         return CppEditor::CppModelManager::dependingInternalTargets(item.filePath());
     for (const CppEditor::ProjectPart::ConstPtr &projectPart : projectParts) {
-        if (FilePath::fromString(projectPart->projectFile) == item.proFile()
-                && Utils::anyOf(projectPart->files, [&filePath](const CppEditor::ProjectFile &pf) {
-                                return pf.path == filePath;
-        })) {
+        if (projectPart->projectFile == item.proFile()
+            && Utils::anyOf(projectPart->files, [&filePath](const CppEditor::ProjectFile &pf) {
+                   return pf.path == filePath;
+               })) {
             result.insert(projectPart->buildSystemTarget);
             if (projectPart->buildTargetType != ProjectExplorer::BuildTargetType::Executable)
                 result.unite(CppEditor::CppModelManager::dependingInternalTargets(filePath));
@@ -548,9 +535,10 @@ bool GTestTreeItem::isGroupNodeFor(const TestTreeItem *other) const
             QTC_ASSERT(false, return false);
         }
         // FIXME gtest filter is no FilePath
-        if (GTestFramework::currentGTestFilter() != filePath().toString()) // filter has changed in settings
+        if (GTestFramework::currentGTestFilter()
+            != filePath().path()) // filter has changed in settings
             return false;
-        bool matches = matchesFilter(filePath().toString(), fullName);
+        bool matches = matchesFilter(filePath().path(), fullName);
         return (matches && name() == matchingString())
                 || (!matches && name() == notMatchingString());
     }

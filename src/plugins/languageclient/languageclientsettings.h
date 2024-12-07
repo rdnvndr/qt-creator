@@ -7,6 +7,8 @@
 
 #include <coreplugin/dialogs/ioptionspage.h>
 
+#include <utils/layoutbuilder.h>
+
 #include <QAbstractItemModel>
 #include <QCoreApplication>
 #include <QJsonObject>
@@ -69,6 +71,7 @@ public:
     LanguageFilter m_languageFilter;
     QString m_initializationOptions;
     QString m_configuration;
+    bool m_showInSettings = true;
 
     QJsonObject initializationOptions() const;
     QJsonValue configuration() const;
@@ -90,9 +93,6 @@ protected:
     BaseSettings(BaseSettings &&other) = default;
     BaseSettings &operator=(const BaseSettings &other) = default;
     BaseSettings &operator=(BaseSettings &&other) = default;
-
-private:
-    bool canStart(QList<const Core::IDocument *> documents) const;
 };
 
 class LANGUAGECLIENT_EXPORT StdIOSettings : public BaseSettings
@@ -127,6 +127,7 @@ struct ClientType {
     QString name;
     using SettingsGenerator = std::function<BaseSettings*()>;
     SettingsGenerator generator = nullptr;
+    bool userAddable = true;
 };
 
 class LANGUAGECLIENT_EXPORT LanguageClientSettings
@@ -136,6 +137,8 @@ public:
     static QList<BaseSettings *> fromSettings(Utils::QtcSettings *settings);
     static QList<BaseSettings *> pageSettings();
     static QList<BaseSettings *> changedSettings();
+
+    static QList<Utils::Store> storesBySettingsType(Utils::Id settingsTypeId);
 
     /**
      * must be called before the delayed initialize phase
@@ -154,7 +157,11 @@ class LANGUAGECLIENT_EXPORT BaseSettingsWidget : public QWidget
 {
     Q_OBJECT
 public:
-    explicit BaseSettingsWidget(const BaseSettings* settings, QWidget *parent = nullptr);
+    explicit BaseSettingsWidget(
+        const BaseSettings *settings,
+        QWidget *parent = nullptr,
+        Layouting::LayoutModifier additionalItems = {});
+
     ~BaseSettingsWidget() override = default;
 
     QString name() const;
@@ -206,7 +213,7 @@ private:
     QByteArray m_json;
 };
 
-LANGUAGECLIENT_EXPORT TextEditor::BaseTextEditor *jsonEditor();
+LANGUAGECLIENT_EXPORT TextEditor::BaseTextEditor *createJsonEditor(QObject *parent = nullptr);
 
 void setupLanguageClientProjectPanel();
 

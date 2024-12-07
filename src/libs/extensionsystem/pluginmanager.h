@@ -6,6 +6,7 @@
 #include "extensionsystem_global.h"
 
 #include <aggregation/aggregate.h>
+#include <utils/filepath.h>
 #include <utils/qtcsettings.h>
 
 #include <QObject>
@@ -14,8 +15,6 @@
 QT_BEGIN_NAMESPACE
 class QTextStream;
 QT_END_NAMESPACE
-
-namespace Utils { class FutureSynchronizer; }
 
 namespace ExtensionSystem {
 class IPlugin;
@@ -36,14 +35,14 @@ public:
     // Object pool operations
     static void addObject(QObject *obj);
     static void removeObject(QObject *obj);
-    static QVector<QObject *> allObjects();
+    static QObjectList allObjects();
     static QReadWriteLock *listLock();
 
     // This is useful for soft dependencies using pure interfaces.
     template <typename T> static T *getObject()
     {
         QReadLocker lock(listLock());
-        const QVector<QObject *> all = allObjects();
+        const QObjectList all = allObjects();
         for (QObject *obj : all) {
             if (T *result = qobject_cast<T *>(obj))
                 return result;
@@ -53,7 +52,7 @@ public:
     template <typename T, typename Predicate> static T *getObject(Predicate predicate)
     {
         QReadLocker lock(listLock());
-        const QVector<QObject *> all = allObjects();
+        const QObjectList all = allObjects();
         for (QObject *obj : all) {
             if (T *result = qobject_cast<T *>(obj))
                 if (predicate(result))
@@ -69,8 +68,8 @@ public:
     static QVector<PluginSpec *> loadQueue();
     static void loadPlugins();
     static void loadPluginsAtRuntime(const QSet<PluginSpec *> &plugins);
-    static QStringList pluginPaths();
-    static void setPluginPaths(const QStringList &paths);
+    static Utils::FilePaths pluginPaths();
+    static void setPluginPaths(const Utils::FilePaths &paths);
     static QString pluginIID();
     static void setPluginIID(const QString &iid);
     static const QVector<PluginSpec *> plugins();
@@ -81,6 +80,8 @@ public:
     static const QSet<PluginSpec *> pluginsRequiredByPlugin(PluginSpec *spec);
     static void checkForProblematicPlugins();
     static PluginSpec *specForPlugin(IPlugin *plugin);
+
+    static void addPlugins(const QVector<PluginSpec *> &specs);
 
     // Settings
     static void setSettings(Utils::QtcSettings *settings);
@@ -104,7 +105,7 @@ public:
 
     static bool testRunRequested();
 
-#ifdef WITH_TESTS
+#ifdef EXTENSIONSYSTEM_WITH_TESTOPTION
     static bool registerScenario(const QString &scenarioId, std::function<bool()> scenarioStarter);
     static bool isScenarioRequested();
     static bool runScenario();
@@ -136,7 +137,7 @@ public:
 
     static QString systemInformation();
 
-    static Utils::FutureSynchronizer *futureSynchronizer();
+    void setAcceptTermsAndConditionsCallback(const std::function<bool(PluginSpec *)> &callback);
 
 signals:
     void objectAdded(QObject *obj);

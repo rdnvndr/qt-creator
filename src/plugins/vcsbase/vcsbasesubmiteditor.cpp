@@ -36,7 +36,7 @@
 #include <utils/completingtextedit.h>
 #include <utils/fileutils.h>
 #include <utils/icon.h>
-#include <utils/process.h>
+#include <utils/qtcprocess.h>
 #include <utils/qtcassert.h>
 #include <utils/temporarydirectory.h>
 #include <utils/theme/theme.h>
@@ -213,9 +213,7 @@ void VcsBaseSubmitEditor::setParameters(const VcsBaseSubmitEditorParameters &par
             updateFileModel();
     });
 
-    auto aggregate = new Aggregation::Aggregate;
-    aggregate->add(new BaseTextFind(descriptionEdit));
-    aggregate->add(this);
+    Aggregation::aggregate({this, new BaseTextFind(descriptionEdit)});
 }
 
 VcsBaseSubmitEditor::~VcsBaseSubmitEditor()

@@ -599,6 +599,17 @@ protected:
         return true;
     }
 
+    bool visit(UiEnumDeclaration *node) override
+    {
+        if (containsOffset(node->identifierToken)) {
+            _name = node->name.toString();
+            _scope = _doc->bind()->findQmlObject(_objectNode);
+            _targetValue = _scopeChain->context()->lookupType(_doc.data(), QStringList(_name));
+            return false;
+        }
+        return true;
+    }
+
     bool visit(FunctionDeclaration *node) override
     {
         return visit(static_cast<FunctionExpression *>(node));
@@ -1037,7 +1048,7 @@ void FindReferences::cancel()
 void FindReferences::setPaused(bool paused)
 {
     if (!paused || m_watcher.isRunning()) // guard against pausing when the search is finished
-        m_watcher.setPaused(paused);
+        m_watcher.setSuspended(paused);
 }
 
 void FindReferences::onReplaceButtonClicked(const QString &text,

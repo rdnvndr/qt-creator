@@ -258,6 +258,7 @@ protected:
     void setRenderTimerInterval(int timerInterval);
     int renderTimerInterval() const;
     void setSlowRenderTimerInterval(int timerInterval);
+    TimerMode timerMode() const { return m_timerMode; }
 
     virtual void initializeView() = 0;
     virtual void initializeAuxiliaryViews();
@@ -290,7 +291,7 @@ protected:
     QList<ServerNodeInstance> setupInstances(const CreateSceneCommand &command);
 
     QList<QQmlContext*> allSubContextsForObject(QObject *object);
-    static QList<QObject*> allSubObjectsForObject(QObject *object);
+    static QObjectList allSubObjectsForObject(QObject *object);
 
     virtual void resizeCanvasToRootItem() = 0;
     void setupState(qint32 stateInstanceId);

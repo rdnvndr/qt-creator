@@ -9,9 +9,9 @@
 #include "fakevimhandler.h"
 
 #include <coreplugin/editormanager/editormanager.h>
-#include <texteditor/texteditor.h>
+#include <texteditor/syntaxhighlighter.h>
 #include <texteditor/textdocument.h>
-#include <texteditor/syntaxhighlighterrunner.h>
+#include <texteditor/texteditor.h>
 
 #include <QtTest>
 #include <QTextEdit>
@@ -350,7 +350,7 @@ struct FakeVimTester::TestData
     void doCommand(const char *cmd) { doCommand(_(cmd)); }
     void doKeys(const QString &keys) {
         handler->handleInput(keys);
-        QTRY_VERIFY(editor()->textDocument()->syntaxHighlighterRunner()->syntaxInfoUpdated());
+        QTRY_VERIFY(editor()->textDocument()->syntaxHighlighter()->syntaxHighlighterUpToDate());
     }
     void doKeys(const char *keys) { doKeys(_(keys)); }
 
@@ -364,7 +364,7 @@ struct FakeVimTester::TestData
         else
             i = 0;
         editor()->document()->setPlainText(_(str));
-        QTRY_VERIFY(editor()->textDocument()->syntaxHighlighterRunner()->syntaxInfoUpdated());
+        QTRY_VERIFY(editor()->textDocument()->syntaxHighlighter()->syntaxHighlighterUpToDate());
         setPosition(i);
         QCOMPARE(position(), i);
     }
@@ -375,7 +375,7 @@ struct FakeVimTester::TestData
         QTextCursor tc = editor()->textCursor();
         tc.insertText(_(text));
         editor()->setTextCursor(tc);
-        QTRY_VERIFY(editor()->textDocument()->syntaxHighlighterRunner()->syntaxInfoUpdated());
+        QTRY_VERIFY(editor()->textDocument()->syntaxHighlighter()->syntaxHighlighterUpToDate());
     }
 
     // Simulate external position change.
@@ -3011,7 +3011,6 @@ void FakeVimTester::test_vim_code_folding()
          "}" N
          "");
 
-    NOT_IMPLEMENTED
     // Opening folds recursively isn't supported (previous position in fold isn't restored).
 }
 

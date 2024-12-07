@@ -47,9 +47,9 @@ QString TextureEditorContextObject::convertColorToString(const QVariant &color)
 {
     QString colorString;
     QColor theColor;
-    if (color.canConvert(QVariant::Color)) {
+    if (color.canConvert(QMetaType(QMetaType::QColor))) {
         theColor = color.value<QColor>();
-    } else if (color.canConvert(QVariant::Vector3D)) {
+    } else if (color.canConvert(QMetaType(QMetaType::QVector3D))) {
         auto vec = color.value<QVector3D>();
         theColor = QColor::fromRgbF(vec.x(), vec.y(), vec.z());
     }
@@ -80,7 +80,7 @@ void TextureEditorContextObject::insertKeyframe(const QString &propertyName)
     //  If we add more code here we have to forward the material editor view
     RewriterView *rewriterView = m_model->rewriterView();
 
-    QmlTimeline timeline = rewriterView->currentTimeline();
+    QmlTimeline timeline = rewriterView->currentTimelineNode();
 
     QTC_ASSERT(timeline.isValid(), return);
 

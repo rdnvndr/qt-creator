@@ -193,7 +193,10 @@ TextFileFormat::ReadResult readTextFile(const FilePath &filePath, const QTextCod
             return TextFileFormat::ReadIOError;
         data = reader.data();
     } catch (const std::bad_alloc &) {
-        *errorString = Tr::tr("Out of memory.");
+        if (errorString)
+            *errorString = Tr::tr("Out of memory.");
+        else
+            qWarning() << Q_FUNC_INFO << "Out of memory in" << filePath;
         return TextFileFormat::ReadMemoryAllocationError;
     }
 
@@ -204,7 +207,10 @@ TextFileFormat::ReadResult readTextFile(const FilePath &filePath, const QTextCod
         format->codec = defaultCodec ? defaultCodec : QTextCodec::codecForLocale();
 
     if (!format->decode(data, target)) {
-        *errorString = Tr::tr("An encoding error was encountered.");
+        if (errorString)
+            *errorString = Tr::tr("An encoding error was encountered.");
+        else
+            qWarning() << Q_FUNC_INFO << "An encoding error was encountered in" << filePath;
         if (decodingErrorSampleIn)
             *decodingErrorSampleIn = TextFileFormat::decodingErrorSample(data);
         return TextFileFormat::ReadEncodingError;
@@ -216,9 +222,9 @@ TextFileFormat::ReadResult readTextFile(const FilePath &filePath, const QTextCod
     Reads a text file from \a filePath into a list of strings, \a plainTextList
     using \a defaultCodec and text file format \a format.
 
-    Returns whether decoding was possible without errors. If errors occur,
-    returns an error message, \a errorString and a sample error,
-    \a decodingErrorSample.
+    Returns whether decoding was possible without errors. If an errors occur
+    \a errorString is set to the error message, and \a decodingErrorSample is
+    set to a snippet that failed to decode.
 */
 
 TextFileFormat::ReadResult
@@ -239,8 +245,9 @@ TextFileFormat::ReadResult
     Reads a text file from \a filePath into a string, \a plainText using
     \a defaultCodec and text file format \a format.
 
-    Returns whether decoding was possible without errors.
-
+    Returns whether decoding was possible without errors. If an errors occur
+    \a errorString is set to the error message, and \a decodingErrorSample is
+    set to a snippet that failed to decode.
 */
 
 TextFileFormat::ReadResult

@@ -8,7 +8,7 @@
 #include <utils/environment.h>
 #include <utils/fileutils.h>
 #include <utils/hostosinfo.h>
-#include <utils/process.h>
+#include <utils/qtcprocess.h>
 #include <utils/qtcassert.h>
 
 #include <QDebug>
@@ -75,14 +75,16 @@ QStringList SshParameters::connectionOptions(const FilePath &binary) const
     return args;
 }
 
-bool SshParameters::setupSshEnvironment(Process *process)
+void SshParameters::setupSshEnvironment(Process *process)
 {
     Environment env = process->controlEnvironment();
     if (!env.hasChanges())
         env = Environment::systemEnvironment();
-    const bool hasDisplay = env.hasKey("DISPLAY") && (env.value("DISPLAY") != QString(":0"));
-    if (SshSettings::askpassFilePath().exists()) {
-        env.set("SSH_ASKPASS", SshSettings::askpassFilePath().toUserOutput());
+    const FilePath askPass = SshSettings::askpassFilePath();
+    if (askPass.exists()) {
+        if (askPass.fileName().contains("qtc"))
+            env = Environment::originalSystemEnvironment();
+        env.set("SSH_ASKPASS", askPass.toUserOutput());
         env.set("SSH_ASKPASS_REQUIRE", "force");
 
         // OpenSSH only uses the askpass program if DISPLAY is set, regardless of the platform.
@@ -93,7 +95,6 @@ bool SshParameters::setupSshEnvironment(Process *process)
 
     // Otherwise, ssh will ignore SSH_ASKPASS and read from /dev/tty directly.
     process->setDisableUnixTerminal();
-    return hasDisplay;
 }
 
 bool operator==(const SshParameters &p1, const SshParameters &p2)

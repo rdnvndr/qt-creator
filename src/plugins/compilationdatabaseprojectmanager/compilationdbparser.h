@@ -7,8 +7,6 @@
 
 #include <projectexplorer/buildsystem.h>
 
-#include <utils/fileutils.h>
-
 #include <QFutureWatcher>
 #include <QObject>
 #include <QStringList>
@@ -32,6 +30,7 @@ public:
                                  MimeBinaryCache &mimeBinaryCache,
                                  ProjectExplorer::BuildSystem::ParseGuard &&guard,
                                  QObject *parent = nullptr);
+    ~CompilationDbParser();
 
 
     void setPreviousProjectFileHash(const QByteArray &fileHash) { m_projectFileHash = fileHash; }

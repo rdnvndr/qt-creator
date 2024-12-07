@@ -37,12 +37,10 @@ void BindingEditor::prepareDialog()
 {
     QmlDesignerPlugin::emitUsageStatistics(Constants::EVENT_BINDINGEDITOR_OPENED);
 
-    m_dialog = new BindingEditorDialog(Core::ICore::dialogParent());
+    m_dialog = Utils::makeUniqueObjectPtr<BindingEditorDialog>(Core::ICore::dialogParent());
 
-    QObject::connect(m_dialog, &AbstractEditorDialog::accepted,
-                     this, &BindingEditor::accepted);
-    QObject::connect(m_dialog, &AbstractEditorDialog::rejected,
-                     this, &BindingEditor::rejected);
+    QObject::connect(m_dialog.get(), &AbstractEditorDialog::accepted, this, &BindingEditor::accepted);
+    QObject::connect(m_dialog.get(), &AbstractEditorDialog::rejected, this, &BindingEditor::rejected);
 
     m_dialog->setAttribute(Qt::WA_DeleteOnClose);
 }
@@ -178,22 +176,22 @@ bool isType(const TypeName &first, const TypeName &second, const Tuple &...types
 
 bool compareTypes(const NodeMetaInfo &sourceType, const NodeMetaInfo &targetType)
 {
-    if constexpr (useProjectStorage()) {
-        return targetType.isVariant() || sourceType.isVariant() || targetType == sourceType
-               || (targetType.isNumber() && sourceType.isNumber())
-               || (targetType.isColor() && sourceType.isColor())
-               || (targetType.isString() && sourceType.isString());
-    } else {
-        const TypeName source = sourceType.simplifiedTypeName();
-        const TypeName target = targetType.simplifiedTypeName();
+#ifdef QDS_USE_PROJECTSTORAGE
+    return targetType.isVariant() || sourceType.isVariant() || targetType == sourceType
+           || (targetType.isNumber() && sourceType.isNumber())
+           || (targetType.isColor() && sourceType.isColor())
+           || (targetType.isString() && sourceType.isString());
+#else
+    const TypeName source = sourceType.simplifiedTypeName();
+    const TypeName target = targetType.simplifiedTypeName();
 
-        static constexpr auto variantTypes = std::make_tuple("alias", "unknown", "variant", "var");
+    static constexpr auto variantTypes = std::make_tuple("alias", "unknown", "variant", "var");
 
-        return isType(variantTypes, target) || isType(variantTypes, source) || target == source
-               || targetType == sourceType || isType(target, source, "double", "real", "int")
-               || isType(target, source, "QColor", "color")
-               || isType(target, source, "QString", "string");
-    }
+    return isType(variantTypes, target) || isType(variantTypes, source) || target == source
+           || targetType == sourceType || isType(target, source, "double", "real", "int")
+           || isType(target, source, "QColor", "color")
+           || isType(target, source, "QString", "string");
+#endif
 }
 } // namespace
 
@@ -248,6 +246,26 @@ void BindingEditor::prepareBindings()
     }
 
     //singletons:
+#ifdef QDS_USE_PROJECTSTORAGE
+    if (auto model = m_modelNode.view()->model()) {
+        for (const auto &metaInfo : model->singletonMetaInfos()) {
+            BindingEditorDialog::BindingOption binding;
+
+            for (const auto &property : metaInfo.properties()) {
+                const auto propertyType = property.propertyType();
+
+                if (compareTypes(m_backendValueType, propertyType)) {
+                    binding.properties.append(QString::fromUtf8(property.name()));
+                }
+            }
+
+            if (!binding.properties.isEmpty()) {
+                binding.item = metaInfo.displayName();
+                bindings.append(binding);
+            }
+        }
+    }
+#else
     if (RewriterView *rv = m_modelNode.view()->rewriterView()) {
         for (const QmlTypeData &data : rv->getQMLTypes()) {
             if (!data.typeName.isEmpty()) {
@@ -272,14 +290,14 @@ void BindingEditor::prepareBindings()
             }
         }
     }
-
-    if (!bindings.isEmpty() && !m_dialog.isNull())
+#endif
+    if (!bindings.isEmpty() && m_dialog)
         m_dialog->setAllBindings(bindings, m_backendValueType);
 }
 
 void BindingEditor::updateWindowName()
 {
-    if (!m_dialog.isNull() && m_backendValueType) {
+    if (m_dialog && m_backendValueType) {
         QString targetString;
         if constexpr (useProjectStorage()) {
             auto exportedTypeNames = m_backendValueType.exportedTypeNamesForSourceId(
@@ -289,8 +307,13 @@ void BindingEditor::updateWindowName()
                                + exportedTypeNames.front().name.toQString() + "]";
             }
         } else {
+#ifdef QDS_USE_PROJECTSTORAGE
+            targetString = " [" + (m_targetName.isEmpty() ? QString() : (m_targetName + ": "))
+                           + m_backendValueType.displayName() + "]";
+#else
             targetString = " [" + (m_targetName.isEmpty() ? QString() : (m_targetName + ": "))
                            + QString::fromUtf8(m_backendValueType.simplifiedTypeName()) + "]";
+#endif
         }
 
         m_dialog->setWindowTitle(m_dialog->defaultTitle() + targetString);

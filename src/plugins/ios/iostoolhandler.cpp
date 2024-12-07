@@ -14,7 +14,7 @@
 
 #include <utils/async.h>
 #include <utils/futuresynchronizer.h>
-#include <utils/process.h>
+#include <utils/qtcprocess.h>
 #include <utils/qtcassert.h>
 #include <utils/temporarydirectory.h>
 
@@ -93,6 +93,7 @@ signals:
 struct ParserState {
     enum Kind {
         Msg,
+        Error,
         DeviceId,
         Key,
         Value,
@@ -119,6 +120,7 @@ struct ParserState {
     bool collectChars() {
         switch (kind) {
         case Msg:
+        case Error:
         case DeviceId:
         case Key:
         case Value:
@@ -386,6 +388,8 @@ void IosDeviceToolHandlerPrivate::processXml()
             const auto elName = outputParser.name();
             if (elName == QLatin1String("msg")) {
                 stack.append(ParserState(ParserState::Msg));
+            } else if (elName == QLatin1String("error")) {
+                stack.append(ParserState(ParserState::Error));
             } else if (elName == QLatin1String("exit")) {
                 stack.append(ParserState(ParserState::Exit));
                 toolExited(outputParser.attributes().value(QLatin1String("code"))
@@ -459,6 +463,9 @@ void IosDeviceToolHandlerPrivate::processXml()
             stack.removeLast();
             switch (p.kind) {
             case ParserState::Msg:
+                emit q->message(p.chars);
+                break;
+            case ParserState::Error:
                 errorMsg(p.chars);
                 break;
             case ParserState::DeviceId:
@@ -848,6 +855,16 @@ void IosSimulatorToolHandlerPrivate::installAppOnSimulator()
     futureSynchronizer.addFuture(Utils::onResultReady(installFuture, q, onResponseAppInstall));
 }
 
+#ifdef Q_OS_UNIX
+static void monitorPid(QPromise<void> &promise, qint64 pid)
+{
+    do {
+        // Poll every 1 sec to check whether the app is running.
+        QThread::msleep(1000);
+    } while (!promise.isCanceled() && kill(pid, 0) == 0);
+}
+#endif
+
 void IosSimulatorToolHandlerPrivate::launchAppOnSimulator(const QStringList &extraArgs)
 {
     const QString bundleId = SimulatorControl::bundleIdentifier(m_bundlePath);
@@ -871,21 +888,7 @@ void IosSimulatorToolHandlerPrivate::launchAppOnSimulator(const QStringList &ext
                         "Install Xcode 8 or later.").arg(bundleId));
     }
 
-    auto monitorPid = [this](QPromise<void> &promise, qint64 pid) {
-#ifdef Q_OS_UNIX
-        do {
-            // Poll every 1 sec to check whether the app is running.
-            QThread::msleep(1000);
-        } while (!promise.isCanceled() && kill(pid, 0) == 0);
-#else
-    Q_UNUSED(pid)
-#endif
-        // Future is cancelled if the app is stopped from the qt creator.
-        if (!promise.isCanceled())
-            stop(0);
-    };
-
-    auto onResponseAppLaunch = [this, captureConsole, monitorPid, stdoutFile, stderrFile](
+    auto onResponseAppLaunch = [this, captureConsole, stdoutFile, stderrFile](
                                    const SimulatorControl::Response &response) {
         if (response) {
             if (!isResponseValid(*response))
@@ -893,8 +896,15 @@ void IosSimulatorToolHandlerPrivate::launchAppOnSimulator(const QStringList &ext
             m_pid = response->inferiorPid;
             gotInferiorPid(m_bundlePath, m_deviceId, response->inferiorPid);
             didStartApp(m_bundlePath, m_deviceId, Ios::IosToolHandler::Success);
+#ifdef Q_OS_UNIX
             // Start monitoring app's life signs.
-            futureSynchronizer.addFuture(Utils::asyncRun(monitorPid, response->inferiorPid));
+            futureSynchronizer.addFuture(Utils::onFinished(
+                Utils::asyncRun(monitorPid, response->inferiorPid), q,
+                [this](const QFuture<void> &future) {
+                    if (!future.isCanceled())
+                        stop(0);
+                }));
+#endif
             if (captureConsole)
                 futureSynchronizer.addFuture(Utils::asyncRun(&LogTailFiles::exec, &outputLogger,
                                                              stdoutFile, stderrFile));
@@ -989,12 +999,12 @@ IosToolTaskAdapter::IosToolTaskAdapter() {}
 
 void IosToolTaskAdapter::start()
 {
-    task()->m_iosToolHandler = new IosToolHandler(Internal::IosDeviceType(task()->m_deviceType));
-    connect(task()->m_iosToolHandler, &IosToolHandler::finished, this, [this] {
-        task()->m_iosToolHandler->deleteLater();
+    task()->m_iosToolHandler.reset(new IosToolHandler(Internal::IosDeviceType(task()->m_deviceType)));
+    connect(task()->m_iosToolHandler.get(), &IosToolHandler::finished, this, [this] {
+        task()->m_iosToolHandler.release()->deleteLater();
         emit done(Tasking::DoneResult::Success);
     });
-    task()->m_startHandler(task()->m_iosToolHandler);
+    task()->m_startHandler(task()->m_iosToolHandler.get());
 }
 
 } // namespace Ios

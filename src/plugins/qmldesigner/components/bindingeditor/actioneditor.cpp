@@ -49,12 +49,10 @@ void ActionEditor::prepareDialog()
 
     s_lastActionEditor = this;
 
-    m_dialog = new ActionEditorDialog(Core::ICore::dialogParent());
+    m_dialog = Utils::makeUniqueObjectPtr<ActionEditorDialog>(Core::ICore::dialogParent());
 
-    QObject::connect(m_dialog, &AbstractEditorDialog::accepted,
-                     this, &ActionEditor::accepted);
-    QObject::connect(m_dialog, &AbstractEditorDialog::rejected,
-                     this, &ActionEditor::rejected);
+    QObject::connect(m_dialog.get(), &AbstractEditorDialog::accepted, this, &ActionEditor::accepted);
+    QObject::connect(m_dialog.get(), &AbstractEditorDialog::rejected, this, &ActionEditor::rejected);
 
     m_dialog->setAttribute(Qt::WA_DeleteOnClose);
 }
@@ -231,6 +229,7 @@ void ActionEditor::prepareConnections()
     QList<ActionEditorDialog::SingletonOption> singletons;
     QStringList states;
 
+    [[maybe_unused]] auto model = m_modelNode.model();
     const QList<QmlDesigner::ModelNode> allNodes = m_modelNode.view()->allModelNodes();
     for (const auto &modelNode : allNodes) {
         // Skip nodes without specified id
@@ -242,11 +241,19 @@ void ActionEditor::prepareConnections()
         for (const auto &property : modelNode.metaInfo().properties()) {
             if (isSkippedType(property.propertyType()))
                 continue;
-
+#ifdef QDS_USE_PROJECTSTORAGE
+            auto exportedTypeName = model->exportedTypeNameForMetaInfo(property.propertyType())
+                                        .name.toQByteArray();
+            connection.properties.append(
+                ActionEditorDialog::PropertyOption(QString::fromUtf8(property.name()),
+                                                   exportedTypeName,
+                                                   property.isWritable()));
+#else
             connection.properties.append(
                 ActionEditorDialog::PropertyOption(QString::fromUtf8(property.name()),
                                                    skipCpp(property.propertyType().typeName()),
                                                    property.isWritable()));
+#endif
         }
 
         for (const VariantProperty &variantProperty : modelNode.variantProperties()) {
@@ -298,6 +305,31 @@ void ActionEditor::prepareConnections()
     }
 
     // Singletons
+#ifdef QDS_USE_PROJECTSTORAGE
+    if (auto model = m_modelNode.model()) {
+        for (const auto &metaInfo : model->singletonMetaInfos()) {
+            if (metaInfo.isValid()) {
+                ActionEditorDialog::SingletonOption singelton;
+                for (const auto &property : metaInfo.properties()) {
+                    if (isSkippedType(property.propertyType()))
+                        continue;
+                    auto exportedTypeName = model
+                                                ->exportedTypeNameForMetaInfo(property.propertyType())
+                                                .name.toQByteArray();
+                    singelton.properties.append(
+                        ActionEditorDialog::PropertyOption(QString::fromUtf8(property.name()),
+                                                           exportedTypeName,
+                                                           property.isWritable()));
+                }
+
+                if (!singelton.properties.isEmpty()) {
+                    singelton.item = metaInfo.displayName();
+                    singletons.append(singelton);
+                }
+            }
+        }
+    }
+#else
     if (RewriterView *rv = m_modelNode.view()->rewriterView()) {
         for (const QmlTypeData &data : rv->getQMLTypes()) {
             if (!data.typeName.isEmpty()) {
@@ -307,7 +339,6 @@ void ActionEditor::prepareConnections()
                     for (const auto &property : metaInfo.properties()) {
                         if (isSkippedType(property.propertyType()))
                             continue;
-
                         singelton.properties.append(ActionEditorDialog::PropertyOption(
                             QString::fromUtf8(property.name()),
                             skipCpp(property.propertyType().typeName()),
@@ -322,18 +353,19 @@ void ActionEditor::prepareConnections()
             }
         }
     }
+#endif
 
     // States
     for (const QmlModelState &state : QmlItemNode(m_modelNode.view()->rootModelNode()).states().allStates())
         states.append(state.name());
 
-    if (!connections.isEmpty() && !m_dialog.isNull())
+    if (!connections.isEmpty() && m_dialog)
         m_dialog->setAllConnections(connections, singletons, states);
 }
 
 void ActionEditor::updateWindowName(const QString &targetName)
 {
-    if (!m_dialog.isNull()) {
+    if (m_dialog) {
         if (targetName.isEmpty())
             m_dialog->setWindowTitle(m_dialog->defaultTitle());
         else

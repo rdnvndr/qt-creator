@@ -34,7 +34,9 @@
 #include <projectexplorer/devicesupport/idevice.h>
 #include <projectexplorer/environmentaspectwidget.h>
 #include <projectexplorer/environmentwidget.h>
+#include <projectexplorer/kitaspect.h>
 #include <projectexplorer/kitaspects.h>
+#include <projectexplorer/kitmanager.h>
 #include <projectexplorer/namedwidget.h>
 #include <projectexplorer/processparameters.h>
 #include <projectexplorer/project.h>
@@ -94,6 +96,16 @@ const char CMAKE_BUILD_TYPE[] = "CMake.Build.Type";
 const char CLEAR_SYSTEM_ENVIRONMENT_KEY[] = "CMake.Configure.ClearSystemEnvironment";
 const char USER_ENVIRONMENT_CHANGES_KEY[] = "CMake.Configure.UserEnvironmentChanges";
 const char BASE_ENVIRONMENT_KEY[] = "CMake.Configure.BaseEnvironment";
+const char GENERATE_QMLLS_INI_SETTING[] = "J.QtQuick/QmlJSEditor.GenerateQmllsIniFiles";
+
+const char CMAKE_TOOLCHAIN_FILE[] = "CMAKE_TOOLCHAIN_FILE";
+const char CMAKE_C_FLAGS_INIT[] = "CMAKE_C_FLAGS_INIT";
+const char CMAKE_CXX_FLAGS_INIT[] = "CMAKE_CXX_FLAGS_INIT";
+const char CMAKE_CXX_FLAGS[] = "CMAKE_CXX_FLAGS";
+const char CMAKE_CXX_FLAGS_DEBUG[] = "CMAKE_CXX_FLAGS_DEBUG";
+const char CMAKE_CXX_FLAGS_RELWITHDEBINFO[] = "CMAKE_CXX_FLAGS_RELWITHDEBINFO";
+
+const char VXWORKS_DEVICE_TYPE[] = "VxWorks.Device.Type";
 
 namespace Internal {
 
@@ -127,6 +139,7 @@ private:
     void kitCMakeConfiguration();
     void updateConfigureDetailsWidgetsSummary(
         const QStringList &configurationArguments = QStringList());
+    void updatePackageManagerAutoSetup(CMakeConfig &initialList);
 
     CMakeBuildConfiguration *m_buildConfig;
     QTreeView *m_configView;
@@ -149,6 +162,7 @@ private:
 
     QPushButton *m_batchEditButton = nullptr;
     QPushButton *m_kitConfiguration = nullptr;
+    CMakeConfig m_configurationChanges;
 };
 
 static QModelIndex mapToSource(const QAbstractItemView *view, const QModelIndex &idx)
@@ -163,6 +177,16 @@ static QModelIndex mapToSource(const QAbstractItemView *view, const QModelIndex 
         model = proxy->sourceModel();
     }
     return result;
+}
+
+static CMakeConfigItem getPackageManagerAutoSetupParameter()
+{
+    const QByteArray key("CMAKE_PROJECT_INCLUDE_BEFORE");
+    const QByteArray value = QString(
+                                 "%{BuildConfig:BuildDirectory:NativeFilePath}/%1/auto-setup.cmake")
+                                 .arg(Constants::PACKAGE_MANAGER_DIR)
+                                 .toUtf8();
+    return CMakeConfigItem(key, CMakeConfigItem::FILEPATH, value);
 }
 
 CMakeBuildSettingsWidget::CMakeBuildSettingsWidget(CMakeBuildConfiguration *bc) :
@@ -181,11 +205,9 @@ CMakeBuildSettingsWidget::CMakeBuildSettingsWidget(CMakeBuildConfiguration *bc) 
 
     auto buildDirAspect = bc->buildDirectoryAspect();
     buildDirAspect->setAutoApplyOnEditingFinished(true);
-    connect(buildDirAspect, &BaseAspect::changed, this, [this] {
-        m_configModel->flush(); // clear out config cache...;
-    });
+    buildDirAspect->addOnChanged(this, [this] { m_configModel->flush(); }); // clear config cache
 
-    connect(&m_buildConfig->buildTypeAspect, &BaseAspect::changed, this, [this] {
+    m_buildConfig->buildTypeAspect.addOnChanged(this, [this] {
         if (!m_buildConfig->cmakeBuildSystem()->isMultiConfig()) {
             CMakeConfig config;
             config << CMakeConfigItem("CMAKE_BUILD_TYPE",
@@ -196,9 +218,7 @@ CMakeBuildSettingsWidget::CMakeBuildSettingsWidget(CMakeBuildConfiguration *bc) 
     });
 
     auto qmlDebugAspect = bc->aspect<QtSupport::QmlDebuggingAspect>();
-    connect(qmlDebugAspect, &QtSupport::QmlDebuggingAspect::changed, this, [this] {
-        updateButtonState();
-    });
+    qmlDebugAspect->addOnChanged(this, [this] { updateButtonState(); });
 
     m_warningMessageLabel = new InfoLabel({}, InfoLabel::Warning);
     m_warningMessageLabel->setVisible(false);
@@ -296,7 +316,8 @@ CMakeBuildSettingsWidget::CMakeBuildSettingsWidget(CMakeBuildConfiguration *bc) 
     m_batchEditButton->setToolTip(Tr::tr("Set or reset multiple values in the CMake configuration."));
 
     m_showAdvancedCheckBox = new QCheckBox(Tr::tr("Advanced"));
-    m_showAdvancedCheckBox->setChecked(settings().showAdvancedOptionsByDefault());
+    m_showAdvancedCheckBox->setChecked(
+        settings(m_buildConfig->project()).showAdvancedOptionsByDefault());
 
     connect(m_configView->selectionModel(), &QItemSelectionModel::selectionChanged,
             this, [this](const QItemSelection &, const QItemSelection &) {
@@ -341,7 +362,7 @@ CMakeBuildSettingsWidget::CMakeBuildSettingsWidget(CMakeBuildConfiguration *bc) 
                 Column {
                     cmakeConfiguration,
                     Row {
-                        bc->initialCMakeArguments, br,
+                        bc->initialCMakeArguments,
                         bc->additionalCMakeOptions
                     },
                     m_reconfigureButton,
@@ -396,6 +417,11 @@ CMakeBuildSettingsWidget::CMakeBuildSettingsWidget(CMakeBuildConfiguration *bc) 
         updateButtonState();
         m_showProgressTimer.stop();
         m_progressIndicator->hide();
+
+        if (!m_configurationChanges.isEmpty()) {
+            m_configModel->setBatchEditConfiguration(m_configurationChanges);
+            m_configurationChanges.clear();
+        }
         updateConfigurationStateSelection();
     });
 
@@ -482,8 +508,9 @@ CMakeBuildSettingsWidget::CMakeBuildSettingsWidget(CMakeBuildConfiguration *bc) 
     connect(bs, &CMakeBuildSystem::warningOccurred,
             this, &CMakeBuildSettingsWidget::setWarning);
 
-    connect(bs, &CMakeBuildSystem::configurationChanged,
-            m_configModel, &ConfigModel::setBatchEditConfiguration);
+    connect(bs, &CMakeBuildSystem::configurationChanged, this, [this](const CMakeConfig &config) {
+        m_configurationChanges = config;
+    });
 
     updateFromKit();
     connect(m_buildConfig->target(), &Target::kitChanged,
@@ -585,26 +612,56 @@ void CMakeBuildSettingsWidget::reconfigureWithInitialParameters()
         Core::ICore::dialogParent(),
         Tr::tr("Re-configure with Initial Parameters"),
         Tr::tr("Clear CMake configuration and configure with initial parameters?"),
-        settings().askBeforeReConfigureInitialParams.askAgainCheckableDecider(),
+        settings(m_buildConfig->project()).askBeforeReConfigureInitialParams.askAgainCheckableDecider(),
         QMessageBox::Yes | QMessageBox::No,
         QMessageBox::Yes);
 
-    settings().writeSettings();
+    settings(m_buildConfig->project()).writeSettings();
 
     if (reply != QMessageBox::Yes)
         return;
 
-    m_buildConfig->cmakeBuildSystem()->clearCMakeCache();
-
     updateInitialCMakeArguments();
+
+    m_buildConfig->cmakeBuildSystem()->clearCMakeCache();
 
     if (ProjectExplorerPlugin::saveModifiedFiles())
         m_buildConfig->cmakeBuildSystem()->runCMake();
 }
 
+void CMakeBuildSettingsWidget::updatePackageManagerAutoSetup(CMakeConfig &initialList)
+{
+    const bool usePackageManagerAutoSetup
+        = settings(m_buildConfig->project()).packageManagerAutoSetup();
+
+    const auto autoSetupParameter = getPackageManagerAutoSetupParameter();
+    auto it
+        = std::find_if(initialList.begin(), initialList.end(), [&autoSetupParameter](const CMakeConfigItem &item) {
+              return item.key == autoSetupParameter.key;
+          });
+    if (it != initialList.end()) {
+        if (!usePackageManagerAutoSetup && it->value == autoSetupParameter.value)
+            initialList.erase(it);
+    } else if (usePackageManagerAutoSetup) {
+        initialList.push_back(autoSetupParameter);
+    }
+}
+
 void CMakeBuildSettingsWidget::updateInitialCMakeArguments()
 {
     CMakeConfig initialList = m_buildConfig->initialCMakeArguments.cmakeConfiguration();
+
+    // set QT_QML_GENERATE_QMLLS_INI if it is enabled via the settings checkbox and if its not part
+    // of the initial CMake arguments yet
+    if (Core::ICore::settings()->value(GENERATE_QMLLS_INI_SETTING).toBool()) {
+        if (std::none_of(
+                initialList.constBegin(), initialList.constEnd(), [](const CMakeConfigItem &item) {
+                    return item.key == "QT_QML_GENERATE_QMLLS_INI";
+                })) {
+            initialList.append(
+                CMakeConfigItem("QT_QML_GENERATE_QMLLS_INI", CMakeConfigItem::BOOL, "ON"));
+        }
+    }
 
     for (const CMakeConfigItem &ci : m_buildConfig->cmakeBuildSystem()->configurationChanges()) {
         if (!ci.isInitial)
@@ -622,6 +679,8 @@ void CMakeBuildSettingsWidget::updateInitialCMakeArguments()
             initialList.push_back(ci);
         }
     }
+
+    updatePackageManagerAutoSetup(initialList);
 
     m_buildConfig->initialCMakeArguments.setCMakeConfiguration(initialList);
 
@@ -645,27 +704,19 @@ void CMakeBuildSettingsWidget::kitCMakeConfiguration()
         m_buildConfig->kit()->unblockNotification();
     });
 
-    Layouting::Grid grid;
-    KitAspect *widget = CMakeKitAspect::createKitAspect(m_buildConfig->kit());
-    widget->setParent(dialog);
-    widget->addToLayout(grid);
-    widget = CMakeGeneratorKitAspect::createKitAspect(m_buildConfig->kit());
-    widget->setParent(dialog);
-    widget->addToLayout(grid);
-    widget = CMakeConfigurationKitAspect::createKitAspect(m_buildConfig->kit());
-    widget->setParent(dialog);
-    widget->addToLayout(grid);
-    grid.attachTo(dialog);
-
-    auto layout = qobject_cast<QGridLayout *>(dialog->layout());
-
-    layout->setColumnStretch(1, 1);
+    Kit *kit = m_buildConfig->kit();
 
     auto buttons = new QDialogButtonBox(QDialogButtonBox::Close);
     connect(buttons, &QDialogButtonBox::clicked, dialog, &QDialog::close);
-    layout->addItem(new QSpacerItem(0, 0, QSizePolicy::Maximum, QSizePolicy::MinimumExpanding),
-                    4, 0);
-    layout->addWidget(buttons, 5, 0, 1, -1);
+
+    using namespace Layouting;
+    Grid {
+        CMakeKitAspect::createKitAspect(kit),
+        CMakeGeneratorKitAspect::createKitAspect(kit),
+        CMakeConfigurationKitAspect::createKitAspect(kit),
+        empty, empty, buttons,
+        columnStretch(1, 1)
+    }.attachTo(dialog);
 
     dialog->setMinimumWidth(400);
     dialog->resize(800, 1);
@@ -843,11 +894,11 @@ CMakeConfig CMakeBuildSettingsWidget::getQmlDebugCxxFlags()
     const bool enable = m_buildConfig->qmlDebugging() == TriState::Enabled;
 
     const CMakeConfig configList = m_buildConfig->cmakeBuildSystem()->configurationFromCMake();
-    const QByteArrayList cxxFlagsPrev{"CMAKE_CXX_FLAGS",
-                                      "CMAKE_CXX_FLAGS_DEBUG",
-                                      "CMAKE_CXX_FLAGS_RELWITHDEBINFO",
-                                      "CMAKE_CXX_FLAGS_INIT"};
-    const QByteArrayList cxxFlags{"CMAKE_CXX_FLAGS_INIT", "CMAKE_CXX_FLAGS"};
+    const QByteArrayList cxxFlagsPrev{CMAKE_CXX_FLAGS,
+                                      CMAKE_CXX_FLAGS_DEBUG,
+                                      CMAKE_CXX_FLAGS_RELWITHDEBINFO,
+                                      CMAKE_CXX_FLAGS_INIT};
+    const QByteArrayList cxxFlags{CMAKE_CXX_FLAGS_INIT, CMAKE_CXX_FLAGS};
     const QByteArray qmlDebug(QT_QML_DEBUG_PARAM);
 
     CMakeConfig changedConfig;
@@ -1085,6 +1136,11 @@ static bool isWebAssembly(const Kit *k)
     return DeviceTypeKitAspect::deviceTypeId(k) == WebAssembly::Constants::WEBASSEMBLY_DEVICE_TYPE;
 }
 
+static bool isVxWorks(const Kit *k)
+{
+    return DeviceTypeKitAspect::deviceTypeId(k) == VXWORKS_DEVICE_TYPE;
+}
+
 static bool isQnx(const Kit *k)
 {
     return DeviceTypeKitAspect::deviceTypeId(k) == Qnx::Constants::QNX_QNX_OS_TYPE;
@@ -1100,7 +1156,8 @@ static bool isWindowsARM64(const Kit *k)
            && targetAbi.wordWidth() == 64;
 }
 
-static CommandLine defaultInitialCMakeCommand(const Kit *k, const QString &buildType)
+static CommandLine defaultInitialCMakeCommand(
+    const Kit *k, Project *project, const QString &buildType)
 {
     // Generator:
     CMakeTool *tool = CMakeKitAspect::cmakeTool(k);
@@ -1114,11 +1171,8 @@ static CommandLine defaultInitialCMakeCommand(const Kit *k, const QString &build
         cmd.addArg("-DCMAKE_BUILD_TYPE:STRING=" + buildType);
 
     // Package manager auto setup
-    if (settings().packageManagerAutoSetup()) {
-        cmd.addArg(QString("-DCMAKE_PROJECT_INCLUDE_BEFORE:FILEPATH="
-                           "%{BuildConfig:BuildDirectory:NativeFilePath}/%1/auto-setup.cmake")
-                       .arg(Constants::PACKAGE_MANAGER_DIR));
-    }
+    if (settings(project).packageManagerAutoSetup())
+        cmd.addArg(getPackageManagerAutoSetupParameter().toArgument());
 
     // Cross-compilation settings:
     if (!CMakeBuildConfiguration::isIos(k)) { // iOS handles this differently
@@ -1274,13 +1328,21 @@ static void addCMakeConfigurePresetToInitialArguments(QStringList &initialArgume
                 }
 
                 arg = argItem.toArgument();
-            } else if (argItem.key == "CMAKE_TOOLCHAIN_FILE") {
+            } else if (argItem.key == CMAKE_TOOLCHAIN_FILE) {
                 const FilePath argFilePath = FilePath::fromString(argItem.expandedValue(k));
                 const FilePath presetFilePath = FilePath::fromUserInput(
                     QString::fromUtf8(presetItem.value));
 
                 if (argFilePath != presetFilePath)
                     arg = presetItem.toArgument();
+            } else if (argItem.key == CMAKE_C_FLAGS_INIT || argItem.key == CMAKE_CXX_FLAGS_INIT) {
+                // Append the preset value with at the initial parameters value (e.g. QML Debugging)
+                if (argItem.expandedValue(k) != QString::fromUtf8(presetItem.value)) {
+                    argItem.value.append(" ");
+                    argItem.value.append(presetItem.value);
+
+                    arg = argItem.toArgument();
+                }
             } else if (argItem.expandedValue(k) != QString::fromUtf8(presetItem.value)) {
                 arg = presetItem.toArgument();
             }
@@ -1380,12 +1442,9 @@ CMakeBuildConfiguration::CMakeBuildConfiguration(Target *target, Id id)
     buildTypeAspect.setDisplayStyle(StringAspect::LineEditDisplay);
     buildTypeAspect.setDefaultValue("Unknown");
 
-    initialCMakeArguments.setMacroExpanderProvider([this] { return macroExpander(); });
-
     additionalCMakeOptions.setSettingsKey("CMake.Additional.Options");
     additionalCMakeOptions.setLabelText(Tr::tr("Additional CMake <a href=\"options\">options</a>:"));
     additionalCMakeOptions.setDisplayStyle(StringAspect::LineEditDisplay);
-    additionalCMakeOptions.setMacroExpanderProvider([this] { return macroExpander(); });
 
     macroExpander()->registerVariable(DEVELOPMENT_TEAM_FLAG,
                                       Tr::tr("The CMake flag for the development team"),
@@ -1405,20 +1464,11 @@ CMakeBuildConfiguration::CMakeBuildConfiguration(Target *target, Id id)
                                           return QString();
                                       });
 
-    macroExpander()->registerVariable(CMAKE_OSX_ARCHITECTURES_FLAG,
-                                      Tr::tr("The CMake flag for the architecture on macOS"),
-                                      [target] {
-                                          if (HostOsInfo::isRunningUnderRosetta()) {
-                                              if (auto *qt = QtSupport::QtKitAspect::qtVersion(target->kit())) {
-                                                  const Abis abis = qt->qtAbis();
-                                                  for (const Abi &abi : abis) {
-                                                      if (abi.architecture() == Abi::ArmArchitecture)
-                                                          return QLatin1String("-DCMAKE_OSX_ARCHITECTURES=arm64");
-                                                  }
-                                              }
-                                          }
-                                          return QLatin1String();
-                                      });
+    macroExpander()->registerVariable(
+        CMAKE_OSX_ARCHITECTURES_FLAG, Tr::tr("The CMake flag for the architecture on macOS"), [] {
+            // TODO deprecated since Qt Creator 15, remove later
+            return QString();
+        });
     macroExpander()->registerVariable(QT_QML_DEBUG_FLAG,
                                       Tr::tr("The CMake flag for QML debugging, if enabled"),
                                       [this] {
@@ -1441,7 +1491,7 @@ CMakeBuildConfiguration::CMakeBuildConfiguration(Target *target, Id id)
                                       ? extraInfoMap.value(CMAKE_BUILD_TYPE).toString()
                                       : info.typeName;
 
-        CommandLine cmd = defaultInitialCMakeCommand(k, buildType);
+        CommandLine cmd = defaultInitialCMakeCommand(k, target->project(), buildType);
         m_buildSystem->setIsMultiConfig(CMakeGeneratorKitAspect::isMultiConfigGenerator(k));
 
         // Android magic:
@@ -1505,24 +1555,17 @@ CMakeBuildConfiguration::CMakeBuildConfiguration(Target *target, Id id)
                 // and sysroot in the CMake configuration, but that currently doesn't work with Qt/CMake
                 // https://gitlab.kitware.com/cmake/cmake/-/issues/21276
                 const Id deviceType = DeviceTypeKitAspect::deviceTypeId(k);
-                // TODO the architectures are probably not correct with Apple Silicon in the mix...
-                const QString architecture = deviceType == Ios::Constants::IOS_DEVICE_TYPE
-                                                 ? QLatin1String("arm64")
-                                                 : QLatin1String("x86_64");
                 const QString sysroot = deviceType == Ios::Constants::IOS_DEVICE_TYPE
                                             ? QLatin1String("iphoneos")
                                             : QLatin1String("iphonesimulator");
                 cmd.addArg(CMAKE_QT6_TOOLCHAIN_FILE_ARG);
-                cmd.addArg("-DCMAKE_OSX_ARCHITECTURES:STRING=" + architecture);
                 cmd.addArg("-DCMAKE_OSX_SYSROOT:STRING=" + sysroot);
                 cmd.addArg("%{" + QLatin1String(DEVELOPMENT_TEAM_FLAG) + "}");
                 cmd.addArg("%{" + QLatin1String(PROVISIONING_PROFILE_FLAG) + "}");
             }
-        } else if (device && device->osType() == Utils::OsTypeMac) {
-            cmd.addArg("%{" + QLatin1String(CMAKE_OSX_ARCHITECTURES_FLAG) + "}");
         }
 
-        if (isWebAssembly(k) || isQnx(k) || isWindowsARM64(k)) {
+        if (isWebAssembly(k) || isQnx(k) || isWindowsARM64(k) || isVxWorks(k)) {
             if (qt && qt->qtVersion().majorVersion() >= 6)
                 cmd.addArg(CMAKE_QT6_TOOLCHAIN_FILE_ARG);
         }
@@ -1530,7 +1573,7 @@ CMakeBuildConfiguration::CMakeBuildConfiguration(Target *target, Id id)
         if (info.buildDirectory.isEmpty()) {
             setBuildDirectory(shadowBuildDirectory(target->project()->projectFilePath(),
                                                    k,
-                                                   info.typeName,
+                                                   info.displayName,
                                                    info.buildType));
         }
 
@@ -1542,7 +1585,13 @@ CMakeBuildConfiguration::CMakeBuildConfiguration(Target *target, Id id)
                                   : TriState::Default);
 
         if (qt && qt->isQmlDebuggingSupported())
-            cmd.addArg("-DCMAKE_CXX_FLAGS_INIT:STRING=%{" + QLatin1String(QT_QML_DEBUG_FLAG) + "}");
+            cmd.addArg(
+                QLatin1String("-D") + CMAKE_CXX_FLAGS_INIT + ":STRING=%{" + QT_QML_DEBUG_FLAG + "}");
+
+        // QT_QML_GENERATE_QMLLS_INI, if enabled via the settings checkbox:
+        if (Core::ICore::settings()->value(GENERATE_QMLLS_INI_SETTING).toBool()) {
+            cmd.addArg("-DQT_QML_GENERATE_QMLLS_INI:BOOL=ON");
+        }
 
         CMakeProject *cmakeProject = static_cast<CMakeProject *>(target->project());
         configureEnv.setUserEnvironmentChanges(
@@ -1575,9 +1624,8 @@ FilePath CMakeBuildConfiguration::shadowBuildDirectory(const FilePath &projectFi
         return {};
 
     const QString projectName = projectFilePath.parentDir().fileName();
-    const FilePath projectDir = Project::projectDirectory(projectFilePath);
-    FilePath buildPath = buildDirectoryFromTemplate(projectDir, projectFilePath, projectName, k,
-                                                    bcName, buildType, "cmake");
+    FilePath buildPath = buildDirectoryFromTemplate(
+        projectFilePath.absolutePath(), projectFilePath, projectName, k, bcName, buildType, "cmake");
 
     if (CMakeGeneratorKitAspect::isMultiConfigGenerator(k)) {
         const QString path = buildPath.path();
@@ -1599,8 +1647,8 @@ bool CMakeBuildConfiguration::hasQmlDebugging(const CMakeConfig &config)
     // Determine QML debugging flags. This must match what we do in
     // CMakeBuildSettingsWidget::getQmlDebugCxxFlags()
     // such that in doubt we leave the QML Debugging setting at "Leave at default"
-    const QString cxxFlagsInit = config.stringValueOf("CMAKE_CXX_FLAGS_INIT");
-    const QString cxxFlags = config.stringValueOf("CMAKE_CXX_FLAGS");
+    const QString cxxFlagsInit = config.stringValueOf(CMAKE_CXX_FLAGS_INIT);
+    const QString cxxFlags = config.stringValueOf(CMAKE_CXX_FLAGS);
     return cxxFlagsInit.contains(QT_QML_DEBUG_PARAM) && cxxFlags.contains(QT_QML_DEBUG_PARAM);
 }
 
@@ -1612,16 +1660,50 @@ void CMakeBuildConfiguration::buildTarget(const QString &buildTarget)
         return bs->id() == Constants::CMAKE_BUILD_STEP_ID;
     }));
 
-    QStringList originalBuildTargets;
     if (cmBs) {
-        originalBuildTargets = cmBs->buildTargets();
+        if (m_unrestrictedBuildTargets.isEmpty())
+            m_unrestrictedBuildTargets = cmBs->buildTargets();
         cmBs->setBuildTargets({buildTarget});
     }
 
     BuildManager::buildList(buildSteps());
 
-    if (cmBs)
-        cmBs->setBuildTargets(originalBuildTargets);
+    if (cmBs) {
+        cmBs->setBuildTargets(m_unrestrictedBuildTargets);
+        m_unrestrictedBuildTargets.clear();
+    }
+}
+
+void CMakeBuildConfiguration::reBuildTarget(const QString &cleanTarget, const QString &buildTarget)
+{
+    auto cmBs = qobject_cast<CMakeBuildStep *>(
+        findOrDefault(buildSteps()->steps(), [](const BuildStep *bs) {
+            return bs->id() == Constants::CMAKE_BUILD_STEP_ID;
+        }));
+    auto cmCs = qobject_cast<CMakeBuildStep *>(
+        findOrDefault(cleanSteps()->steps(), [](const BuildStep *bs) {
+            return bs->id() == Constants::CMAKE_BUILD_STEP_ID;
+        }));
+
+    if (cmBs) {
+        if (m_unrestrictedBuildTargets.isEmpty())
+            m_unrestrictedBuildTargets = cmBs->buildTargets();
+        cmBs->setBuildTargets({buildTarget});
+    }
+    QString originalCleanTarget;
+    if (cmCs) {
+        originalCleanTarget = cmCs->cleanTarget();
+        cmCs->setBuildTargets({cleanTarget});
+    }
+
+    BuildManager::buildLists({cleanSteps(), buildSteps()});
+
+    if (cmBs) {
+        cmBs->setBuildTargets(m_unrestrictedBuildTargets);
+        m_unrestrictedBuildTargets.clear();
+    }
+    if (cmCs)
+        cmCs->setBuildTargets({originalCleanTarget});
 }
 
 CMakeConfig CMakeBuildSystem::configurationFromCMake() const
@@ -1784,8 +1866,8 @@ void CMakeBuildConfiguration::setInitialBuildAndCleanSteps(const Target *target)
                                     enabled = CMakePresets::Macros::evaluatePresetCondition(
                                         preset, project->projectDirectory());
 
-                                return preset.configurePreset == presetName
-                                       && !preset.hidden.value() && enabled;
+                                return preset.configurePreset == presetName && !preset.hidden
+                                       && enabled;
                             });
         if (count != 0)
             buildSteps = count;
@@ -1816,7 +1898,7 @@ void CMakeBuildConfiguration::setBuildPresetToBuildSteps(const ProjectExplorer::
                 enabled = CMakePresets::Macros::evaluatePresetCondition(preset,
                                                                         project->projectDirectory());
 
-            return preset.configurePreset == presetName && !preset.hidden.value() && enabled;
+            return preset.configurePreset == presetName && !preset.hidden && enabled;
         });
 
     const QList<BuildStep *> buildStepList
@@ -1870,7 +1952,7 @@ void CMakeBuildConfiguration::setBuildPresetToBuildSteps(const ProjectExplorer::
 
         // Leave only the first build step enabled
         if (i > 0)
-            cbs->setEnabled(false);
+            cbs->setStepEnabled(false);
     }
 }
 
@@ -1888,8 +1970,6 @@ CMakeBuildConfigurationFactory::CMakeBuildConfigurationFactory()
     setBuildGenerator([](const Kit *k, const FilePath &projectPath, bool forSetup) {
         QList<BuildInfo> result;
 
-        FilePath path = forSetup ? Project::projectDirectory(projectPath) : projectPath;
-
         // Skip the default shadow build directories for build types if we have presets
         const CMakeConfigItem presetItem = CMakeConfigurationKitAspect::cmakePresetConfigItem(k);
         if (!presetItem.isNull())
@@ -1902,6 +1982,9 @@ CMakeBuildConfigurationFactory::CMakeBuildConfigurationFactory()
                                 k,
                                 info.typeName,
                                 info.buildType);
+            } else {
+                info.displayName.clear(); // ask for a name
+                info.buildDirectory.clear(); // This depends on the displayName
             }
             result << info;
         }
@@ -2018,14 +2101,48 @@ CMakeBuildSystem *CMakeBuildConfiguration::cmakeBuildSystem() const
 
 void CMakeBuildConfiguration::addToEnvironment(Utils::Environment &env) const
 {
+    // Use the user provided VCPKG_ROOT if existing
+    // Visual C++ 2022 (and newer) come with their own VCPKG_ROOT
+    // that is incompatible with Qt Creator
+    const QString vcpkgRoot = qtcEnvironmentVariable(Constants::VCPKG_ROOT);
+    if (!vcpkgRoot.isEmpty())
+        env.set(Constants::VCPKG_ROOT, vcpkgRoot);
+
     const CMakeTool *tool = CMakeKitAspect::cmakeTool(kit());
     // The hack further down is only relevant for desktop
     if (tool && tool->cmakeExecutable().needsDevice())
         return;
 
-    const FilePath ninja = settings().ninjaPath();
+    const FilePath ninja = settings(nullptr).ninjaPath();
     if (!ninja.isEmpty())
         env.appendOrSetPath(ninja.isFile() ? ninja.parentDir() : ninja);
+}
+
+void CMakeBuildConfiguration::restrictNextBuild(const ProjectExplorer::RunConfiguration *rc)
+{
+    setRestrictedBuildTarget(rc ? rc->buildKey() : QString());
+}
+
+void CMakeBuildConfiguration::setRestrictedBuildTarget(const QString &buildTarget)
+{
+    auto buildStep = qobject_cast<CMakeBuildStep *>(
+        findOrDefault(buildSteps()->steps(), [](const BuildStep *bs) {
+            return bs->id() == Constants::CMAKE_BUILD_STEP_ID;
+        }));
+    if (!buildStep)
+        return;
+
+    if (!buildTarget.isEmpty()) {
+        if (m_unrestrictedBuildTargets.isEmpty())
+            m_unrestrictedBuildTargets = buildStep->buildTargets();
+        buildStep->setBuildTargets({buildTarget});
+        return;
+    }
+
+    if (!m_unrestrictedBuildTargets.isEmpty()) {
+        buildStep->setBuildTargets(m_unrestrictedBuildTargets);
+        m_unrestrictedBuildTargets.clear();
+    }
 }
 
 Environment CMakeBuildConfiguration::configureEnvironment() const
@@ -2118,9 +2235,20 @@ void InitialCMakeArgumentsAspect::setAllValues(const QString &values, QStringLis
     if (!cmakeGenerator.isEmpty())
         arguments.append(cmakeGenerator);
 
-    m_cmakeConfiguration = CMakeConfig::fromArguments(arguments, additionalOptions);
-    for (CMakeConfigItem &ci : m_cmakeConfiguration)
+    CMakeConfig config = CMakeConfig::fromArguments(arguments, additionalOptions);
+    // Join CMAKE_CXX_FLAGS_INIT values if more entries are present, or skip the same
+    // values like CMAKE_EXE_LINKER_FLAGS_INIT coming from both C and CXX compilers
+    QHash<QByteArray, CMakeConfigItem> uniqueConfig;
+    for (CMakeConfigItem &ci : config) {
         ci.isInitial = true;
+        if (uniqueConfig.contains(ci.key)) {
+            if (uniqueConfig[ci.key].value != ci.value)
+                uniqueConfig[ci.key].value = uniqueConfig[ci.key].value + " " + ci.value;
+        } else {
+            uniqueConfig.insert(ci.key, ci);
+        }
+    }
+    m_cmakeConfiguration = uniqueConfig.values();
 
     // Display the unknown arguments in "Additional CMake Options"
     const QString additionalOptionsValue = ProcessArgs::joinArgs(additionalOptions);

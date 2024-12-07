@@ -101,26 +101,25 @@ private:
     {
         using Utils::Theme;
         QTextCharFormat format;
-        Theme *theme = Utils::creatorTheme();
         switch (channelForChar(text.isEmpty() ? QChar() : text.at(0))) {
             case LogInput:
-                format.setForeground(theme->color(Theme::Debugger_LogWindow_LogInput));
+                format.setForeground(creatorColor(Theme::Debugger_LogWindow_LogInput));
                 setFormat(1, text.size(), format);
                 break;
             case LogStatus:
-                format.setForeground(theme->color(Theme::Debugger_LogWindow_LogStatus));
+                format.setForeground(creatorColor(Theme::Debugger_LogWindow_LogStatus));
                 setFormat(1, text.size(), format);
                 break;
             case LogWarning:
-                format.setForeground(theme->color(Theme::OutputPanes_WarningMessageTextColor));
+                format.setForeground(creatorColor(Theme::OutputPanes_WarningMessageTextColor));
                 setFormat(1, text.size(), format);
                 break;
             case LogError:
-                format.setForeground(theme->color(Theme::OutputPanes_ErrorMessageTextColor));
+                format.setForeground(creatorColor(Theme::OutputPanes_ErrorMessageTextColor));
                 setFormat(1, text.size(), format);
                 break;
             case LogTime:
-                format.setForeground(theme->color(Theme::Debugger_LogWindow_LogTime));
+                format.setForeground(creatorColor(Theme::Debugger_LogWindow_LogTime));
                 setFormat(1, text.size(), format);
                 break;
             default:
@@ -152,11 +151,9 @@ public:
 private:
     void highlightBlock(const QString &text) override
     {
-        using Utils::Theme;
-        Theme *theme = Utils::creatorTheme();
         if (text.size() > 3 && text.at(2) == ':') {
             QTextCharFormat format;
-            format.setForeground(theme->color(Theme::Debugger_LogWindow_LogTime));
+            format.setForeground(creatorColor(Theme::Debugger_LogWindow_LogTime));
             setFormat(1, text.size(), format);
         }
     }
@@ -413,13 +410,8 @@ LogWindow::LogWindow(DebuggerEngine *engine)
     layout->addWidget(new Core::FindToolBarPlaceHolder(this));
     setLayout(layout);
 
-    auto aggregate = new Aggregation::Aggregate;
-    aggregate->add(m_combinedText);
-    aggregate->add(new Core::BaseTextFind(m_combinedText));
-
-    aggregate = new Aggregation::Aggregate;
-    aggregate->add(m_inputText);
-    aggregate->add(new Core::BaseTextFind(m_inputText));
+    Aggregation::aggregate({m_combinedText, new Core::BaseTextFind(m_combinedText)});
+    Aggregation::aggregate({m_inputText, new Core::BaseTextFind(m_inputText)});
 
     connect(m_inputText, &InputPane::statusMessageRequested,
             this, &LogWindow::statusMessageRequested);
@@ -660,13 +652,8 @@ GlobalLogWindow::GlobalLogWindow()
     layout->addWidget(new Core::FindToolBarPlaceHolder(this));
     setLayout(layout);
 
-    auto aggregate = new Aggregation::Aggregate;
-    aggregate->add(m_rightPane);
-    aggregate->add(new Core::BaseTextFind(m_rightPane));
-
-    aggregate = new Aggregation::Aggregate;
-    aggregate->add(m_leftPane);
-    aggregate->add(new Core::BaseTextFind(m_leftPane));
+    Aggregation::aggregate({m_rightPane, new Core::BaseTextFind(m_rightPane)});
+    Aggregation::aggregate({m_leftPane, new Core::BaseTextFind(m_leftPane)});
 
     connect(m_leftPane->clearContentsAction(), &QAction::triggered,
             this, &GlobalLogWindow::clearContents);

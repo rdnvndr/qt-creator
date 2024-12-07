@@ -8,6 +8,7 @@
 
 #include <QHash>
 #include <QPointer>
+#include <QSize>
 #include <QTimer>
 
 QT_BEGIN_NAMESPACE
@@ -21,6 +22,7 @@ namespace QmlDesigner {
 class DynamicPropertiesModel;
 class ItemLibraryInfo;
 class MaterialEditorQmlBackend;
+class QmlObjectNode;
 
 class MaterialEditorView : public AbstractView
 {
@@ -54,14 +56,23 @@ public:
 
     void nodeTypeChanged(const ModelNode& node, const TypeName &type, int majorVersion, int minorVersion) override;
     void rootNodeTypeChanged(const QString &type, int majorVersion, int minorVersion) override;
-    void modelNodePreviewPixmapChanged(const ModelNode &node, const QPixmap &pixmap) override;
+    void modelNodePreviewPixmapChanged(const ModelNode &node,
+                                       const QPixmap &pixmap,
+                                       const QByteArray &requestId) override;
     void importsChanged(const Imports &addedImports, const Imports &removedImports) override;
     void customNotification(const AbstractView *view, const QString &identifier,
                             const QList<ModelNode> &nodeList, const QList<QVariant> &data) override;
-    void nodeReparented(const ModelNode &node, const NodeAbstractProperty &newPropertyParent,
+
+    void nodeReparented(const ModelNode &node,
+                        const NodeAbstractProperty &newPropertyParent,
                         const NodeAbstractProperty &oldPropertyParent,
                         AbstractView::PropertyChangeFlags propertyChange) override;
+
+    void nodeIdChanged(const ModelNode &node, const QString &newId, const QString &oldId) override;
     void nodeAboutToBeRemoved(const ModelNode &removedNode) override;
+    void nodeRemoved(const ModelNode &removedNode,
+                     const NodeAbstractProperty &parentProperty,
+                     PropertyChangeFlags propertyChange) override;
 
     void dragStarted(QMimeData *mimeData) override;
     void dragEnded() override;
@@ -83,10 +94,11 @@ public slots:
     void handleToolBarAction(int action);
     void handlePreviewEnvChanged(const QString &envAndValue);
     void handlePreviewModelChanged(const QString &modelStr);
+    void handlePreviewSizeChanged(const QSizeF &size);
 
 protected:
     void timerEvent(QTimerEvent *event) override;
-    void setValue(const QmlObjectNode &fxObjectNode, const PropertyName &name, const QVariant &value);
+    void setValue(const QmlObjectNode &fxObjectNode, PropertyNameView name, const QVariant &value);
     bool eventFilter(QObject *obj, QEvent *event) override;
 
 private:
@@ -96,29 +108,26 @@ private:
     void highlightSupportedProperties(bool highlight = true);
 
     void requestPreviewRender();
-    void applyMaterialToSelectedModels(const ModelNode &material, bool add = false);
 
     void setupQmlBackend();
 
-    void commitVariantValueToModel(const PropertyName &propertyName, const QVariant &value);
-    void commitAuxValueToModel(const PropertyName &propertyName, const QVariant &value);
-    void removePropertyFromModel(const PropertyName &propertyName);
+    void commitVariantValueToModel(PropertyNameView propertyName, const QVariant &value);
+    void commitAuxValueToModel(PropertyNameView propertyName, const QVariant &value);
+    void removePropertyFromModel(PropertyNameView propertyName);
     void renameMaterial(ModelNode &material, const QString &newName);
     void duplicateMaterial(const ModelNode &material);
 
     bool noValidSelection() const;
 
     void initPreviewData();
-    void delayedTypeUpdate();
     void updatePossibleTypes();
+    void asyncResetView();
 
     ModelNode m_selectedMaterial;
     QTimer m_ensureMatLibTimer;
-    QTimer m_typeUpdateTimer;
     QShortcut *m_updateShortcut = nullptr;
     int m_timerId = 0;
     QStackedWidget *m_stackedWidget = nullptr;
-    QList<ModelNode> m_selectedModels;
     QHash<QString, MaterialEditorQmlBackend *> m_qmlBackendHash;
     MaterialEditorQmlBackend *m_qmlBackEnd = nullptr;
     bool m_locked = false;
@@ -126,8 +135,12 @@ private:
     bool m_hasQuick3DImport = false;
     bool m_hasMaterialRoot = false;
     bool m_initializingPreviewData = false;
+    bool m_textureAboutToBeRemoved = false;
+    ModelNode m_newSelectedMaterial;
+    bool m_selectedMaterialChanged = false;
+    QSize m_previewSize;
+    QByteArray m_previewRequestId;
 
-    QPointer<QColorDialog> m_colorDialog;
     QPointer<ItemLibraryInfo> m_itemLibraryInfo;
     DynamicPropertiesModel *m_dynamicPropertiesModel = nullptr;
 };

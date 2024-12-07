@@ -76,7 +76,7 @@ public:
         const bool useUnavailableMarker = index.data(Project::UseUnavailableMarkerRole).toBool();
         if (useUnavailableMarker) {
             QStyleOptionViewItem opt = option;
-            opt.palette.setColor(QPalette::Text, creatorTheme()->color(Theme::TextColorDisabled));
+            opt.palette.setColor(QPalette::Text, creatorColor(Theme::TextColorDisabled));
             QStyledItemDelegate::paint(painter, opt, index);
             static const QPixmap pixmap
                 = QApplication::style()->standardIcon(QStyle::SP_BrowserStop).pixmap(10);
@@ -98,6 +98,19 @@ public:
             delete m_indicators.value(index);
             m_indicators.remove(index);
         }
+    }
+
+    void destroyEditor(QWidget *editor, const QModelIndex &index) const final
+    {
+        // QTCREATORBUG-30926
+        for (QWidget *p = editor->parentWidget(); p; p = p->parentWidget()) {
+            if (qobject_cast<ProjectTreeWidget *>(p)) {
+                p->setFocus();
+                break;
+            }
+        }
+
+        QStyledItemDelegate::destroyEditor(editor, index);
     }
 
 private:
@@ -142,11 +155,8 @@ public:
         setDragDropMode(QAbstractItemView::DragDrop);
         viewport()->setAcceptDrops(true);
         setDropIndicatorShown(true);
-        auto context = new IContext(this);
-        context->setContext(Context(ProjectExplorer::Constants::C_PROJECT_TREE));
-        context->setWidget(this);
 
-        ICore::addContextObject(context);
+        IContext::attach(this, Context(ProjectExplorer::Constants::C_PROJECT_TREE));
 
         connect(this, &ProjectTreeView::expanded,
                 this, &ProjectTreeView::invalidateSize);
@@ -308,11 +318,11 @@ ProjectTreeWidget::~ProjectTreeWidget()
 int ProjectTreeWidget::expandedCount(Node *node)
 {
     if (m_projectTreeWidgets.isEmpty())
-        return 0;
+        return INT_MAX;
     FlatModel *model = m_projectTreeWidgets.first()->m_model;
     QModelIndex index = model->indexForNode(node);
     if (!index.isValid())
-        return 0;
+        return INT_MAX;
 
     int count = 0;
     for (ProjectTreeWidget *tree : std::as_const(m_projectTreeWidgets)) {

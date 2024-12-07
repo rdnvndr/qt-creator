@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "kitmanager.h"
+#include <utils/layoutbuilder.h>
 
 #include <QWidget>
 
@@ -17,6 +17,8 @@ QT_END_NAMESPACE
 
 namespace ProjectExplorer {
 class Kit;
+class KitAspect;
+class KitAspectFactory;
 
 namespace Internal {
 
@@ -30,13 +32,14 @@ public:
 
     QString displayName() const;
     QIcon displayIcon() const;
+    void clearCachedDisplayName(); // FIXME: Remove cached name?
 
     void setFocusToName();
     void apply();
     void discard();
     bool isDirty() const;
     QString validityMessage() const;
-    void addAspectToWorkingCopy(Layouting::LayoutItem &parent, KitAspectFactory *factory);
+    void addAspectToWorkingCopy(Layouting::Layout &parent, KitAspectFactory *factory);
     void makeStickySubWidgetsReadOnly();
 
     Kit *workingCopy() const;

@@ -1,11 +1,15 @@
-// Copyright (C) 2023 The Qt Company Ltd.
+// Copyright (C) 2024 Jarek Kobus
+// Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
-#pragma once
+#ifndef TASKING_BARRIER_H
+#define TASKING_BARRIER_H
 
 #include "tasking_global.h"
 
 #include "tasktree.h"
+
+QT_BEGIN_NAMESPACE
 
 namespace Tasking {
 
@@ -25,7 +29,7 @@ public:
     int current() const { return m_current; }
     std::optional<DoneResult> result() const { return m_result; }
 
-signals:
+Q_SIGNALS:
     void done(DoneResult success);
 
 private:
@@ -67,7 +71,7 @@ using MultiBarrier = Storage<SharedBarrier<Limit>>;
 using SingleBarrier = MultiBarrier<1>;
 
 template <int Limit>
-GroupItem waitForBarrierTask(const MultiBarrier<Limit> &sharedBarrier)
+ExecutableItem waitForBarrierTask(const MultiBarrier<Limit> &sharedBarrier)
 {
     return BarrierTask([sharedBarrier](Barrier &barrier) {
         SharedBarrier<Limit> *activeBarrier = sharedBarrier.activeStorage();
@@ -75,7 +79,7 @@ GroupItem waitForBarrierTask(const MultiBarrier<Limit> &sharedBarrier)
             qWarning("The barrier referenced from WaitForBarrier element "
                      "is not reachable in the running tree. "
                      "It is possible that no barrier was added to the tree, "
-                     "or the storage is not reachable from where it is referenced. "
+                     "or the barrier is not reachable from where it is referenced. "
                      "The WaitForBarrier task finishes with an error. ");
             return SetupResult::StopWithError;
         }
@@ -91,3 +95,7 @@ GroupItem waitForBarrierTask(const MultiBarrier<Limit> &sharedBarrier)
 }
 
 } // namespace Tasking
+
+QT_END_NAMESPACE
+
+#endif // TASKING_BARRIER_H

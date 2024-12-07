@@ -16,7 +16,7 @@
 #include <qtsupport/qtkitaspect.h>
 
 #include <utils/detailswidget.h>
-#include <utils/process.h>
+#include <utils/qtcprocess.h>
 #include <utils/qtcassert.h>
 #include <utils/utilsicons.h>
 
@@ -53,9 +53,7 @@ public:
     {
         environment.addSupportedBaseEnvironment(Tr::tr("Clean Environment"), {});
 
-        extraAppArgs.setMacroExpander(macroExpander());
-
-        connect(&extraAppArgs, &BaseAspect::changed, this, [this, target] {
+        extraAppArgs.addOnChanged(this, [this, target] {
             if (target->buildConfigurations().first()->buildType() == BuildConfiguration::BuildType::Release) {
                 const QString buildKey = target->activeBuildKey();
                 target->buildSystem()->setExtraData(buildKey,
@@ -101,7 +99,7 @@ class AndroidRunConfigurationFactory : public RunConfigurationFactory
 public:
     AndroidRunConfigurationFactory()
     {
-        registerRunConfiguration<AndroidRunConfiguration>("Qt4ProjectManager.AndroidRunConfiguration:");
+        registerRunConfiguration<AndroidRunConfiguration>(Android::Constants::ANDROID_RUNCONFIG_ID);
         addSupportedTargetDeviceType(Android::Constants::ANDROID_DEVICE_TYPE);
     }
 };

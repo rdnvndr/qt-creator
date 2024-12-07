@@ -5,6 +5,7 @@
 
 #include "camelcasecursor.h"
 #include "execmenu.h"
+#include "futuresynchronizer.h"
 #include "historycompleter.h"
 #include "hostosinfo.h"
 #include "icon.h"
@@ -88,7 +89,7 @@ signals:
     void keyChanged(const QKeySequence &key);
 
 private:
-    QKeySequence m_key = Qt::Key_Space + HostOsInfo::controlModifier();
+    QKeySequence m_key = Qt::Key_Space | HostOsInfo::controlModifier();
 };
 Q_GLOBAL_STATIC(CompletionShortcut, completionShortcut)
 
@@ -98,6 +99,7 @@ class FancyLineEditPrivate : public QObject
 {
 public:
     explicit FancyLineEditPrivate(FancyLineEdit *parent);
+    ~FancyLineEditPrivate();
 
     bool eventFilter(QObject *obj, QEvent *event) override;
 
@@ -134,8 +136,8 @@ FancyLineEditPrivate::FancyLineEditPrivate(FancyLineEdit *parent)
     : QObject(parent)
     , m_lineEdit(parent)
     , m_completionShortcut(completionShortcut()->key(), parent)
-    , m_okTextColor(creatorTheme()->color(Theme::TextColorNormal))
-    , m_errorTextColor(creatorTheme()->color(Theme::TextColorError))
+    , m_okTextColor(creatorColor(Theme::TextColorNormal))
+    , m_errorTextColor(creatorColor(Theme::TextColorError))
     , m_placeholderTextColor(QApplication::palette().color(QPalette::PlaceholderText))
     , m_spinner(new SpinnerSolution::Spinner(SpinnerSolution::SpinnerSize::Small, m_lineEdit))
 {
@@ -161,6 +163,12 @@ FancyLineEditPrivate::FancyLineEditPrivate(FancyLineEdit *parent)
         m_menuTabFocusTrigger[i] = false;
         m_iconEnabled[i] = false;
     }
+}
+
+FancyLineEditPrivate::~FancyLineEditPrivate()
+{
+    if (m_validatorWatcher)
+        m_validatorWatcher->cancel();
 }
 
 bool FancyLineEditPrivate::eventFilter(QObject *obj, QEvent *event)
@@ -346,10 +354,11 @@ bool FancyLineEdit::hasAutoHideButton(Side side) const
     return d->m_iconbutton[side]->hasAutoHide();
 }
 
-void FancyLineEdit::setHistoryCompleter(const Key &historyKey, bool restoreLastItemFromHistory)
+void FancyLineEdit::setHistoryCompleter(
+    const Key &historyKey, bool restoreLastItemFromHistory, int maxLines)
 {
     QTC_ASSERT(!d->m_historyCompleter, return);
-    d->m_historyCompleter = new HistoryCompleter(historyKey, this);
+    d->m_historyCompleter = new HistoryCompleter(historyKey, maxLines, this);
     if (restoreLastItemFromHistory && d->m_historyCompleter->hasHistory())
         setText(d->m_historyCompleter->historyItem());
     QLineEdit::setCompleter(d->m_historyCompleter);
@@ -446,12 +455,27 @@ void FancyLineEdit::setFiltering(bool on)
     }
 }
 
+/*!
+    Set a synchronous or asynchronous validation function \a fn.
+    Asynchronous validation functions can continue to run after destruction of the
+    FancyLineEdit instance. During shutdown asynchronous validation functions can continue
+    to run until before the plugin instances are deleted (at that point the plugin manager
+    waits for them to finish before continuing).
+
+    \sa defaultValidationFunction()
+ */
 void FancyLineEdit::setValidationFunction(const FancyLineEdit::ValidationFunction &fn)
 {
     d->m_validationFunction = fn;
     validate();
 }
 
+/*!
+    Returns the default validation function, which synchonously executes the line edit's
+    validator.
+
+    \sa setValidationFunction()
+*/
 FancyLineEdit::ValidationFunction FancyLineEdit::defaultValidationFunction()
 {
     return &FancyLineEdit::validateWithValidator;
@@ -581,6 +605,7 @@ void FancyLineEdit::validate()
 
         AsyncValidationFuture future = validationFunction(text());
         d->m_validatorWatcher->setFuture(future);
+        Utils::futureSynchronizer()->addFuture(future);
 
         return;
     }
@@ -665,8 +690,7 @@ void FancyIconButton::animateShow(bool visible)
 
 QSize FancyIconButton::sizeHint() const
 {
-    QWindow *window = this->window()->windowHandle();
-    return icon().actualSize(window, QSize(32, 16)); // Find flags icon can be wider than 16px
+    return icon().actualSize(QSize(32, 16)); // Find flags icon can be wider than 16px
 }
 
 void FancyIconButton::keyPressEvent(QKeyEvent *ke)

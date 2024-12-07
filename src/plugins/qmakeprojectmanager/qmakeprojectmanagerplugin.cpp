@@ -36,7 +36,6 @@
 #include <projectexplorer/projectexplorericons.h>
 
 #include <texteditor/texteditor.h>
-#include <texteditor/texteditoractionhandler.h>
 #include <texteditor/texteditorconstants.h>
 
 #include <utils/action.h>
@@ -490,7 +489,7 @@ void QmakeProjectManagerPluginPrivate::updateContextActions(Node *node)
     const ContainerNode *containerNode = node ? node->asContainerNode() : nullptr;
     const auto *proFileNode = dynamic_cast<const QmakeProFileNode *>(containerNode ? containerNode->rootProjectNode() : node);
 
-    m_addLibraryActionContextMenu->setEnabled(proFileNode);
+    m_addLibraryActionContextMenu->setVisible(proFileNode);
     auto *qmakeProject = qobject_cast<QmakeProject *>(project);
     QmakeProFileNode *subProjectNode = nullptr;
     disableBuildFileMenus();

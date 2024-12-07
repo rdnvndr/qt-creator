@@ -392,8 +392,7 @@ public:
 
 void tst_Async::onResultReady()
 {
-// TODO: Re-enable when QTBUG-119169 is fixed.
-#if 0
+#if QT_VERSION >= QT_VERSION_CHECK(6, 6, 0)
     { // lambda
         QObject context;
         QFuture<QString> f = Utils::asyncRun([](QPromise<QString> &fi) {
@@ -483,15 +482,14 @@ void tst_Async::taskTree()
         value = task.result();
     };
 
-    const Group root {
+    const Group recipe {
         AsyncTask<int>(setupIntAsync, handleIntAsync, CallDoneIf::Success),
         AsyncTask<int>(setupIntAsync, handleIntAsync, CallDoneIf::Success),
         AsyncTask<int>(setupIntAsync, handleIntAsync, CallDoneIf::Success),
         AsyncTask<int>(setupIntAsync, handleIntAsync, CallDoneIf::Success),
     };
 
-
-    QCOMPARE(TaskTree::runBlocking(root, 1000ms), DoneWith::Success);
+    QCOMPARE(TaskTree::runBlocking(recipe.withTimeout(1000ms)), DoneWith::Success);
     QCOMPARE(value, 16);
 }
 
@@ -512,7 +510,7 @@ void tst_Async::mapReduce_data()
 {
     using namespace Tasking;
 
-    QTest::addColumn<Group>("root");
+    QTest::addColumn<Group>("recipe");
     QTest::addColumn<double>("sum");
     QTest::addColumn<QList<double>>("results");
 
@@ -623,11 +621,11 @@ void tst_Async::mapReduce()
 
     using namespace Tasking;
 
-    QFETCH(Group, root);
+    QFETCH(Group, recipe);
     QFETCH(double, sum);
     QFETCH(QList<double>, results);
 
-    QCOMPARE(TaskTree::runBlocking(root, 1000ms), DoneWith::Success);
+    QCOMPARE(TaskTree::runBlocking(recipe.withTimeout(1000ms)), DoneWith::Success);
     QCOMPARE(s_results, results);
     QCOMPARE(s_sum, sum);
 }

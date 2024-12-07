@@ -33,6 +33,7 @@ add_qtc_plugin(Debugger
     dap/dapclient.cpp dap/dapclient.h
     dap/dapengine.cpp dap/dapengine.h
     dap/gdbdapengine.cpp dap/gdbdapengine.h
+    dap/lldbdapengine.cpp dap/lldbdapengine.h
     dap/pydapengine.cpp dap/pydapengine.h
     debugger.qrc
     debugger_global.h
@@ -79,6 +80,7 @@ add_qtc_plugin(Debugger
     qml/qmlv8debuggerclientconstants.h
     registerhandler.cpp registerhandler.h
     shared/cdbsymbolpathlisteditor.cpp shared/cdbsymbolpathlisteditor.h
+    shared/coredumputils.cpp shared/coredumputils.h
     shared/hostutils.cpp shared/hostutils.h
     shared/peutils.cpp shared/peutils.h
     shared/symbolpathsdialog.cpp shared/symbolpathsdialog.h

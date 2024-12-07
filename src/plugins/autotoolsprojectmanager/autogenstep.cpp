@@ -8,15 +8,14 @@
 
 #include <projectexplorer/abstractprocessstep.h>
 #include <projectexplorer/buildconfiguration.h>
+#include <projectexplorer/buildstep.h>
 #include <projectexplorer/processparameters.h>
 #include <projectexplorer/project.h>
 #include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/target.h>
 
 #include <utils/aspects.h>
-#include <utils/process.h>
-
-#include <QDateTime>
+#include <utils/qtcprocess.h>
 
 using namespace ProjectExplorer;
 using namespace Utils;
@@ -52,8 +51,7 @@ AutogenStep::AutogenStep(BuildStepList *bsl, Id id) : AbstractProcessStep(bsl, i
     m_arguments.setLabelText(Tr::tr("Arguments:"));
     m_arguments.setDisplayStyle(StringAspect::LineEditDisplay);
     m_arguments.setHistoryCompleter("AutotoolsPM.History.AutogenStepArgs");
-
-    connect(&m_arguments, &BaseAspect::changed, this, [this] { m_runAutogen = true; });
+    m_arguments.addOnChanged(this, [this] { m_runAutogen = true; });
 
     setWorkingDirectoryProvider([this] { return project()->projectDirectory(); });
 
@@ -110,12 +108,21 @@ Tasking::GroupItem AutogenStep::runRecipe()
  * This factory is used to create instances of AutogenStep.
  */
 
-AutogenStepFactory::AutogenStepFactory()
+class AutogenStepFactory final : public BuildStepFactory
 {
-    registerStep<AutogenStep>(Constants::AUTOGEN_STEP_ID);
-    setDisplayName(Tr::tr("Autogen", "Display name for AutotoolsProjectManager::AutogenStep id."));
-    setSupportedProjectType(Constants::AUTOTOOLS_PROJECT_ID);
-    setSupportedStepList(ProjectExplorer::Constants::BUILDSTEPS_BUILD);
+public:
+    AutogenStepFactory()
+    {
+        registerStep<AutogenStep>(Constants::AUTOGEN_STEP_ID);
+        setDisplayName(Tr::tr("Autogen", "Display name for AutotoolsProjectManager::AutogenStep id."));
+        setSupportedProjectType(Constants::AUTOTOOLS_PROJECT_ID);
+        setSupportedStepList(ProjectExplorer::Constants::BUILDSTEPS_BUILD);
+    }
+};
+
+void setupAutogenStep()
+{
+    static AutogenStepFactory theAutogenStepFactory;
 }
 
 } // AutotoolsProjectManager::Internal

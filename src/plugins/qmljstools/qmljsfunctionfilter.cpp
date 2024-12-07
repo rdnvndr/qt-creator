@@ -5,8 +5,6 @@
 #include "qmljslocatordata.h"
 #include "qmljstoolstr.h"
 
-#include <extensionsystem/pluginmanager.h>
-
 #include <utils/algorithm.h>
 #include <utils/async.h>
 
@@ -14,6 +12,7 @@
 
 using namespace Core;
 using namespace QmlJSTools::Internal;
+using namespace Tasking;
 using namespace Utils;
 
 Q_DECLARE_METATYPE(LocatorData::Entry)
@@ -76,14 +75,9 @@ static void matches(QPromise<void> &promise, const LocatorStorage &storage,
 
 LocatorMatcherTasks QmlJSFunctionsFilter::matchers()
 {
-    using namespace Tasking;
-
-    Storage<LocatorStorage> storage;
-
-    const auto onSetup = [storage, entries = m_data->entries()](Async<void> &async) {
-        async.setFutureSynchronizer(ExtensionSystem::PluginManager::futureSynchronizer());
-        async.setConcurrentCallData(matches, *storage, entries);
+    const auto onSetup = [entries = m_data->entries()](Async<void> &async) {
+        async.setConcurrentCallData(matches, *LocatorStorage::storage(), entries);
     };
 
-    return {{AsyncTask<void>(onSetup), storage}};
+    return {AsyncTask<void>(onSetup)};
 }

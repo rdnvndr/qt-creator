@@ -5,9 +5,13 @@
 
 #include <texteditor/indenter.h>
 
+#include <QLoggingCategory>
+
 namespace clang::format { struct FormatStyle; }
 
 namespace ClangFormat {
+
+Q_DECLARE_LOGGING_CATEGORY(clangIndenterLog)
 
 class ClangFormatBaseIndenter : public TextEditor::Indenter
 {
@@ -48,7 +52,7 @@ public:
 
     const clang::format::FormatStyle &styleForFile() const;
 
-    void setOverriddenPreferences(TextEditor::ICodeStylePreferences *preferences);
+    void setOverriddenPreferences(TextEditor::ICodeStylePreferences *preferences) final;
     void setOverriddenStyle(const clang::format::FormatStyle &style);
 
 protected:

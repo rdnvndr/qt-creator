@@ -37,6 +37,7 @@ public:
     Utils::ProcessResultData resultData() const;
 
     static QString transferMethodName(FileTransferMethod method);
+    QString transferMethodName() const { return transferMethodName(transferMethod()); }
 
 signals:
     void progress(const QString &progressMessage);
@@ -53,7 +54,7 @@ public:
     void start() override { task()->start(); }
 };
 
-class PROJECTEXPLORER_EXPORT FileTransferTestTaskAdapter : public FileTransferTaskAdapter
+class PROJECTEXPLORER_EXPORT FileTransferTestTaskAdapter final : public FileTransferTaskAdapter
 {
 public:
     void start() final { task()->test(); }

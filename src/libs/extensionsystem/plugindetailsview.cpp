@@ -8,6 +8,7 @@
 #include "pluginspec.h"
 
 #include <utils/algorithm.h>
+#include <utils/infolabel.h>
 #include <utils/layoutbuilder.h>
 
 #include <QCoreApplication>
@@ -42,35 +43,43 @@ class PluginDetailsViewPrivate
 public:
     PluginDetailsViewPrivate(PluginDetailsView *detailsView)
         : q(detailsView)
+        , id(createContentsLabel())
         , name(createContentsLabel())
         , version(createContentsLabel())
         , compatVersion(createContentsLabel())
         , vendor(createContentsLabel())
+        , vendorId(createContentsLabel())
         , component(createContentsLabel())
         , url(createContentsLabel())
+        , documentationUrl(createContentsLabel())
         , location(createContentsLabel())
         , platforms(createContentsLabel())
         , description(createTextEdit())
         , copyright(createContentsLabel())
         , license(createTextEdit())
         , dependencies(new QListWidget(q))
+        , softLoadable(new Utils::InfoLabel)
     {
         using namespace Layouting;
 
         // clang-format off
         Form {
+            Tr::tr("Id:"), id, br,
             Tr::tr("Name:"), name, br,
             Tr::tr("Version:"), version, br,
             Tr::tr("Compatibility version:"), compatVersion, br,
+            Tr::tr("Vendor Id:"), vendorId, br,
             Tr::tr("Vendor:"), vendor, br,
             Tr::tr("Group:"), component, br,
             Tr::tr("URL:"), url, br,
+            Tr::tr("Documentation:"), documentationUrl, br,
             Tr::tr("Location:"), location, br,
             Tr::tr("Platforms:"), platforms, br,
             Tr::tr("Description:"), description, br,
             Tr::tr("Copyright:"), copyright, br,
             Tr::tr("License:"), license, br,
-            Tr::tr("Dependencies:"), dependencies,
+            Tr::tr("Dependencies:"), dependencies, br,
+            Tr::tr("Loadable without restart:"), softLoadable, br,
             noMargin
         }.attachTo(q);
         // clang-format on
@@ -78,18 +87,22 @@ public:
 
     PluginDetailsView *q = nullptr;
 
+    QLabel *id = nullptr;
     QLabel *name = nullptr;
     QLabel *version = nullptr;
     QLabel *compatVersion = nullptr;
     QLabel *vendor = nullptr;
+    QLabel *vendorId = nullptr;
     QLabel *component = nullptr;
     QLabel *url = nullptr;
+    QLabel *documentationUrl = nullptr;
     QLabel *location = nullptr;
     QLabel *platforms = nullptr;
     QTextEdit *description = nullptr;
     QLabel *copyright = nullptr;
     QTextEdit *license = nullptr;
     QListWidget *dependencies = nullptr;
+    Utils::InfoLabel *softLoadable = nullptr;
 
 private:
     QLabel *createContentsLabel() {
@@ -133,6 +146,7 @@ PluginDetailsView::~PluginDetailsView()
 */
 void PluginDetailsView::update(PluginSpec *spec)
 {
+    d->id->setText(spec->id());
     d->name->setText(spec->name());
     const QString revision = spec->revision();
     const QString versionString = spec->version()
@@ -140,9 +154,14 @@ void PluginDetailsView::update(PluginSpec *spec)
     d->version->setText(versionString);
     d->compatVersion->setText(spec->compatVersion());
     d->vendor->setText(spec->vendor());
+    d->vendorId->setText(spec->vendorId());
     d->component->setText(spec->category().isEmpty() ? Tr::tr("None") : spec->category());
-    d->url->setText(QString::fromLatin1("<a href=\"%1\">%1</a>").arg(spec->url()));
-    d->location->setText(QDir::toNativeSeparators(spec->filePath()));
+    const auto toHtmlLink = [](const QString &url) {
+        return QString::fromLatin1("<a href=\"%1\">%1</a>").arg(url);
+    };
+    d->url->setText(toHtmlLink(spec->url()));
+    d->documentationUrl->setText(toHtmlLink(spec->documentationUrl()));
+    d->location->setText(spec->filePath().toUserOutput());
     const QString pattern = spec->platformSpecification().pattern();
     const QString platform = pattern.isEmpty() ? Tr::tr("All") : pattern;
     const QString platformString = Tr::tr("%1 (current: \"%2\")")
@@ -152,11 +171,13 @@ void PluginDetailsView::update(PluginSpec *spec)
     if (!description.isEmpty() && !spec->longDescription().isEmpty())
         description += "\n\n";
     description += spec->longDescription();
-    d->description->setText(description);
+    d->description->setMarkdown(description);
     d->copyright->setText(spec->copyright());
     d->license->setText(spec->license());
     d->dependencies->addItems(Utils::transform<QList>(spec->dependencies(),
                                                       &PluginDependency::toString));
+    d->softLoadable->setType(spec->isSoftLoadable() ? Utils::InfoLabel::Ok
+                                                    : Utils::InfoLabel::NotOk);
 }
 
 void PluginDetailsView::showModal(QWidget *parent, PluginSpec *spec)

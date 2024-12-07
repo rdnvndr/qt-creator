@@ -24,6 +24,8 @@
 
 namespace QmlDesigner {
 
+Q_LOGGING_CATEGORY(ConnectionEditorLog, "qtc.qtquickdesigner.connectioneditor", QtWarningMsg)
+
 void callLater(const std::function<void()> &fun)
 {
     QTimer::singleShot(0, fun);
@@ -78,7 +80,7 @@ NodeMetaInfo dynamicTypeNameToNodeMetaInfo(const TypeName &typeName, Model *mode
     else if (typeName == "var" || typeName == "variant")
         return model->metaInfo("QML.variant");
     else
-        qWarning() << __FUNCTION__ << " type " << typeName << "not found";
+        qCWarning(ConnectionEditorLog) << __FUNCTION__ << "type" << typeName << "not found";
     return {};
 }
 
@@ -173,7 +175,7 @@ void convertPropertyType(const T &property, const QVariant &value)
     if (!node.isValid())
         return;
 
-    PropertyName name = property.name();
+    PropertyNameView name = property.name();
     TypeName type = property.dynamicTypeName();
     node.removeProperty(name);
 
@@ -203,7 +205,8 @@ bool isBindingExpression(const QVariant &value)
     if (value.metaType().id() != QMetaType::QString)
         return false;
 
-    QRegularExpression regexp("^[a-z_]\\w*|^[A-Z]\\w*\\.{1}([a-z_]\\w*\\.?)+");
+    QRegularExpression regexp("^[a-zA-Z_]\\w*\\.{1}([a-z_]\\w*\\.?)+");
+    //    QRegularExpression regexp("^[a-z_]\\w*|^[A-Z]\\w*\\.{1}([a-z_]\\w*\\.?)+");
     QRegularExpressionMatch match = regexp.match(value.toString());
     return match.hasMatch();
 }
@@ -212,7 +215,8 @@ bool isDynamicVariantPropertyType(const TypeName &type)
 {
     // "variant" is considered value type as it is initialized as one.
     // This may need to change if we provide any kind of proper editor for it.
-    static const QSet<TypeName> valueTypes{"int", "real", "color", "string", "bool", "url", "var", "variant"};
+    static const QSet<TypeName> valueTypes{
+        "int", "real", "double", "color", "string", "bool", "url", "var", "variant"};
     return valueTypes.contains(type);
 }
 
@@ -273,12 +277,12 @@ std::pair<QString, QString> splitExpression(const QString &expression)
     return {sourceNode, propertyName};
 }
 
+#ifndef QDS_USE_PROJECTSTORAGE
 QStringList singletonsFromView(AbstractView *view)
 {
     RewriterView *rv = view->rewriterView();
     if (!rv)
         return {};
-
     QStringList out;
     for (const QmlTypeData &data : rv->getQMLTypes()) {
         if (data.isSingleton && !data.typeName.isEmpty())
@@ -297,22 +301,47 @@ std::vector<PropertyMetaInfo> propertiesFromSingleton(const QString &name, Abstr
 
     return {};
 }
+#endif
 
 QList<AbstractProperty> dynamicPropertiesFromNode(const ModelNode &node)
 {
-    auto isDynamic = [](const AbstractProperty &p) { return p.isDynamic(); };
+    auto isDynamic = [](const AbstractProperty &p) {
+        return p.isDynamic() || p.isSignalDeclarationProperty();
+    };
     auto byName = [](const AbstractProperty &a, const AbstractProperty &b) {
         return a.name() < b.name();
     };
 
     QList<AbstractProperty> dynamicProperties = Utils::filtered(node.properties(), isDynamic);
     Utils::sort(dynamicProperties, byName);
+
     return dynamicProperties;
 }
 
+#ifdef QDS_USE_PROJECTSTORAGE
+QStringList availableSources(AbstractView *view)
+{
+    if (!view->isAttached())
+        return {};
+
+    QStringList sourceNodes;
+
+    for (const auto &metaInfo : view->model()->singletonMetaInfos())
+        sourceNodes.push_back(metaInfo.displayName());
+
+    for (const ModelNode &modelNode : view->allModelNodes()) {
+        if (auto id = modelNode.id(); !id.isEmpty())
+            sourceNodes.append(id);
+    }
+
+    std::sort(sourceNodes.begin(), sourceNodes.end());
+    return sourceNodes;
+}
+#else
 QStringList availableSources(AbstractView *view)
 {
     QStringList sourceNodes;
+
     for (const ModelNode &modelNode : view->allModelNodes()) {
         if (!modelNode.id().isEmpty())
             sourceNodes.append(modelNode.id());
@@ -320,12 +349,13 @@ QStringList availableSources(AbstractView *view)
     std::sort(sourceNodes.begin(), sourceNodes.end());
     return singletonsFromView(view) + sourceNodes;
 }
+#endif
 
 QStringList availableTargetProperties(const BindingProperty &bindingProperty)
 {
     const ModelNode modelNode = bindingProperty.parentModelNode();
     if (!modelNode.isValid()) {
-        qWarning() << __FUNCTION__ << " invalid model node";
+        qCWarning(ConnectionEditorLog) << __FUNCTION__ << "invalid model node";
         return {};
     }
 
@@ -344,6 +374,8 @@ QStringList availableTargetProperties(const BindingProperty &bindingProperty)
     return {};
 }
 
+namespace {
+
 ModelNode getNodeByIdOrParent(AbstractView *view, const QString &id, const ModelNode &targetNode)
 {
     if (id != QLatin1String("parent"))
@@ -354,6 +386,35 @@ ModelNode getNodeByIdOrParent(AbstractView *view, const QString &id, const Model
 
     return {};
 }
+
+#ifdef QDS_USE_PROJECTSTORAGE
+NodeMetaInfo singletonMetaInfoForId(const QString &id, AbstractView *view)
+{
+    using Storage::Info::ExportedTypeName;
+    const auto model = view->model();
+
+    if (!model)
+        return {};
+
+    const Utils::SmallString name = id;
+
+    const auto singletonMetaInfos = model->singletonMetaInfos();
+
+    const auto sourceId = model->fileUrlSourceId();
+
+    auto found = std::ranges::find_if(singletonMetaInfos, [&](const auto &metaInfo) {
+        auto exportedTypeNames = metaInfo.exportedTypeNamesForSourceId(sourceId);
+        return std::ranges::find(exportedTypeNames, name, &ExportedTypeName::name)
+               != exportedTypeNames.end();
+    });
+
+    if (found == singletonMetaInfos.end())
+        return {};
+
+    return *found;
+}
+#endif
+} // namespace
 
 QStringList availableSourceProperties(const QString &id,
                                       const BindingProperty &targetProperty,
@@ -367,10 +428,19 @@ QStringList availableSourceProperties(const QString &id,
     } else if (auto metaInfo = targetProperty.parentModelNode().metaInfo(); metaInfo.isValid()) {
         targetType = metaInfo.property(targetProperty.name()).propertyType();
     } else
-        qWarning() << __FUNCTION__ << " no meta info for target node";
+        qCWarning(ConnectionEditorLog) << __FUNCTION__ << "no meta info for target node";
 
     QStringList possibleProperties;
     if (!modelNode.isValid()) {
+#ifdef QDS_USE_PROJECTSTORAGE
+        if (auto singletonMetaInfo = singletonMetaInfoForId(id, view)) {
+            for (const auto &property : singletonMetaInfo.properties()) {
+                if (metaInfoIsCompatible(targetType, property))
+                    possibleProperties.push_back(QString::fromUtf8(property.name()));
+            }
+            return possibleProperties;
+        }
+#else
         QStringList singletons = singletonsFromView(view);
         if (singletons.contains(id)) {
             for (const auto &property : propertiesFromSingleton(id, view)) {
@@ -379,7 +449,8 @@ QStringList availableSourceProperties(const QString &id,
             }
             return possibleProperties;
         }
-        qWarning() << __FUNCTION__ << " invalid model node: " << id;
+#endif
+        qCWarning(ConnectionEditorLog) << __FUNCTION__ << "invalid model node:" << id;
         return {};
     }
 
@@ -405,7 +476,7 @@ QStringList availableSourceProperties(const QString &id,
                 possibleProperties.push_back(QString::fromUtf8(property.name()));
         }
     } else {
-        qWarning() << __FUNCTION__ << " no meta info for source node";
+        qCWarning(ConnectionEditorLog) << __FUNCTION__ << "no meta info for source node";
     }
 
     return possibleProperties;

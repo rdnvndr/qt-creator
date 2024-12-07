@@ -5,7 +5,7 @@
 
 #include <utils/fileutils.h>
 #include <utils/macroexpander.h>
-#include <utils/process.h>
+#include <utils/qtcprocess.h>
 #include <utils/theme/theme.h>
 #include <utils/utilstr.h>
 
@@ -100,11 +100,11 @@ FilePath ProcessParameters::effectiveCommand() const
         if (m_macroExpander)
             cmd = m_macroExpander->expand(cmd);
         if (cmd.needsDevice()) {
-            // Assume this is already good. FIXME: It is possibly not, so better fix  searchInPath.
+            // Assume this is already good. FIXME: It is possibly not, so better fix searchInPath.
             m_effectiveCommand = cmd;
         } else {
-            m_effectiveCommand = m_runData.environment.searchInPath(cmd.toString(),
-                                                                    {effectiveWorkingDirectory()});
+            m_effectiveCommand
+                = m_runData.environment.searchInPath(cmd.path(), {effectiveWorkingDirectory()});
         }
         m_commandMissing = m_effectiveCommand.isEmpty();
         if (m_commandMissing)
@@ -135,10 +135,10 @@ QString ProcessParameters::effectiveArguments() const
 
 QString ProcessParameters::prettyCommand() const
 {
-    QString cmd = m_runData.command.executable().toString();
+    FilePath cmd = m_runData.command.executable();
     if (m_macroExpander)
         cmd = m_macroExpander->expand(cmd);
-    return FilePath::fromString(cmd).fileName();
+    return cmd.fileName();
 }
 
 QString ProcessParameters::prettyArguments() const
@@ -158,7 +158,7 @@ static QString invalidCommandMessage(const QString &displayName)
     return QString("<b>%1:</b> <font color='%3'>%2</font>")
                     .arg(displayName,
                          ::Utils::Tr::tr("Invalid command"),
-                         creatorTheme()->color(Theme::TextColorError).name());
+                         creatorColor(Theme::TextColorError).name());
 }
 
 QString ProcessParameters::summary(const QString &displayName) const
@@ -167,9 +167,10 @@ QString ProcessParameters::summary(const QString &displayName) const
         return invalidCommandMessage(displayName);
 
     return QString::fromLatin1("<b>%1:</b> %2 %3")
-            .arg(displayName,
-                 ProcessArgs::quoteArg(prettyCommand()),
-                 prettyArguments());
+        .arg(
+            displayName,
+            ProcessArgs::quoteArg(prettyCommand()).toHtmlEscaped(),
+            prettyArguments().toHtmlEscaped());
 }
 
 QString ProcessParameters::summaryInWorkdir(const QString &displayName) const
@@ -178,10 +179,11 @@ QString ProcessParameters::summaryInWorkdir(const QString &displayName) const
         return invalidCommandMessage(displayName);
 
     return QString::fromLatin1("<b>%1:</b> %2 %3 in %4")
-            .arg(displayName,
-                 ProcessArgs::quoteArg(prettyCommand()),
-                 prettyArguments(),
-                 QDir::toNativeSeparators(effectiveWorkingDirectory().toString()));
+        .arg(
+            displayName,
+            ProcessArgs::quoteArg(prettyCommand()).toHtmlEscaped(),
+            prettyArguments().toHtmlEscaped(),
+            effectiveWorkingDirectory().toUserOutput());
 }
 
 } // ProcessExplorer

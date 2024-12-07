@@ -13,6 +13,8 @@
 
 #include <coreplugin/icore.h>
 
+#include <utils/theme/theme.h>
+
 #include <QDebug>
 #include <QMessageBox>
 #include <QMimeData>
@@ -31,9 +33,10 @@ GraphicsView::GraphicsView(QWidget *parent)
     setViewportUpdateMode(QGraphicsView::FullViewportUpdate);
     setDragMode(RubberBandDrag);
     setRubberBandSelectionMode(Qt::ContainsItemShape);
-    setBackgroundBrush(QBrush(QColor(0xef, 0xef, 0xef)));
     setAcceptDrops(true);
     setFrameShape(QFrame::NoFrame);
+
+    setPalette(Utils::creatorTheme()->palette());
 
     connect(horizontalScrollBar(), &QScrollBar::valueChanged, this, &GraphicsView::updateView);
     connect(verticalScrollBar(), &QScrollBar::valueChanged, this, &GraphicsView::updateView);
@@ -175,8 +178,8 @@ void GraphicsView::dragMoveEvent(QDragMoveEvent *event)
 
         ScxmlTag *targetTag = nullptr;
 
-        QList<QGraphicsItem*> parentItems = items(event->pos());
-        QPointF sceneP = mapToScene(event->pos());
+        QList<QGraphicsItem*> parentItems = items(event->position().toPoint());
+        QPointF sceneP = mapToScene(event->position().toPoint());
         for (int i = 0; i < parentItems.count(); ++i) {
             auto item = static_cast<BaseItem*>(parentItems[i]);
             if (item && item->type() >= TransitionType && item->containsScenePoint(sceneP)) {
@@ -206,9 +209,9 @@ void GraphicsView::dropEvent(QDropEvent *event)
         int shapeIndex = event->mimeData()->data("shapeIndex").toInt();
 
         ScxmlTag *targetTag = nullptr;
-        QPointF targetPos = mapToScene(event->pos());
+        QPointF targetPos = mapToScene(event->position().toPoint());
 
-        QList<QGraphicsItem*> parentItems = items(event->pos());
+        QList<QGraphicsItem*> parentItems = items(event->position().toPoint());
         for (int i = 0; i < parentItems.count(); ++i) {
             auto item = static_cast<const BaseItem*>(parentItems[i]);
             if (item && item->type() >= StateType) {

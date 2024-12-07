@@ -1,5 +1,6 @@
 {
     "deployment": {
+        "enableCMakeGeneration": false,
         "targetDirectory": "/opt/fileSelectors"
     },
     "environment": {
@@ -39,12 +40,26 @@
             "files": [
             ],
             "filters": [
+                "*.bmp",
+                "*.dae",
+                "*.gif",
+                "*.hdr",
+                "*.ico",
                 "*.jpeg",
                 "*.jpg",
+                "*.ktx",
+                "*.pbm",
+                "*.pgm",
                 "*.png",
+                "*.ppm",
                 "*.svg",
-                "*.hdr",
-                "*.ktx"
+                "*.svgz",
+                "*.tif",
+                "*.tiff",
+                "*.ttf",
+                "*.webp",
+                "*.xbm",
+                "*.xpm"
             ],
             "mcuProperties": {
             },
@@ -107,6 +122,8 @@
     },
     "otherProperties": {
     },
+    "qmlprojectDependencies": [
+    ],
     "runConfig": {
         "fileSelectors": [
             "WXGA",

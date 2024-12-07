@@ -388,7 +388,7 @@ void CppFindReferences::findUsages(CPlusPlus::Symbol *symbol,
     search->setTextToReplace(replacement);
     if (callback)
         search->makeNonInteractive(callback);
-    if (codeModelSettings()->categorizeFindReferences())
+    if (CppCodeModelSettings::categorizeFindReferences())
         search->setFilter(new CppSearchResultFilter);
     setupSearch(search);
     search->setSearchAgainSupported(true);
@@ -397,7 +397,7 @@ void CppFindReferences::findUsages(CPlusPlus::Symbol *symbol,
     CppFindReferencesParameters parameters;
     parameters.symbolId = fullIdForSymbol(symbol);
     parameters.symbolFilePath = symbol->filePath();
-    parameters.categorize = codeModelSettings()->categorizeFindReferences();
+    parameters.categorize = CppCodeModelSettings::categorizeFindReferences();
     parameters.preferLowerCaseFileNames = preferLowerCaseFileNames(
         ProjectManager::projectForFile(symbol->filePath()));
 
@@ -408,7 +408,7 @@ void CppFindReferences::findUsages(CPlusPlus::Symbol *symbol,
     }
 
     search->setUserData(QVariant::fromValue(parameters));
-    findAll_helper(search, symbol, context, codeModelSettings()->categorizeFindReferences());
+    findAll_helper(search, symbol, context, CppCodeModelSettings::categorizeFindReferences());
 }
 
 void CppFindReferences::renameUsages(CPlusPlus::Symbol *symbol,
@@ -858,7 +858,7 @@ void CppFindReferences::createWatcher(const QFuture<CPlusPlus::Usage> &future, S
     connect(search, &SearchResult::canceled, watcher, [watcher]() { watcher->cancel(); });
     connect(search, &SearchResult::paused, watcher, [watcher](bool paused) {
         if (!paused || watcher->isRunning()) // guard against pausing when the search is finished
-            watcher->setPaused(paused);
+            watcher->setSuspended(paused);
     });
     watcher->setPendingResultsLimit(1);
     watcher->setFuture(future);

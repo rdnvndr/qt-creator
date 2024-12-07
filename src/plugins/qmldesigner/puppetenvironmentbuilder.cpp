@@ -86,19 +86,16 @@ QString PuppetEnvironmentBuilder::getStyleConfigFileName() const
             m_target->buildSystem());
         if (qmlBuild) {
             const auto &environment = qmlBuild->environment();
-            const auto &envVar = std::find_if(
-                std::begin(environment), std::end(environment), [](const auto &envVar) {
-                    return (envVar.name == u"QT_QUICK_CONTROLS_CONF"
-                            && envVar.operation != Utils::EnvironmentItem::SetDisabled);
-                });
+            const auto &envVar = std::ranges::find_if(environment, [](const auto &envVar) {
+                return envVar.name == u"QT_QUICK_CONTROLS_CONF"
+                       && envVar.operation != Utils::EnvironmentItem::SetDisabled;
+            });
             if (envVar != std::end(environment)) {
                 const auto &sourceFiles = m_target->project()->files(
                     ProjectExplorer::Project::SourceFiles);
-                const auto &foundFile = std::find_if(std::begin(sourceFiles),
-                                                     std::end(sourceFiles),
-                                                     [&](const auto &fileName) {
-                                                         return fileName.fileName() == envVar->value;
-                                                     });
+                const auto &foundFile = std::ranges::find(sourceFiles,
+                                                          envVar->value,
+                                                          &Utils::FilePath::fileName);
                 if (foundFile != std::end(sourceFiles))
                     return foundFile->toString();
             }
@@ -126,7 +123,7 @@ void PuppetEnvironmentBuilder::addRendering() const
 {
     m_environment.set("QML_BAD_GUI_RENDER_LOOP", "true");
     m_environment.set("QML_PUPPET_MODE", "true");
-    m_environment.set("QML_DISABLE_DISK_CACHE", "true");
+    //m_environment.set("QML_DISABLE_DISK_CACHE", "true");
     m_environment.set("QMLPUPPET_RENDER_EFFECTS", "true");
     if (!m_environment.hasKey("QT_SCREEN_SCALE_FACTORS") && !m_environment.hasKey("QT_SCALE_FACTOR"))
         m_environment.set("QT_AUTO_SCREEN_SCALE_FACTOR", "1");
@@ -198,12 +195,11 @@ void PuppetEnvironmentBuilder::addForceQApplication() const
 
 void PuppetEnvironmentBuilder::addMultiLanguageDatatbase() const
 {
-    if (m_target) {
-        if (auto multiLanguageAspect = QmlProjectManager::QmlMultiLanguageAspect::current(m_target)) {
-            if (!multiLanguageAspect->databaseFilePath().isEmpty())
-                m_environment.set("QT_MULTILANGUAGE_DATABASE",
-                                  multiLanguageAspect->databaseFilePath().toString());
-        }
+    if (auto multiLanguageAspect = QmlProjectManager::QmlMultiLanguageAspect::current()) {
+        const auto databaseFilePath = multiLanguageAspect->databaseFilePath();
+        if (!databaseFilePath.isEmpty() && databaseFilePath.exists())
+            m_environment.set("QT_MULTILANGUAGE_DATABASE",
+                              multiLanguageAspect->databaseFilePath().toString());
     }
 }
 

@@ -9,8 +9,8 @@
 #include "qmlprojectmanagertr.h"
 #include "qmlprojectrunconfiguration.h"
 #include "projectfilecontenttools.h"
-#include "cmakegen/cmakeprojectconverter.h"
-#include "cmakegen/generatecmakelists.h"
+#include "qmlprojectexporter/cmakegenerator.h"
+#include "qmlprojectexporter/pythongenerator.h"
 
 #include <coreplugin/actionmanager/actioncontainer.h>
 #include <coreplugin/actionmanager/actionmanager.h>
@@ -25,12 +25,12 @@
 
 #include <extensionsystem/iplugin.h>
 
+#include <projectexplorer/projectexplorer.h>
 #include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/projectmanager.h>
 #include <projectexplorer/projectnodes.h>
 #include <projectexplorer/projecttree.h>
 #include <projectexplorer/runcontrol.h>
-#include <projectexplorer/projectmanager.h>
 #include <projectexplorer/target.h>
 
 #include <qmlprofiler/qmlprofilerruncontrol.h>
@@ -50,7 +50,7 @@
 #include <utils/fileutils.h>
 #include <utils/fsengine/fileiconprovider.h>
 #include <utils/mimeconstants.h>
-#include <utils/process.h>
+#include <utils/qtcprocess.h>
 #include <utils/qtcsettings.h>
 
 #include <QAction>
@@ -100,11 +100,6 @@ static void clearAlwaysOpenWithMode()
 {
     ICore::settings()->remove(QmlProjectManager::Constants::ALWAYS_OPEN_UI_MODE);
 }
-
-class QmlProjectPluginPrivate
-{
-public:
-};
 
 void openQDS(const FilePath &fileName)
 {
@@ -230,6 +225,26 @@ static QmlBuildSystem *qmlBuildSystemforFileNode(const FileNode *fileNode)
     return nullptr;
 }
 
+class ExternalDesignStudioFactory : public Core::IEditorFactory
+{
+public:
+    ExternalDesignStudioFactory()
+    {
+        setId("Qt.QtDesignStudio");
+        setDisplayName(Tr::tr("Qt Design Studio"));
+        setMimeTypes({Utils::Constants::QMLUI_MIMETYPE});
+        setEditorStarter([](const FilePath &filePath, [[maybe_unused]] QString *errorMessage) {
+            openInQDSWithProject(filePath);
+            return true;
+        });
+    }
+};
+
+void setupExternalDesignStudio()
+{
+    static ExternalDesignStudioFactory theExternalDesignStudioFactory;
+}
+
 class QmlProjectPlugin final : public ExtensionSystem::IPlugin
 {
     Q_OBJECT
@@ -275,6 +290,7 @@ private:
 void QmlProjectPlugin::initialize()
 {
     setupQmlProjectRunConfiguration();
+    setupExternalDesignStudio();
 
     if (!qmlDesignerEnabled()) {
         m_landingPage = new QdsLandingPage();
@@ -287,10 +303,8 @@ void QmlProjectPlugin::initialize()
         m_landingPageWidget = new QdsLandingPageWidget();
 
         const QStringList mimeTypes = {Utils::Constants::QMLUI_MIMETYPE};
-        auto context = new Internal::DesignModeContext(m_landingPageWidget);
-        ICore::addContextObject(context);
 
-        DesignMode::registerDesignWidget(m_landingPageWidget, mimeTypes, context->context());
+        DesignMode::registerDesignWidget(m_landingPageWidget, mimeTypes, {});
 
         connect(ModeManager::instance(), &ModeManager::currentModeChanged,
                 this, &QmlProjectPlugin::editorModeChanged);
@@ -386,11 +400,29 @@ void QmlProjectPlugin::initialize()
                         mainUifileAction->setEnabled(buildSystem->mainUiFilePath()
                                                      != fileNode->filePath());
                 });
-    }
 
-    GenerateCmake::generateMenuEntry(this);
-    if (ICore::isQtDesignStudio())
-        GenerateCmake::CmakeProjectConverter::generateMenuEntry(this);
+        connect(EditorManager::instance(),
+                &EditorManager::documentOpened,
+                this,
+                [](Core::IDocument *document) {
+                    if (!ProjectManager::startupProject()
+                        && document->filePath().completeSuffix() == "ui.qml") {
+                        QTimer::singleShot(1000, [document]() {
+                            if (ProjectManager::startupProject())
+                                return;
+
+                            const Utils::FilePath fileName = Utils::FilePath::fromString(
+                                document->filePath().toString() + Constants::fakeProjectName);
+                            auto result = ProjectExplorer::ProjectExplorerPlugin::openProjects(
+                                {fileName});
+                            QTC_ASSERT(result.project(), return);
+                        });
+                    }
+                });
+
+        QmlProjectExporter::CMakeGenerator::createMenuAction(this);
+        QmlProjectExporter::PythonGenerator::createMenuAction(this);
+    }
 }
 
 void QmlProjectPlugin::displayQmlLandingPage()

@@ -12,7 +12,7 @@
 #include <utils/environment.h>
 #include <utils/fileutils.h>
 #include <utils/hostosinfo.h>
-#include <utils/process.h>
+#include <utils/qtcprocess.h>
 #include <utils/qtcassert.h>
 
 #include <vcsbase/vcsbasediffeditorcontroller.h>
@@ -240,7 +240,7 @@ QString MercurialClient::shortDescriptionSync(const FilePath &workingDirectory,
     return stripLastNewline(result.cleanedStdOut());
 }
 
-// Default format: "SHA1 (author summmary)"
+// Default format: "hash (author summmary)"
 static const char defaultFormatC[] = "{node} ({author|person} {desc|firstline})";
 
 QString MercurialClient::shortDescriptionSync(const FilePath &workingDirectory,
@@ -347,8 +347,9 @@ void MercurialClient::revertAll(const FilePath &workingDir, const QString &revis
 
 bool MercurialClient::isVcsDirectory(const FilePath &filePath) const
 {
-    return filePath.isDir()
-            && !filePath.fileName().compare(Constants::MERCURIALREPO, HostOsInfo::fileNameCaseSensitivity());
+    return !filePath.fileName()
+                .compare(Constants::MERCURIALREPO, HostOsInfo::fileNameCaseSensitivity())
+           && filePath.isDir();
 }
 
 void MercurialClient::view(const FilePath &source, const QString &id,

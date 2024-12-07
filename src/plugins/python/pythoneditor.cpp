@@ -27,7 +27,6 @@
 #include <projectexplorer/target.h>
 
 #include <texteditor/texteditor.h>
-#include <texteditor/texteditoractionhandler.h>
 
 #include <utils/stylehelper.h>
 
@@ -298,13 +297,14 @@ PythonDocument::PythonDocument()
 
 void PythonDocument::updateCurrentPython()
 {
-    updatePython(detectPython(filePath()));
+    if (Core::DocumentModel::entryForDocument(this))
+        updatePython(detectPython(filePath()));
 }
 
 void PythonDocument::updatePython(const FilePath &python)
 {
     openDocumentWithPython(python, this);
-    PySideInstaller::checkPySideInstallation(python, this);
+    PySideInstaller::instance().checkPySideInstallation(python, this);
     emit pythonUpdated(python);
 }
 
@@ -317,10 +317,10 @@ public:
         setDisplayName(::Core::Tr::tr(Constants::C_EDITOR_DISPLAY_NAME));
         addMimeType(Constants::C_PY_MIMETYPE);
 
-        setEditorActionHandlers(TextEditorActionHandler::Format
-                                | TextEditorActionHandler::UnCommentSelection
-                                | TextEditorActionHandler::UnCollapseAll
-                                | TextEditorActionHandler::FollowSymbolUnderCursor);
+        setOptionalActionMask(OptionalActions::Format
+                                | OptionalActions::UnCommentSelection
+                                | OptionalActions::UnCollapseAll
+                                | OptionalActions::FollowSymbolUnderCursor);
 
         setDocumentCreator([]() { return new PythonDocument; });
         setEditorWidgetCreator([]() { return new PythonEditorWidget; });

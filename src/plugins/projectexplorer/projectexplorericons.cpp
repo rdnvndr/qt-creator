@@ -10,14 +10,12 @@ namespace Icons {
 
 const Icon BUILD(":/projectexplorer/images/build.png");
 const Icon BUILD_FLAT({
-        {":/projectexplorer/images/build_hammerhandle_mask.png", Theme::IconsBuildHammerHandleColor},
-        {":/projectexplorer/images/build_hammerhead_mask.png", Theme::IconsBuildHammerHeadColor}});
+        {":/projectexplorer/images/build_hammer_mask.png", Theme::IconsBaseColor}});
 const Icon BUILD_SMALL({
         {":/projectexplorer/images/buildhammerhandle.png", Theme::IconsBuildHammerHandleColor},
         {":/projectexplorer/images/buildhammerhead.png", Theme::IconsBuildHammerHeadColor}}, Icon::Tint);
 const Icon CANCELBUILD_FLAT({
-        {":/projectexplorer/images/build_hammerhandle_mask.png", Theme::IconsDisabledColor},
-        {":/projectexplorer/images/build_hammerhead_mask.png", Theme::IconsDisabledColor},
+        {":/projectexplorer/images/build_hammer_mask.png", Theme::IconsBaseColor},
         {":/projectexplorer/images/cancelbuild_overlay.png", Theme::IconsStopToolBarColor}},
         Icon::Tint | Icon::PunchEdges);
 const Icon REBUILD({
@@ -71,6 +69,8 @@ const Icon BUILDSTEP_MOVEDOWN({
         {":/projectexplorer/images/buildstepmovedown.png", Theme::PanelTextColorDark}}, Icon::Tint);
 const Icon BUILDSTEP_DISABLE({
         {":/projectexplorer/images/buildstepdisable.png", Theme::PanelTextColorDark}}, Icon::Tint);
+const Icon BUILDSTEP_DISABLE_TOOLBAR({
+        {":/projectexplorer/images/buildstepdisable.png", Theme::IconsBaseColor}});
 const Icon BUILDSTEP_REMOVE({
         {":/projectexplorer/images/buildstepremove.png", Theme::PanelTextColorDark}}, Icon::Tint);
 
@@ -80,8 +80,6 @@ const Icon DESKTOP_DEVICE({
 const Icon MODE_PROJECT_CLASSIC(":/projectexplorer/images/mode_project.png");
 const Icon MODE_PROJECT_FLAT({
         {":/projectexplorer/images/mode_project_mask.png", Theme::IconsBaseColor}});
-const Icon MODE_PROJECT_FLAT_ACTIVE({
-        {":/projectexplorer/images/mode_project_mask.png", Theme::IconsModeProjectActiveColor}});
 
 } // namespace Icons
 } // namespace ProjectExplorer

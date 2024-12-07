@@ -12,7 +12,7 @@
 
 #include <utils/environment.h>
 #include <utils/hostosinfo.h>
-#include <utils/process.h>
+#include <utils/qtcprocess.h>
 #include <utils/processinterface.h>
 #include <utils/qtcassert.h>
 
@@ -147,77 +147,6 @@ void Terminal::onSlaveReaderActivated(int fd)
 #else
     Q_UNUSED(fd)
 #endif
-}
-
-TerminalRunner::TerminalRunner(RunControl *runControl,
-                               const std::function<ProcessRunData()> &stubRunnable)
-    : RunWorker(runControl), m_stubRunnable(stubRunnable)
-{
-    setId("TerminalRunner");
-}
-
-void TerminalRunner::kickoffProcess()
-{
-    if (m_stubProc)
-        m_stubProc->kickoffProcess();
-}
-
-void TerminalRunner::interrupt()
-{
-    if (m_stubProc)
-        m_stubProc->interrupt();
-}
-
-void TerminalRunner::start()
-{
-    QTC_ASSERT(m_stubRunnable, reportFailure({}); return);
-    QTC_ASSERT(!m_stubProc, reportFailure({}); return);
-    ProcessRunData stub = m_stubRunnable();
-
-    bool runAsRoot = false;
-    if (auto runAsRootAspect = runControl()->aspect<RunAsRootAspect>())
-        runAsRoot = runAsRootAspect->value;
-
-    m_stubProc = new Process(this);
-    m_stubProc->setTerminalMode(TerminalMode::Debug);
-
-    if (runAsRoot) {
-        m_stubProc->setRunAsRoot(runAsRoot);
-        RunControl::provideAskPassEntry(stub.environment);
-    }
-
-    connect(m_stubProc, &Process::started,
-            this, &TerminalRunner::stubStarted);
-    connect(m_stubProc, &Process::done,
-            this, &TerminalRunner::stubDone);
-
-    m_stubProc->setEnvironment(stub.environment);
-    m_stubProc->setWorkingDirectory(stub.workingDirectory);
-
-    // Error message for user is delivered via a signal.
-    m_stubProc->setCommand(stub.command);
-    m_stubProc->start();
-}
-
-void TerminalRunner::stop()
-{
-    if (m_stubProc && m_stubProc->isRunning())
-        m_stubProc->stop();
-}
-
-void TerminalRunner::stubStarted()
-{
-    m_applicationPid = m_stubProc->processId();
-    m_applicationMainThreadId = m_stubProc->applicationMainThreadId();
-    reportStarted();
-}
-
-void TerminalRunner::stubDone()
-{
-    if (m_stubProc->error() != QProcess::UnknownError)
-        reportFailure(m_stubProc->errorString());
-    if (m_stubProc->error() != QProcess::FailedToStart)
-        reportDone();
 }
 
 } // Debugger::Internal

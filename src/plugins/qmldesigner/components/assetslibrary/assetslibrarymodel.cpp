@@ -1,21 +1,24 @@
 // Copyright (C) 2022 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
-#include <QCheckBox>
-#include <QFileInfo>
-#include <QFileSystemModel>
-#include <QMessageBox>
-#include <QSortFilterProxyModel>
-
-#include "asset.h"
 #include "assetslibrarymodel.h"
 
 #include <modelnodeoperations.h>
 #include <qmldesignerplugin.h>
+#include <uniquename.h>
+
+#include <qmldesignerbase/settings/designersettings.h>
 
 #include <coreplugin/icore.h>
+
+#include <qmldesignerutils/asset.h>
 #include <utils/algorithm.h>
-#include <utils/qtcassert.h>
+#include <utils/filepath.h>
+#include <utils/filesystemwatcher.h>
+
+#include <QFileInfo>
+#include <QFileSystemModel>
+#include <QMessageBox>
 
 namespace QmlDesigner {
 
@@ -23,8 +26,8 @@ AssetsLibraryModel::AssetsLibraryModel(QObject *parent)
     : QSortFilterProxyModel{parent}
 {
     createBackendModel();
-
     setRecursiveFilteringEnabled(true);
+    sort(0);
 }
 
 void AssetsLibraryModel::createBackendModel()
@@ -38,7 +41,7 @@ void AssetsLibraryModel::createBackendModel()
 
     QObject::connect(m_sourceFsModel, &QFileSystemModel::directoryLoaded, this,
                      [this]([[maybe_unused]] const QString &dir) {
-        syncHaveFiles();
+        syncHasFiles();
     });
 
     m_fileWatcher = new Utils::FileSystemWatcher(parent());
@@ -153,16 +156,15 @@ bool AssetsLibraryModel::renameFolder(const QString &folderPath, const QString &
 
 QString AssetsLibraryModel::addNewFolder(const QString &folderPath)
 {
-    QString iterPath = folderPath;
-    QDir dir{folderPath};
+    Utils::FilePath uniqueDirPath = Utils::FilePath::fromString(UniqueName::generatePath(folderPath));
 
-    while (dir.exists()) {
-        iterPath = getUniqueName(iterPath);
-
-        dir.setPath(iterPath);
+    const Utils::Result res = uniqueDirPath.ensureWritableDir();
+    if (!res) {
+        qWarning() << __FUNCTION__ << res.error();
+        return {};
     }
 
-    return dir.mkpath(iterPath) ? iterPath : "";
+    return uniqueDirPath.path();
 }
 
 bool AssetsLibraryModel::urlPathExistsInModel(const QUrl &url) const
@@ -188,6 +190,21 @@ bool AssetsLibraryModel::allFilePathsAreTextures(const QStringList &filePaths) c
     });
 }
 
+bool AssetsLibraryModel::allFilePathsAreComposedEffects(const QStringList &filePaths) const
+{
+    return Utils::allOf(filePaths, [](const QString &path) {
+        return Asset(path).isEffect();
+    });
+}
+
+bool AssetsLibraryModel::isSameOrDescendantPath(const QUrl &source, const QString &target) const
+{
+    Utils::FilePath srcPath = Utils::FilePath::fromUrl(source);
+    Utils::FilePath targetPath = Utils::FilePath::fromString(target);
+
+    return targetPath.isChildOf(srcPath);
+}
+
 bool AssetsLibraryModel::filterAcceptsRow(int sourceRow, const QModelIndex &sourceParent) const
 {
     QString path = m_sourceFsModel->filePath(sourceParent);
@@ -207,7 +224,7 @@ bool AssetsLibraryModel::filterAcceptsRow(int sourceRow, const QModelIndex &sour
     }
 }
 
-bool AssetsLibraryModel::checkHaveFiles(const QModelIndex &parentIdx) const
+bool AssetsLibraryModel::checkHasFiles(const QModelIndex &parentIdx) const
 {
     if (!parentIdx.isValid())
         return false;
@@ -218,60 +235,30 @@ bool AssetsLibraryModel::checkHaveFiles(const QModelIndex &parentIdx) const
         if (!isDirectory(newIdx))
             return true;
 
-        if (checkHaveFiles(newIdx))
+        if (checkHasFiles(newIdx))
             return true;
     }
 
     return false;
 }
 
-void AssetsLibraryModel::setHaveFiles(bool value)
+void AssetsLibraryModel::setHasFiles(bool value)
 {
-    if (m_haveFiles != value) {
-        m_haveFiles = value;
-        emit haveFilesChanged();
+    if (m_hasFiles != value) {
+        m_hasFiles = value;
+        emit hasFilesChanged();
     }
 }
 
-bool AssetsLibraryModel::checkHaveFiles() const
+bool AssetsLibraryModel::checkHasFiles() const
 {
     auto rootIdx = indexForPath(m_rootPath);
-    return checkHaveFiles(rootIdx);
+    return checkHasFiles(rootIdx);
 }
 
-void AssetsLibraryModel::syncHaveFiles()
+void AssetsLibraryModel::syncHasFiles()
 {
-    setHaveFiles(checkHaveFiles());
-}
-
-QString AssetsLibraryModel::getUniqueName(const QString &oldName) {
-    static QRegularExpression rgx("\\d+$"); // matches a number at the end of a string
-
-    QString uniqueName = oldName;
-    // if the folder name ends with a number, increment it
-    QRegularExpressionMatch match = rgx.match(uniqueName);
-    if (match.hasMatch()) { // ends with a number
-        QString numStr = match.captured(0);
-        int num = match.captured(0).toInt();
-
-        // get number of padding zeros, ex: for "005" = 2
-        int nPaddingZeros = 0;
-        for (; nPaddingZeros < numStr.size() && numStr[nPaddingZeros] == '0'; ++nPaddingZeros);
-
-        ++num;
-
-        // if the incremented number's digits increased, decrease the padding zeros
-        if (std::fmod(std::log10(num), 1.0) == 0)
-            --nPaddingZeros;
-
-        uniqueName = oldName.mid(0, match.capturedStart())
-                   + QString('0').repeated(nPaddingZeros)
-                   + QString::number(num);
-    } else {
-        uniqueName = oldName + '1';
-    }
-
-    return uniqueName;
+    setHasFiles(checkHasFiles());
 }
 
 void AssetsLibraryModel::setRootPath(const QString &newPath)
@@ -357,6 +344,23 @@ QString AssetsLibraryModel::parentDirPath(const QString &path) const
     QModelIndex idx = indexForPath(path);
     QModelIndex parentIdx = idx.parent();
     return filePath(parentIdx);
+}
+
+bool AssetsLibraryModel::lessThan(const QModelIndex &left, const QModelIndex &right) const
+{
+    bool leftIsDir = m_sourceFsModel->isDir(left);
+    bool rightIsDir = m_sourceFsModel->isDir(right);
+
+    if (leftIsDir && !rightIsDir)
+        return true;
+
+    if (!leftIsDir && rightIsDir)
+        return false;
+
+    const QString leftName = m_sourceFsModel->fileName(left);
+    const QString rightName = m_sourceFsModel->fileName(right);
+
+    return QString::localeAwareCompare(leftName, rightName) < 0;
 }
 
 } // namespace QmlDesigner

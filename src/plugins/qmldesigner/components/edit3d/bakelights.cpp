@@ -9,16 +9,18 @@
 #include <bakelightsdatamodel.h>
 #include <bindingproperty.h>
 #include <documentmanager.h>
-#include <model/modelutils.h>
+#include <indentingtexteditormodifier.h>
 #include <modelnode.h>
+#include <modelutils.h>
 #include <nodeabstractproperty.h>
 #include <nodeinstanceview.h>
 #include <nodemetainfo.h>
-#include <plaintexteditmodifier.h>
 #include <rewriterview.h>
+#include <utils3d.h>
 #include <variantproperty.h>
 
 #include <coreplugin/icore.h>
+#include <projectexplorer/projectmanager.h>
 
 #include <qmljs/qmljsmodelmanagerinterface.h>
 
@@ -61,7 +63,7 @@ BakeLights::BakeLights(AbstractView *view)
     : QObject(view)
     , m_view(view)
 {
-    m_view3dId = resolveView3dId(view);
+    m_view3dId = Utils3D::activeView3dId(view);
 
     if (m_view3dId.isEmpty()) {
         // It should never get here, baking controls should be disabled in this case
@@ -76,38 +78,6 @@ BakeLights::BakeLights(AbstractView *view)
 BakeLights::~BakeLights()
 {
     cleanup();
-}
-
-ModelNode BakeLights::resolveView3dNode(AbstractView *view)
-{
-    if (!view || !view->model())
-        return {};
-
-    ModelNode activeView3D;
-    ModelNode activeScene = view->active3DSceneNode();
-
-    if (activeScene.isValid()) {
-        if (activeScene.metaInfo().isQtQuick3DView3D()) {
-            activeView3D = activeScene;
-        } else {
-            ModelNode sceneParent = activeScene.parentProperty().parentModelNode();
-            if (sceneParent.metaInfo().isQtQuick3DView3D())
-                activeView3D = sceneParent;
-        }
-        return activeView3D;
-    }
-
-    return {};
-}
-
-QString BakeLights::resolveView3dId(AbstractView *view)
-{
-    ModelNode activeView3D = resolveView3dNode(view);
-
-    if (activeView3D.isValid())
-        return activeView3D.id();
-
-    return {};
 }
 
 void BakeLights::raiseDialog()
@@ -142,9 +112,12 @@ void BakeLights::bakeLights()
     m_rewriterView = new RewriterView{m_view->externalDependencies(), RewriterView::Amend};
     m_nodeInstanceView = new NodeInstanceView{*m_connectionManager, m_view->externalDependencies()};
 
+#ifdef QDS_USE_PROJECTSTORAGE
+    m_model = m_view->model()->createModel("Item");
+#else
     m_model = QmlDesigner::Model::create("QtQuick/Item", 2, 1);
     m_model->setFileUrl(m_view->model()->fileUrl());
-
+#endif
     // Take the current unsaved state of the main model and apply it to our copy
     auto textDocument = std::make_unique<QTextDocument>(
                 m_view->model()->rewriterView()->textModifier()->textDocument()->toRawText());
@@ -168,7 +141,7 @@ void BakeLights::bakeLights()
         return;
     }
 
-    m_nodeInstanceView->setTarget(m_view->nodeInstanceView()->target());
+    m_nodeInstanceView->setTarget(ProjectExplorer::ProjectManager::startupTarget());
 
     auto progressCallback = [this](const QString &msg) {
         emit progress(msg);
@@ -251,7 +224,11 @@ void BakeLights::exposeModelsAndLights(const QString &nodeId)
     }
 
     RewriterView rewriter{m_view->externalDependencies(), RewriterView::Amend};
+#ifdef QDS_USE_PROJECTSTORAGE
+    auto compModel = m_view->model()->createModel("Item");
+#else
     ModelPointer compModel = QmlDesigner::Model::create("QtQuick/Item", 2, 1);
+#endif
     const Utils::FilePath compFilePath = Utils::FilePath::fromString(componentFilePath);
     QByteArray src = compFilePath.fileContents().value();
 

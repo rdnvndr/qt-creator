@@ -7,6 +7,7 @@
 #include "remotelinux_constants.h"
 #include "remotelinuxtr.h"
 
+#include <projectexplorer/buildstep.h>
 #include <projectexplorer/buildsystem.h>
 #include <projectexplorer/deploymentdata.h>
 #include <projectexplorer/devicesupport/devicemanager.h>
@@ -19,7 +20,7 @@
 
 #include <utils/algorithm.h>
 #include <utils/async.h>
-#include <utils/process.h>
+#include <utils/qtcprocess.h>
 #include <utils/processinterface.h>
 
 using namespace ProjectExplorer;
@@ -28,9 +29,9 @@ using namespace Utils;
 
 namespace RemoteLinux::Internal {
 
-// RsyncDeployStep
+// GenericDeployStep
 
-class GenericDeployStep : public AbstractRemoteLinuxDeployStep
+class GenericDeployStep final : public AbstractRemoteLinuxDeployStep
 {
 public:
     GenericDeployStep(BuildStepList *bsl, Id id)
@@ -77,9 +78,7 @@ private:
 
 GroupItem GenericDeployStep::mkdirTask(const Storage<FilesToTransfer> &storage)
 {
-    using ResultType = expected_str<void>;
-
-    const auto onSetup = [storage](Async<ResultType> &async) {
+    const auto onSetup = [storage](Async<Result> &async) {
         FilePaths remoteDirs;
         for (const FileToTransfer &file : *storage)
             remoteDirs << file.m_target.parentDir();
@@ -87,9 +86,9 @@ GroupItem GenericDeployStep::mkdirTask(const Storage<FilesToTransfer> &storage)
         FilePath::sort(remoteDirs);
         FilePath::removeDuplicates(remoteDirs);
 
-        async.setConcurrentCallData([remoteDirs](QPromise<ResultType> &promise) {
+        async.setConcurrentCallData([remoteDirs](QPromise<Result> &promise) {
             for (const FilePath &dir : remoteDirs) {
-                const expected_str<void> result = dir.ensureWritableDir();
+                const Result result = dir.ensureWritableDir();
                 promise.addResult(result);
                 if (!result)
                     promise.future().cancel();
@@ -97,22 +96,22 @@ GroupItem GenericDeployStep::mkdirTask(const Storage<FilesToTransfer> &storage)
         });
     };
 
-    const auto onError = [this](const Async<ResultType> &async) {
+    const auto onError = [this](const Async<Result> &async) {
         const int numResults = async.future().resultCount();
         if (numResults == 0) {
             addErrorMessage(
-                Tr::tr("Unknown error occurred while trying to create remote directories") + '\n');
+                Tr::tr("Unknown error occurred while trying to create remote directories.") + '\n');
             return;
         }
 
         for (int i = 0; i < numResults; ++i) {
-            const ResultType result = async.future().resultAt(i);
-            if (!result.has_value())
+            const Result result = async.future().resultAt(i);
+            if (!result)
                 addErrorMessage(result.error());
         }
     };
 
-    return AsyncTask<ResultType>(onSetup, onError, CallDoneIf::Error);
+    return AsyncTask<Result>(onSetup, onError, CallDoneIf::Error);
 }
 
 static FileTransferMethod effectiveTransferMethodFor(const FileToTransfer &fileToTransfer,
@@ -176,12 +175,16 @@ GroupItem GenericDeployStep::transferTask(const Storage<FilesToTransfer> &storag
     const auto onError = [this](const FileTransfer &transfer) {
         const ProcessResultData result = transfer.resultData();
         if (result.m_error == QProcess::FailedToStart) {
-            addErrorMessage(Tr::tr("rsync failed to start: %1").arg(result.m_errorString));
+            addErrorMessage(Tr::tr("%1 failed to start: %2")
+                                .arg(transfer.transferMethodName(), result.m_errorString));
         } else if (result.m_exitStatus == QProcess::CrashExit) {
-            addErrorMessage(Tr::tr("rsync crashed."));
+            addErrorMessage(Tr::tr("%1 crashed.").arg(transfer.transferMethodName()));
         } else if (result.m_exitCode != 0) {
-            addErrorMessage(Tr::tr("rsync failed with exit code %1.").arg(result.m_exitCode)
-                            + "\n" + result.m_errorString);
+            addErrorMessage(
+                Tr::tr("%1 failed with exit code %2.")
+                    .arg(transfer.transferMethodName())
+                    .arg(result.m_exitCode)
+                + "\n" + result.m_errorString);
         }
     };
     return FileTransferTask(onSetup, onError, CallDoneIf::Error);
@@ -219,10 +222,21 @@ GroupItem GenericDeployStep::deployRecipe()
 
 // Factory
 
-GenericDeployStepFactory::GenericDeployStepFactory()
+class GenericDeployStepFactory final : public BuildStepFactory
 {
-    registerStep<GenericDeployStep>(Constants::GenericDeployStepId);
-    setDisplayName(Tr::tr("Deploy files"));
+public:
+    GenericDeployStepFactory()
+    {
+        registerStep<GenericDeployStep>(Constants::GenericDeployStepId);
+        setDisplayName(Tr::tr("Deploy files"));
+        setSupportedStepList(ProjectExplorer::Constants::BUILDSTEPS_DEPLOY);
+        setSupportedDeviceType(RemoteLinux::Constants::GenericLinuxOsType);
+    }
+};
+
+void setupGenericDeployStep()
+{
+    static GenericDeployStepFactory theGenericDeployStepFactory;
 }
 
 } // RemoteLinux::Internal

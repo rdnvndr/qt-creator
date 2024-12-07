@@ -65,7 +65,7 @@ class QTCREATOR_UTILS_EXPORT ProcessRunData
 public:
     Utils::CommandLine command;
     Utils::FilePath workingDirectory;
-    Utils::Environment environment;
+    Utils::Environment environment = {};
 };
 
 class QTCREATOR_UTILS_EXPORT ProcessSetupData
@@ -94,6 +94,7 @@ public:
     bool m_useCtrlCStub = false;
     bool m_belowNormalPriority = false; // internal, dependent on other fields and specific code path
     bool m_createConsoleOnWindows = false;
+    bool m_forceDefaultErrorMode = false;
 };
 
 class QTCREATOR_UTILS_EXPORT ProcessResultData

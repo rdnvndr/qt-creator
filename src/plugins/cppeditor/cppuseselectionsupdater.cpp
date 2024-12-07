@@ -7,12 +7,11 @@
 #include "cppeditorwidget.h"
 #include "cppmodelmanager.h"
 
-#include <extensionsystem/pluginmanager.h>
-
 #include <utils/futuresynchronizer.h>
 #include <utils/qtcassert.h>
 #include <utils/textutils.h>
 
+#include <QCoreApplication>
 #include <QTextBlock>
 #include <QTextCursor>
 
@@ -75,7 +74,7 @@ CppUseSelectionsUpdater::RunnerInfo CppUseSelectionsUpdater::update(CallType cal
         m_runnerWordStartPosition = params.textCursor.position();
 
         m_runnerWatcher->setFuture(cppEditorDocument->cursorInfo(params));
-        ExtensionSystem::PluginManager::futureSynchronizer()->addFuture(m_runnerWatcher->future());
+        Utils::futureSynchronizer()->addFuture(m_runnerWatcher->future());
         return RunnerInfo::Started;
     } else { // synchronous case
         abortSchedule();

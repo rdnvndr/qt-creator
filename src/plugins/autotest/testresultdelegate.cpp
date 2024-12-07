@@ -49,17 +49,16 @@ void TestResultDelegate::paint(QPainter *painter, const QStyleOptionViewItem &op
     painter->fillRect(opt.rect, background);
     painter->setPen(foreground);
 
-    const LayoutPositions positions(opt, resultFilterModel);
+    const LayoutPositions positions(opt, resultFilterModel, m_showDuration);
     const TestResult testResult = resultFilterModel->testResult(index);
     QTC_ASSERT(testResult.isValid(), painter->restore(); return);
 
-    const QWidget *widget = dynamic_cast<const QWidget*>(painter->device());
-    QWindow *window = widget ? widget->window()->windowHandle() : nullptr;
-
     QIcon icon = index.data(Qt::DecorationRole).value<QIcon>();
-    if (!icon.isNull())
+    if (!icon.isNull()) {
         painter->drawPixmap(positions.left(), positions.top(),
-                            icon.pixmap(window, QSize(positions.iconSize(), positions.iconSize())));
+                            icon.pixmap(QSize(positions.iconSize(), positions.iconSize()),
+                                        painter->device()->devicePixelRatio()));
+    }
 
     TestResultItem *item = resultFilterModel->itemForIndex(index);
     QTC_ASSERT(item, painter->restore(); return);
@@ -91,6 +90,16 @@ void TestResultDelegate::paint(QPainter *painter, const QStyleOptionViewItem &op
                           fm.elidedText(output.left(2000), Qt::ElideRight, positions.textAreaWidth()));
     }
 
+    if (testResult.result() == ResultType::TestStart && m_showDuration && testResult.duration()) {
+        const QString txt = *testResult.duration() + " ms";
+        QPen tmp = painter->pen();
+        painter->setPen(opt.palette.mid().color());
+        painter->setClipRect(positions.durationArea());
+        option.widget->style()->drawItemText(painter, positions.durationArea(), Qt::AlignRight,
+                                             opt.palette, true, txt);
+        painter->setPen(tmp);
+    }
+
     const QString file = testResult.fileName().fileName();
     painter->setClipRect(positions.fileArea());
     painter->drawText(positions.fileAreaLeft(), positions.top() + fm.ascent(), file);
@@ -120,7 +129,7 @@ QSize TestResultDelegate::sizeHint(const QStyleOptionViewItem &option, const QMo
     QFontMetrics fm(opt.font);
     int fontHeight = fm.height();
     TestResultFilterModel *resultFilterModel = static_cast<TestResultFilterModel *>(view->model());
-    LayoutPositions positions(opt, resultFilterModel);
+    LayoutPositions positions(opt, resultFilterModel, m_showDuration);
     const int depth = resultFilterModel->itemForIndex(index)->level() + 1;
     const int indentation = depth * view->style()->pixelMetric(QStyle::PM_TreeViewIndentation, &opt);
 

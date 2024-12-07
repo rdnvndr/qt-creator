@@ -4,7 +4,7 @@
 #pragma once
 
 #include <cppeditor/baseeditordocumentparser.h>
-#include <cppeditor/cppcodemodelsettings.h>
+#include <cppeditor/clangdsettings.h>
 #include <cppeditor/cursorineditor.h>
 #include <languageclient/client.h>
 #include <utils/link.h>
@@ -14,7 +14,10 @@
 
 #include <optional>
 
-namespace Core { class SearchResult; }
+namespace Core {
+class HelpItem;
+class SearchResult;
+}
 namespace CppEditor { class CppEditorWidget; }
 namespace LanguageServerProtocol { class Range; }
 namespace ProjectExplorer {
@@ -97,9 +100,6 @@ public:
 
     void updateParserConfig(const Utils::FilePath &filePath,
                             const CppEditor::BaseEditorDocumentParser::Configuration &config);
-    void switchIssuePaneEntries(const Utils::FilePath &filePath);
-    void addTask(const ProjectExplorer::Task &task);
-    void clearTasks(const Utils::FilePath &filePath);
     std::optional<bool> hasVirtualFunctionAt(TextEditor::TextDocument *doc, int revision,
                                                const LanguageServerProtocol::Range &range);
 
@@ -127,7 +127,7 @@ signals:
     void indexingFinished();
     void foundReferences(const Utils::SearchResultItems &items);
     void findUsagesDone();
-    void helpItemGathered(const Core::HelpItem &helpItem);
+    void helpItemGathered(const Core::HelpItem &helpItem, const QString &toolTip);
     void highlightingResultsReady(const TextEditor::HighlightingResults &results,
                                   const Utils::FilePath &file);
     void proposalReady(TextEditor::IAssistProposal *proposal);
@@ -151,7 +151,7 @@ private:
     bool fileBelongsToProject(const Utils::FilePath &filePath) const override;
     QList<Utils::Text::Range> additionalDocumentHighlights(
         TextEditor::TextEditorWidget *editorWidget, const QTextCursor &cursor) override;
-
+    bool shouldSendDidSave(const TextEditor::TextDocument *doc) const override;
 
     class Private;
     class VirtualFunctionAssistProcessor;

@@ -69,12 +69,17 @@ public:
     virtual QString title() const = 0;
     virtual QString toolTip() const = 0; // add %1 placeholder where the find flags should be put
     virtual QWidget *widget() const = 0;
-    virtual void readSettings(Utils::QtcSettings *settings) = 0;
-    virtual void writeSettings(Utils::QtcSettings *settings) const = 0;
+    virtual void readSettings(const Utils::Store &s) = 0;
+    virtual void writeSettings(Utils::Store &settings) const = 0;
     virtual SearchExecutor searchExecutor() const = 0;
     virtual EditorOpener editorOpener() const { return {}; }
     bool isEnabled() const;
     void setEnabled(bool enabled);
+
+    virtual Utils::FindFlags supportedFindFlags() const
+    {
+        return Utils::FindCaseSensitively | Utils::FindRegularExpression | Utils::FindWholeWords;
+    }
 
 signals:
     void enabledChanged(bool enabled);
@@ -101,6 +106,11 @@ public:
     static Utils::FilePaths replaceAll(const QString &txt, const Utils::SearchResultItems &items,
                                        bool preserveCase = false);
 
+    Utils::FindFlags supportedFindFlags() const override
+    {
+        return currentSearchEngine()->supportedFindFlags();
+    }
+
 protected:
     void setSearchDir(const Utils::FilePath &dir);
     Utils::FilePath searchDir() const;
@@ -108,8 +118,10 @@ protected:
     virtual QString toolTip() const = 0; // see Core::SearchResultWindow::startNewSearch,
                                          // add %1 placeholder where the find flags should be put
 
-    void writeCommonSettings(Utils::QtcSettings *settings);
-    void readCommonSettings(Utils::QtcSettings *settings, const QString &defaultFilter, const QString &defaultExclusionFilter);
+    void writeCommonSettings(
+        Utils::Store &s, const QString &defaultFilter, const QString &defaultExclusionFilter) const;
+    void readCommonSettings(
+        const Utils::Store &s, const QString &defaultFilter, const QString &defaultExclusionFilter);
     QList<QPair<QWidget *, QWidget *>> createPatternWidgets();
     QStringList fileNameFilters() const;
     QStringList fileExclusionFilters() const;

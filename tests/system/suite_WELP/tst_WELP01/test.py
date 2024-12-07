@@ -75,7 +75,7 @@ def main():
     wsButton = getWelcomeScreenSideBarButton(getStarted)
     if test.verify(object.exists(wsButton),
                    "Verifying: Qt Creator displays Welcome Page with '%s' button." % getStarted):
-        if clickItemVerifyHelpCombo(wsButton, "Getting Started | Qt Creator Manual",
+        if clickItemVerifyHelpCombo(wsButton, "Getting Started \| Qt Creator Documentation",
                                     "Verifying: Help with Creator Documentation is being opened."):
 
             textUrls = {'Online Community':'https://forum.qt.io',
@@ -92,7 +92,7 @@ def main():
     wsButton = getWelcomeScreenSideBarButton(getStarted)
     if object.exists(wsButton):
         mouseClick(wsButton)
-        qcManualQModelIndexStr = getQModelIndexStr("text~='Qt Creator Manual [0-9.]+'",
+        qcManualQModelIndexStr = getQModelIndexStr("text~='Qt Creator Documentation [0-9.]+'",
                                                    ":Qt Creator_QHelpContentWidget")
         if str(waitForObject(":Qt Creator_HelpSelector_QComboBox").currentText) == "(Untitled)":
             mouseClick(qcManualQModelIndexStr)
@@ -129,7 +129,7 @@ def main():
     for (qType, prop, info) in expect:
         test.verify(checkIfObjectExists(search % (qType, prop)),
                     "Verifying whether %s is shown" % info)
-    checkTableViewForContent(search % (expect[0][0], expect[0][1]), "Creating .*", "Tutorials",
+    checkTableViewForContent(search % (expect[0][0], expect[0][1]), "^Qt .*", "Tutorials",
                              "Verifying that at least one tutorial is displayed.")
     # exit Qt Creator
     invokeMenuItem("File", "Exit")

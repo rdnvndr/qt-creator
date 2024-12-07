@@ -23,6 +23,9 @@ list(APPEND DEFAULT_DEFINES
   QT_NO_JAVA_STYLE_ITERATORS
   QT_NO_CAST_TO_ASCII QT_RESTRICTED_CAST_FROM_ASCII QT_NO_FOREACH
   QT_DISABLE_DEPRECATED_BEFORE=0x050900
+  QT_DISABLE_DEPRECATED_UP_TO=0x050900
+  QT_WARN_DEPRECATED_BEFORE=0x060400
+  QT_WARN_DEPRECATED_UP_TO=0x060400
   QT_USE_QSTRINGBUILDER
 )
 
@@ -338,36 +341,31 @@ function(add_qtc_depends target_name)
   foreach(obj_lib IN LISTS object_lib_depends)
     target_compile_options(${target_name} PRIVATE $<TARGET_PROPERTY:${obj_lib},INTERFACE_COMPILE_OPTIONS>)
     target_compile_definitions(${target_name} PRIVATE $<TARGET_PROPERTY:${obj_lib},INTERFACE_COMPILE_DEFINITIONS>)
-    target_include_directories(${target_name} PRIVATE $<TARGET_PROPERTY:${obj_lib},INTERFACE_INCLUDE_DIRECTORIES>)
+    if (obj_lib MATCHES "Qt::.*|GoogleTest")
+      set(system_include "SYSTEM")
+    endif()
+    target_include_directories(${target_name} ${system_include} PRIVATE $<TARGET_PROPERTY:${obj_lib},INTERFACE_INCLUDE_DIRECTORIES>)
   endforeach()
   foreach(obj_lib IN LISTS object_public_depends)
     target_compile_options(${target_name} PUBLIC $<TARGET_PROPERTY:${obj_lib},INTERFACE_COMPILE_OPTIONS>)
     target_compile_definitions(${target_name} PUBLIC $<TARGET_PROPERTY:${obj_lib},INTERFACE_COMPILE_DEFINITIONS>)
-    target_include_directories(${target_name} PUBLIC $<TARGET_PROPERTY:${obj_lib},INTERFACE_INCLUDE_DIRECTORIES>)
+    if (obj_lib MATCHES "Qt::.*|GoogleTest")
+      set(system_include "SYSTEM")
+    endif()
+    target_include_directories(${target_name} ${system_include} PUBLIC $<TARGET_PROPERTY:${obj_lib},INTERFACE_INCLUDE_DIRECTORIES>)
   endforeach()
 endfunction()
 
-function(find_dependent_plugins varName)
-  set(_RESULT ${ARGN})
-
+function(check_library_dependencies)
   foreach(i ${ARGN})
-    if(NOT TARGET ${i})
+    if (NOT TARGET ${i})
       continue()
     endif()
-    set(_dep)
-    get_property(_dep TARGET "${i}" PROPERTY _arg_DEPENDS)
-    if (_dep)
-      find_dependent_plugins(_REC ${_dep})
-      list(APPEND _RESULT ${_REC})
+    get_property(_class_name TARGET "${i}" PROPERTY QTC_PLUGIN_CLASS_NAME)
+    if (_class_name)
+       message(SEND_ERROR "${i} is a plugin, not a library!")
     endif()
   endforeach()
-
-  if (_RESULT)
-    list(REMOVE_DUPLICATES _RESULT)
-    list(SORT _RESULT)
-  endif()
-
-  set("${varName}" ${_RESULT} PARENT_SCOPE)
 endfunction()
 
 function(enable_pch target)
@@ -475,7 +473,7 @@ function(extend_qtc_target target_name)
   cmake_parse_arguments(_arg
     ""
     "SOURCES_PREFIX;SOURCES_PREFIX_FROM_TARGET;FEATURE_INFO"
-    "CONDITION;DEPENDS;PUBLIC_DEPENDS;DEFINES;PUBLIC_DEFINES;INCLUDES;SYSTEM_INCLUDES;PUBLIC_INCLUDES;PUBLIC_SYSTEM_INCLUDES;SOURCES;EXPLICIT_MOC;SKIP_AUTOMOC;EXTRA_TRANSLATIONS;PROPERTIES;SOURCES_PROPERTIES"
+    "CONDITION;DEPENDS;PUBLIC_DEPENDS;DEFINES;PUBLIC_DEFINES;INCLUDES;SYSTEM_INCLUDES;PUBLIC_INCLUDES;PUBLIC_SYSTEM_INCLUDES;SOURCES;EXPLICIT_MOC;SKIP_AUTOMOC;EXTRA_TRANSLATIONS;PROPERTIES;SOURCES_PROPERTIES;PRIVATE_COMPILE_OPTIONS;PUBLIC_COMPILE_OPTIONS"
     ${ARGN}
   )
 
@@ -563,6 +561,16 @@ function(extend_qtc_target target_name)
   if (_arg_SOURCES_PROPERTIES)
     set_source_files_properties(${_arg_SOURCES} PROPERTIES ${_arg_SOURCES_PROPERTIES})
   endif()
+
+
+  if (_arg_PRIVATE_COMPILE_OPTIONS)
+      target_compile_options(${target_name} PRIVATE ${_arg_PRIVATE_COMPILE_OPTIONS})
+  endif()
+
+  if (_arg_PUBLIC_COMPILE_OPTIONS)
+      target_compile_options(${target_name} PUBLIC ${_arg_PUBLIC_COMPILE_OPTIONS})
+  endif()
+
 endfunction()
 
 function (qtc_env_with_default envName varToSet default)

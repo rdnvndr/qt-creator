@@ -11,6 +11,7 @@ const char RUN_CMAKE[] = "CMakeProject.RunCMake";
 const char RUN_CMAKE_PROFILER[] = "CMakeProject.RunCMakeProfiler";
 const char RUN_CMAKE_DEBUGGER[] = "CMakeProject.RunCMakeDebugger";
 const char CLEAR_CMAKE_CACHE[] = "CMakeProject.ClearCache";
+const char CLEAR_CMAKE_CACHE_CONTEXT_MENU[] = "CMakeProject.ClearCacheContextMenu";
 const char RESCAN_PROJECT[] = "CMakeProject.RescanProject";
 const char RUN_CMAKE_CONTEXT_MENU[] = "CMakeProject.RunCMakeContextMenu";
 const char BUILD_FILE_CONTEXT_MENU[] = "CMakeProject.BuildFileContextMenu";
@@ -18,6 +19,12 @@ const char BUILD_FILE[] = "CMakeProject.BuildFile";
 const char CMAKE_HOME_DIR[] = "CMakeProject.HomeDirectory";
 const char QML_DEBUG_SETTING[] = "CMakeProject.EnableQmlDebugging";
 const char RELOAD_CMAKE_PRESETS[] = "CMakeProject.ReloadCMakePresets";
+const char BUILD_SUBPROJECT[] = "CMakeProject.BuildSubProject";
+const char CLEAN_SUBPROJECT[] = "CMakeProject.CleanSubProject";
+const char REBUILD_SUBPROJECT[] = "CMakeProject.RebuildSubProject";
+const char BUILD_SUBPROJECT_CONTEXT_MENU[] = "CMakeProject.BuildSubProjectContextMenu";
+const char CLEAN_SUBPROJECT_CONTEXT_MENU[] = "CMakeProject.CleanSubProjectContextMenu";
+const char REBUILD_SUBPROJECT_CONTEXT_MENU[] = "CMakeProject.RebuildSubProjectContextMenu";
 
 const char CMAKEFORMATTER_SETTINGS_GROUP[] = "CMakeFormatter";
 const char CMAKEFORMATTER_GENERAL_GROUP[] = "General";
@@ -26,6 +33,7 @@ const char CMAKEFORMATTER_MENU_ID[] = "CMakeFormatter.Menu";
 const char CMAKE_DEBUGGING_GROUP[] = "Debugger.Group.CMake";
 
 const char PACKAGE_MANAGER_DIR[] = ".qtc/package-manager";
+const char VCPKG_ROOT[] = "VCPKG_ROOT";
 
 const char CMAKE_LISTS_TXT[] = "CMakeLists.txt";
 const char CMAKE_CACHE_TXT[] = "CMakeCache.txt";
@@ -40,10 +48,11 @@ const char CMAKE_BUILDCONFIGURATION_ID[] = "CMakeProjectManager.CMakeBuildConfig
 const char M_CONTEXT[] = "CMakeEditor.ContextMenu";
 
 namespace Settings {
-const char GENERAL_ID[] = "CMakeSpecifcSettings";
+const char GENERAL_ID[] = "CMakeSpecificSettings";
 const char TOOLS_ID[] = "K.CMake.Tools";
 const char FORMATTER_ID[] = "K.CMake.Formatter";
 const char CATEGORY[] = "K.CMake";
+const char USE_GLOBAL_SETTINGS[] = "UseGlobalSettings";
 } // namespace Settings
 
 // Snippets

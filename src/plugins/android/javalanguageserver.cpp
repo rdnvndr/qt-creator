@@ -19,12 +19,12 @@
 #include <qtsupport/qtkitaspect.h>
 
 #include <utils/environment.h>
+#include <utils/layoutbuilder.h>
 #include <utils/mimeconstants.h>
 #include <utils/pathchooser.h>
 #include <utils/temporarydirectory.h>
 #include <utils/variablechooser.h>
 
-#include <QGridLayout>
 #include <QLineEdit>
 #include <QXmlStreamWriter>
 
@@ -57,26 +57,23 @@ JLSSettingsWidget::JLSSettingsWidget(const JLSSettings *settings, QWidget *paren
     , m_java(new PathChooser(this))
     , m_ls(new PathChooser(this))
 {
-    int row = 0;
-    auto *mainLayout = new QGridLayout;
-    mainLayout->addWidget(new QLabel(Tr::tr("Name:")), row, 0);
-    mainLayout->addWidget(m_name, row, 1);
     auto chooser = new VariableChooser(this);
     chooser->addSupportedWidget(m_name);
 
-    mainLayout->addWidget(new QLabel(Tr::tr("Java:")), ++row, 0);
     m_java->setExpectedKind(PathChooser::ExistingCommand);
     m_java->setFilePath(settings->m_executable);
-    mainLayout->addWidget(m_java, row, 1);
 
-    mainLayout->addWidget(new QLabel(Tr::tr("Java Language Server:")), ++row, 0);
     m_ls->setExpectedKind(PathChooser::File);
     m_ls->lineEdit()->setPlaceholderText(Tr::tr("Path to equinox launcher jar"));
     m_ls->setPromptDialogFilter("org.eclipse.equinox.launcher_*.jar");
     m_ls->setFilePath(settings->m_languageServer);
-    mainLayout->addWidget(m_ls, row, 1);
 
-    setLayout(mainLayout);
+    using namespace Layouting;
+    Form {
+        Tr::tr("Name:"), m_name, br,
+        Tr::tr("Java:"), m_java, br,
+        Tr::tr("Java Language Server:"), m_ls, br,
+    }.attachTo(this);
 }
 
 JLSSettings::JLSSettings()
@@ -123,7 +120,7 @@ bool JLSSettings::applyFromSettingsWidget(QWidget *widget)
             configDir.cd("config_mac");
     }
     if (configDir.exists()) {
-        arguments = arguments.arg(m_languageServer.toString(), configDir.absolutePath());
+        arguments = arguments.arg(m_languageServer.path(), configDir.absolutePath());
         changed |= m_arguments != arguments;
         m_arguments = arguments;
     }
@@ -222,7 +219,7 @@ static void generateProjectFile(const FilePath &projectDir,
                                 const QString &projectName)
 {
     const FilePath projectFilePath = projectDir.pathAppended(".project");
-    QFile projectFile(projectFilePath.toString());
+    QFile projectFile(projectFilePath.toFSPathString());
     if (projectFile.open(QFile::Truncate | QFile::WriteOnly)) {
         QXmlStreamWriter writer(&projectFile);
         writer.setAutoFormatting(true);
@@ -252,7 +249,7 @@ static void generateClassPathFile(const FilePath &projectDir,
                                   const FilePaths &libs)
 {
     const FilePath classPathFilePath = projectDir.pathAppended(".classpath");
-    QFile classPathFile(classPathFilePath.toString());
+    QFile classPathFile(classPathFilePath.toFSPathString());
     if (classPathFile.open(QFile::Truncate | QFile::WriteOnly)) {
         QXmlStreamWriter writer(&classPathFile);
         writer.setAutoFormatting(true);
@@ -262,14 +259,14 @@ static void generateClassPathFile(const FilePath &projectDir,
         writer.writeStartElement("classpath");
         writer.writeEmptyElement("classpathentry");
         writer.writeAttribute("kind", "src");
-        writer.writeAttribute("path", sourceDir.toString());
+        writer.writeAttribute("path", sourceDir.toUserOutput());
         writer.writeEmptyElement("classpathentry");
         writer.writeAttribute("kind", "src");
         writer.writeAttribute("path", "qtSrc");
         for (const FilePath &lib : libs) {
             writer.writeEmptyElement("classpathentry");
             writer.writeAttribute("kind", "lib");
-            writer.writeAttribute("path", lib.toString());
+            writer.writeAttribute("path", lib.toUserOutput());
         }
         writer.writeEndElement(); // classpath
         writer.writeEndDocument();
@@ -289,7 +286,7 @@ void JLSClient::updateProjectFiles()
             QtSupport::QtVersion *version = QtSupport::QtKitAspect::qtVersion(kit);
             if (!version)
                 return;
-            const QString qtSrc = version->prefix().toString() + "/src/android/java/src";
+            const FilePath qtSrc = version->prefix().pathAppended("src/android/java/src");
             const FilePath &projectDir = project()->rootProjectDirectory();
             if (!projectDir.exists())
                 return;
@@ -308,7 +305,7 @@ void JLSClient::updateProjectFiles()
 
             const QStringList classPaths = node->data(Constants::AndroidClassPaths).toStringList();
 
-            const FilePath &sdkLocation = androidConfig().sdkLocation();
+            const FilePath &sdkLocation = AndroidConfig::sdkLocation();
             const QString &targetSDK = AndroidManager::buildTargetSDK(m_currentTarget);
             const FilePath androidJar = sdkLocation / QString("platforms/%2/android.jar")
                                            .arg(targetSDK);
@@ -318,7 +315,7 @@ void JLSClient::updateProjectFiles()
             for (const QString &path : classPaths)
                 libs << FilePath::fromString(path);
 
-            generateProjectFile(projectDir, qtSrc, project()->displayName());
+            generateProjectFile(projectDir, qtSrc.path(), project()->displayName());
             generateClassPathFile(projectDir, sourceDir, libs);
         }
     }

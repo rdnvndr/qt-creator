@@ -42,8 +42,8 @@
 
 #include <extensionsystem/pluginmanager.h>
 
-const int kInitialWidth = 750;
-const int kInitialHeight = 450;
+const int kInitialWidth = 800;
+const int kInitialHeight = 500;
 const int kMaxMinimumWidth = 250;
 const int kMaxMinimumHeight = 250;
 
@@ -249,16 +249,18 @@ protected:
     bool filterAcceptsRow(int sourceRow, const QModelIndex &sourceParent) const override;
 };
 
-const char SETTING_HIDE_OPTION_CATEGORIES[] = "HideOptionCategories";
-
 static bool categoryVisible(const Id &id)
 {
+#ifdef QT_NO_DEBUG
+
     static QStringList list
-        = Core::ICore::settings()->value(SETTING_HIDE_OPTION_CATEGORIES).toStringList();
+        = Core::ICore::settings()->value("HideOptionCategories").toStringList();
 
     if (anyOf(list, [id](const QString &str) { return id.toString().contains(str); }))
         return false;
-
+#else
+    Q_UNUSED(id);
+#endif
     return true;
 }
 
@@ -594,11 +596,13 @@ void SettingsDialog::createGui()
     QWidget *emptyWidget = new QWidget(this);
     m_stackedLayout->addWidget(emptyWidget); // no category selected, for example when filtering
 
-    QDialogButtonBox *buttonBox = new QDialogButtonBox(QDialogButtonBox::Ok |
-                                                       QDialogButtonBox::Apply |
-                                                       QDialogButtonBox::Cancel);
-    connect(buttonBox->button(QDialogButtonBox::Apply), &QAbstractButton::clicked,
-            this, &SettingsDialog::apply);
+    QDialogButtonBox *buttonBox = new QDialogButtonBox(
+        QDialogButtonBox::Ok | QDialogButtonBox::Apply | QDialogButtonBox::Cancel);
+    connect(
+        buttonBox->button(QDialogButtonBox::Apply),
+        &QAbstractButton::clicked,
+        this,
+        &SettingsDialog::apply);
 
     connect(buttonBox, &QDialogButtonBox::accepted, this, &SettingsDialog::accept);
     connect(buttonBox, &QDialogButtonBox::rejected, this, &SettingsDialog::reject);
@@ -744,8 +748,10 @@ void SettingsDialog::reject()
         return;
     m_finished = true;
     disconnectTabWidgets();
-    for (IOptionsPage *page : std::as_const(m_pages))
+    for (IOptionsPage *page : std::as_const(m_pages)) {
+        page->cancel();
         page->finish();
+    }
     done(QDialog::Rejected);
 }
 
@@ -786,7 +792,7 @@ bool SettingsDialog::execDialog()
             ICore::settings()->setValueWithDefault(kPreferenceDialogSize, size(), initialSize);
             // make sure that the current "single" instance is deleted
             // we can't delete right away, since we still access the m_applied member
-            deleteLater();
+            QMetaObject::invokeMethod(this, [this] { deleteLater(); }, Qt::QueuedConnection);
         });
     }
 

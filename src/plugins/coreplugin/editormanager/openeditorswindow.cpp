@@ -20,10 +20,13 @@
 
 #include <QFocusEvent>
 #include <QHeaderView>
-#include <QVBoxLayout>
+#include <QLoggingCategory>
 #include <QScrollBar>
+#include <QVBoxLayout>
 
 using namespace Utils;
+
+Q_LOGGING_CATEGORY(openEditorsLog, "qtc.core.openeditorswindow", QtWarningMsg);
 
 namespace Core::Internal {
 
@@ -161,22 +164,48 @@ void OpenEditorsWindow::setVisible(bool visible)
 bool OpenEditorsWindow::eventFilter(QObject *obj, QEvent *e)
 {
     if (obj == m_editorView) {
-        if (e->type() == QEvent::KeyPress) {
+        if (e->type() == QEvent::ShortcutOverride) {
             auto ke = static_cast<QKeyEvent*>(e);
-            if (ke->key() == Qt::Key_Escape) {
-                setVisible(false);
+            switch (ke->key()) {
+            case Qt::Key_Up:
+            case Qt::Key_P:
+                e->accept();
+                return true;
+            case Qt::Key_Down:
+            case Qt::Key_N:
+                e->accept();
                 return true;
             }
-            if (ke->key() == Qt::Key_Return
-                    || ke->key() == Qt::Key_Enter) {
+        }
+        if (e->type() == QEvent::KeyPress) {
+            auto ke = static_cast<QKeyEvent*>(e);
+            switch (ke->key()) {
+            case Qt::Key_Up:
+            case Qt::Key_P:
+                selectNextEditor();
+                return true;
+            case Qt::Key_Down:
+            case Qt::Key_N:
+                selectPreviousEditor();
+                return true;
+            case Qt::Key_Escape:
+                setVisible(false);
+                return true;
+            case Qt::Key_Return:
+            case Qt::Key_Enter:
                 selectEditor(m_editorView->currentItem());
                 return true;
             }
+
         } else if (e->type() == QEvent::KeyRelease) {
             auto ke = static_cast<QKeyEvent*>(e);
+            qCDebug(openEditorsLog()) << ke;
             if (ke->modifiers() == 0
-                    /*HACK this is to overcome some event inconsistencies between platforms*/
-                    || (ke->modifiers() == Qt::AltModifier
+                /* On some platforms, the key event can claim both that Ctrl is released and that
+                  Ctrl is still pressed, see QTCREATORBUG-31228 */
+                || (ke->modifiers() == Qt::ControlModifier && ke->key() == Qt::Key_Control)
+                /*HACK this is to overcome some event inconsistencies between platforms*/
+                || (ke->modifiers() == Qt::AltModifier
                     && (ke->key() == Qt::Key_Alt || ke->key() == -1))) {
                 selectAndHide();
             }

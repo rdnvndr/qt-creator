@@ -80,9 +80,16 @@ CommonVcsSettings::CommonVcsSettings()
     lineWrapWidth.setSuffix(Tr::tr(" characters"));
     lineWrapWidth.setDefaultValue(72);
 
+    vcsShowStatus.setSettingsKey("ShowVcsStatus");
+    vcsShowStatus.setDefaultValue(false);
+    vcsShowStatus.setLabelText(Tr::tr("Show VCS file status"));
+    vcsShowStatus.setToolTip(Tr::tr("Request file status updates from files and reflect them "
+                                    "on the project tree."));
+
     setLayouter([this] {
         using namespace Layouting;
         return Column {
+            vcsShowStatus, br,
             Row { lineWrap, lineWrapWidth, st },
             Form {
                 submitMessageCheckScript, br,
@@ -92,9 +99,9 @@ CommonVcsSettings::CommonVcsSettings()
                 empty,
                 PushButton {
                     text(Tr::tr("Reset VCS Cache")),
-                    tooltip(Tr::tr("Reset information about which "
-                                   "version control system handles which directory.")),
-                    onClicked(&VcsManager::clearVersionControlCache)
+                    Layouting::toolTip(Tr::tr("Reset information about which "
+                                              "version control system handles which directory.")),
+                    onClicked(&VcsManager::clearVersionControlCache, this)
                 }
             }
         };

@@ -17,7 +17,7 @@
 #include <utils/commandline.h>
 #include <utils/environment.h>
 #include <utils/hostosinfo.h>
-#include <utils/process.h>
+#include <utils/qtcprocess.h>
 #include <utils/terminalcommand.h>
 #include <utils/terminalhooks.h>
 #include <utils/textfileformat.h>
@@ -32,9 +32,27 @@
 #include <QTextStream>
 #include <QTextCodec>
 
+#ifdef Q_OS_WIN
+#ifdef QTCREATOR_PCH_H
+#define CALLBACK WINAPI
+#endif
+#include <qt_windows.h>
+#include <shlobj.h>
+#endif
+
 using namespace Utils;
 
 namespace Core {
+
+static FilePath windowsDirectory()
+{
+#ifdef Q_OS_WIN
+    wchar_t str[UNICODE_STRING_MAX_CHARS] = {};
+    if (SUCCEEDED(SHGetFolderPath(nullptr, CSIDL_WINDOWS, nullptr, 0, str)))
+        return FilePath::fromUserInput(QString::fromUtf16(reinterpret_cast<char16_t *>(str)));
+#endif
+    return {};
+}
 
 // Show error with option to open settings.
 static void showGraphicalShellError(QWidget *parent, const QString &app, const QString &error)
@@ -56,13 +74,7 @@ void FileUtils::showInGraphicalShell(QWidget *parent, const FilePath &pathIn)
     const QFileInfo fileInfo = pathIn.toFileInfo();
     // Mac, Windows support folder or file.
     if (HostOsInfo::isWindowsHost()) {
-        const FilePath explorer = FilePath("explorer.exe").searchInPath();
-        if (explorer.isEmpty()) {
-            QMessageBox::warning(parent,
-                                 Tr::tr("Launching Windows Explorer Failed"),
-                                 Tr::tr("Could not find explorer.exe in path to launch Windows Explorer."));
-            return;
-        }
+        const FilePath explorer = windowsDirectory().pathAppended("explorer.exe");
         QStringList param;
         if (!pathIn.isDir())
             param += QLatin1String("/select,");
@@ -162,7 +174,7 @@ void FileUtils::removeFiles(const FilePaths &filePaths, bool deleteFromFS)
 bool FileUtils::renameFile(const FilePath &orgFilePath, const FilePath &newFilePath,
                            HandleIncludeGuards handleGuards)
 {
-    if (orgFilePath == newFilePath)
+    if (orgFilePath.equalsCaseSensitive(newFilePath))
         return false;
 
     const FilePath dir = orgFilePath.absolutePath();
@@ -175,7 +187,7 @@ bool FileUtils::renameFile(const FilePath &orgFilePath, const FilePath &newFileP
     if (vc && vc->supportsOperation(IVersionControl::MoveOperation))
         result = vc->vcsMove(orgFilePath, newFilePath);
     if (!result) // The moving via vcs failed or the vcs does not support moving, fall back
-        result = orgFilePath.renameFile(newFilePath);
+        result = bool(orgFilePath.renameFile(newFilePath));
     if (result) {
         DocumentManager::renamedFile(orgFilePath, newFilePath);
         updateHeaderFileGuardIfApplicable(orgFilePath, newFilePath, handleGuards);

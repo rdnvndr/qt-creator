@@ -69,6 +69,7 @@ public:
     QString selectedText() const;
     /// removes the selected text of all cursors that have a selection from the document
     void removeSelectedText();
+    void clearSelection();
 
     /// inserts \param text into all cursors, potentially removing correctly selected text
     void insertText(const QString &text, bool selectNewText = false);
@@ -108,7 +109,10 @@ public:
     const_iterator constBegin() const { return m_cursorMap.cbegin(); }
     const_iterator constEnd() const { return m_cursorMap.cend(); }
 
-    static bool multiCursorAddEvent(QKeyEvent *e, QKeySequence::StandardKey matchKey);
+    static bool multiCursorEvent(
+        QKeyEvent *e,
+        QKeySequence::StandardKey matchKey,
+        Qt::KeyboardModifiers additionalFilterModifier = {});
 
 private:
     std::list<QTextCursor> m_cursorList;

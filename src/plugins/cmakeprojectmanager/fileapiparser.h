@@ -10,10 +10,6 @@
 #include <projectexplorer/headerpath.h>
 #include <projectexplorer/projectmacro.h>
 
-#include <utils/filesystemwatcher.h>
-#include <utils/fileutils.h>
-
-#include <QString>
 #include <QVector>
 #include <QVersionNumber>
 
@@ -197,6 +193,7 @@ public:
     QList<Utils::FilePath> artifacts;
     QString installPrefix;
     std::vector<InstallDestination> installDestination;
+    QList<ProjectExplorer::LauncherInfo> launcherInfos;
     std::optional<LinkInfo> link;
     std::optional<ArchiveInfo> archive;
     std::vector<DependencyInfo> dependencies;

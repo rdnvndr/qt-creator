@@ -7,7 +7,11 @@
 #include "qmlanchorbindingproxy.h"
 #include "qmlmodelnodeproxy.h"
 
+#include <utils/uniqueobjectptr.h>
+
 #include <nodemetainfo.h>
+
+#include <memory>
 
 class PropertyEditorValue;
 
@@ -33,7 +37,8 @@ public:
 
     void setup(const QmlObjectNode &selectedTextureNode, const QString &stateName, const QUrl &qmlSpecificsFile,
                TextureEditorView *textureEditor);
-    void setValue(const QmlObjectNode &fxObjectNode, const PropertyName &name, const QVariant &value);
+    void setValue(const QmlObjectNode &fxObjectNode, PropertyNameView name, const QVariant &value);
+    void setExpression(PropertyNameView propName, const QString &exp);
 
     QQmlContext *context() const;
     TextureEditorContextObject *contextObject() const;
@@ -54,16 +59,20 @@ public:
 
 private:
     void createPropertyEditorValue(const QmlObjectNode &qmlObjectNode,
-                                   const PropertyName &name, const QVariant &value,
+                                   PropertyNameView name,
+                                   const QVariant &value,
                                    TextureEditorView *textureEditor);
-    PropertyName auxNamePostFix(const PropertyName &propertyName);
+    PropertyName auxNamePostFix(PropertyNameView propertyName);
 
-    QQuickWidget *m_view = nullptr;
+    // to avoid a crash while destructing DesignerPropertyMap in the QQmlData
+    // this needs be destructed after m_quickWidget->engine() is destructed
+    DesignerPropertyMap m_backendValuesPropertyMap;
+
+    Utils::UniqueObjectPtr<QQuickWidget> m_quickWidget;
     QmlAnchorBindingProxy m_backendAnchorBinding;
     QmlModelNodeProxy m_backendModelNode;
-    DesignerPropertyMap m_backendValuesPropertyMap;
-    QScopedPointer<TextureEditorTransaction> m_textureEditorTransaction;
-    QScopedPointer<TextureEditorContextObject> m_contextObject;
+    std::unique_ptr<TextureEditorTransaction> m_textureEditorTransaction;
+    std::unique_ptr<TextureEditorContextObject> m_contextObject;
     AssetImageProvider *m_textureEditorImageProvider = nullptr;
 };
 

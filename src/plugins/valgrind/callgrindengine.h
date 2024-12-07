@@ -8,7 +8,7 @@
 #include "callgrind/callgrindparsedata.h"
 #include "callgrind/callgrindparser.h"
 
-#include <utils/process.h>
+#include <utils/qtcprocess.h>
 #include <utils/processinterface.h>
 
 namespace Valgrind::Internal {
@@ -22,8 +22,6 @@ public:
     ~CallgrindToolRunner() override;
 
     void start() override;
-
-    Valgrind::Callgrind::ParseData *takeParserData();
 
     /// controller actions
     void dump() { run(Dump); }
@@ -52,7 +50,7 @@ protected:
     QString progressTitle() const override;
 
 signals:
-    void parserDataReady(CallgrindToolRunner *engine);
+    void parserDataReady(const Callgrind::ParseDataPtr &data);
 
 private:
     void showStatusMessage(const QString &message);
@@ -83,7 +81,6 @@ private:
     Utils::FilePath m_valgrindOutputFile; // On the device that runs valgrind
     Utils::FilePath m_hostOutputFile; // On the device that runs creator
 
-    Callgrind::Parser m_parser;
     bool m_paused = false;
 
     QString m_argumentForToggleCollect;

@@ -3,6 +3,7 @@
 
 #include "androiddebugsupport.h"
 
+#include "androidconfigurations.h"
 #include "androidconstants.h"
 #include "androidrunner.h"
 #include "androidmanager.h"
@@ -21,7 +22,7 @@
 
 #include <utils/fileutils.h>
 #include <utils/hostosinfo.h>
-#include <utils/process.h>
+#include <utils/qtcprocess.h>
 
 #include <QHostAddress>
 #include <QJsonDocument>
@@ -86,7 +87,7 @@ public:
     {
         setId("AndroidDebugger");
         setLldbPlatform("remote-android");
-        m_runner = new AndroidRunner(runControl, {});
+        m_runner = new AndroidRunner(runControl);
         addStartDependency(m_runner);
     }
 
@@ -110,8 +111,7 @@ void AndroidDebugSupport::start()
 
     QtSupport::QtVersion *qtVersion = QtSupport::QtKitAspect::qtVersion(kit);
     if (!HostOsInfo::isWindowsHost()
-        && (qtVersion
-            && androidConfig().ndkVersion(qtVersion) >= QVersionNumber(11, 0, 0))) {
+        && (qtVersion && AndroidConfig::ndkVersion(qtVersion) >= QVersionNumber(11, 0, 0))) {
         qCDebug(androidDebugSupportLog) << "UseTargetAsync: " << true;
         setUseTargetAsync(true);
     }
@@ -165,7 +165,7 @@ void AndroidDebugSupport::start()
 
         int sdkVersion = qMax(AndroidManager::minimumSDK(kit), minimumNdk);
         if (qtVersion) {
-            const FilePath ndkLocation = androidConfig().ndkLocation(qtVersion);
+            const FilePath ndkLocation = AndroidConfig::ndkLocation(qtVersion);
             FilePath sysRoot = ndkLocation
                     / "platforms"
                     / QString("android-%1").arg(sdkVersion)
@@ -178,8 +178,8 @@ void AndroidDebugSupport::start()
     }
     if (isQmlDebugging()) {
         qCDebug(androidDebugSupportLog) << "QML debugging enabled. QML server: "
-                                        << m_runner->qmlServer().toDisplayString();
-        setQmlServer(m_runner->qmlServer());
+                                        << qmlChannel().toDisplayString();
+        setQmlServer(qmlChannel());
         //TODO: Not sure if these are the right paths.
         if (qtVersion)
             addSearchDirectory(qtVersion->qmlPath());

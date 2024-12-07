@@ -158,7 +158,7 @@ public:
     ~CvsPluginPrivate() final;
 
     // IVersionControl
-    QString displayName() const final { return QLatin1String("cvs"); }
+    QString displayName() const final { return "CVS"; }
     Utils::Id id() const final;
 
     bool isVcsFileOrDirectory(const Utils::FilePath &filePath) const final;
@@ -175,6 +175,9 @@ public:
     bool vcsMove(const Utils::FilePath &, const Utils::FilePath &) final { return false; }
     bool vcsCreateRepository(const Utils::FilePath &directory) final;
     void vcsAnnotate(const Utils::FilePath &filePath, int line) final;
+    void vcsLog(const Utils::FilePath &topLevel, const Utils::FilePath &relativeDirectory) final {
+        filelog(topLevel, relativeDirectory.path(), true);
+    }
 
     QString vcsOpenText() const final;
 
@@ -333,13 +336,13 @@ Utils::Id CvsPluginPrivate::id() const
 
 bool CvsPluginPrivate::isVcsFileOrDirectory(const Utils::FilePath &filePath) const
 {
-    return filePath.isDir()
-            && !filePath.fileName().compare("CVS", Utils::HostOsInfo::fileNameCaseSensitivity());
+    return !filePath.fileName().compare("CVS", Utils::HostOsInfo::fileNameCaseSensitivity())
+           && filePath.isDir();
 }
 
 bool CvsPluginPrivate::isConfigured() const
 {
-    const FilePath binary = settings().binaryPath();
+    const FilePath binary = settings().binaryPath.effectiveBinary();
     if (binary.isEmpty())
         return false;
     QFileInfo fi = binary.toFileInfo();
@@ -410,8 +413,7 @@ VcsCommand *CvsPluginPrivate::createInitialCheckoutCommand(const QString &url,
     QStringList args;
     args << QLatin1String("checkout") << url << extraArgs;
 
-    auto command = VcsBaseClient::createVcsCommand(this, baseDirectory,
-                                                   Environment::systemEnvironment());
+    auto command = VcsBaseClient::createVcsCommand(baseDirectory, Environment::systemEnvironment());
     command->setDisplayName(Tr::tr("CVS Checkout"));
     command->addJob({settings().binaryPath(), settings().addOptions(args)}, -1);
     return command;

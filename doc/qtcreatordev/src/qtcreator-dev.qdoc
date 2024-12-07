@@ -138,7 +138,7 @@
 
     Most software projects and development processes require various external
     tools. Several external tools, such as popular version control systems and
-    build tool chains are integrated into \QC. However, it is impossible for a
+    build toolchains are integrated into \QC. However, it is impossible for a
     single tool to cover all the use cases, and therefore you can integrate
     additional tools to \QC.
 
@@ -214,7 +214,16 @@
         \li \l{Options Pages}
         \li \l{Editors}
         \endomit
-        \endlist
+    \endlist
+
+    \section1 Lua Extensions
+
+    If you have more specific needs that are not covered by the above methods but don't need
+    a full-blown plugin, you can extend \QC with Lua Extensions.
+
+    \list
+        \li \l{Extending \QC with Lua}
+    \endlist
 
     \section1 All Topics
 
@@ -234,7 +243,7 @@
             \endlist
         \li Reference
             \list
-                \li \l{http://standards.freedesktop.org/shared-mime-info-spec/shared-mime-info-spec-latest.html}
+                \li \l{https://specifications.freedesktop.org/shared-mime-info-spec/latest/}
                     {MIME Type Specification Files}
                 \li \l{External Tool Specification Files}
                 \li \l{http://kate-editor.org/2005/03/24/writing-a-syntax-highlighting-file/}

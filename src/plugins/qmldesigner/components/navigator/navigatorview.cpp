@@ -12,9 +12,8 @@
 #include <bindingproperty.h>
 #include <commontypecache.h>
 #include <designersettings.h>
-#include <designmodecontext.h>
 #include <itemlibraryentry.h>
-#include <model/modelutils.h>
+#include <modelutils.h>
 #include <nodeinstanceview.h>
 #include <nodelistproperty.h>
 #include <nodeproperty.h>
@@ -46,7 +45,7 @@
 inline static void setScenePos(const QmlDesigner::ModelNode &modelNode, const QPointF &pos)
 {
     if (modelNode.hasParentProperty() && QmlDesigner::QmlItemNode::isValidQmlItemNode(modelNode.parentProperty().parentModelNode())) {
-        QmlDesigner::QmlItemNode parentNode = modelNode.parentProperty().parentQmlObjectNode().toQmlItemNode();
+        QmlDesigner::QmlItemNode parentNode = modelNode.parentProperty().parentModelNode();
 
         if (!parentNode.modelNode().metaInfo().isLayoutable()) {
             QPointF localPos = parentNode.instanceSceneTransform().inverted().map(pos);
@@ -117,7 +116,6 @@ WidgetInfo NavigatorView::widgetInfo()
     return createWidgetInfo(m_widget.data(),
                             QStringLiteral("Navigator"),
                             WidgetInfo::LeftPane,
-                            0,
                             tr("Navigator"),
                             tr("Navigator view"));
 }
@@ -271,14 +269,20 @@ void NavigatorView::dragStarted(QMimeData *mimeData)
     } else if (mimeData->hasFormat(Constants::MIME_TYPE_TEXTURE)) {
         qint32 internalId = mimeData->data(Constants::MIME_TYPE_TEXTURE).toInt();
         ModelNode texNode = modelNodeForInternalId(internalId);
-
+#ifdef QDS_USE_PROJECTSTORAGE
+        m_widget->setDragType(texNode.type());
+#else
         m_widget->setDragType(texNode.metaInfo().typeName());
+#endif
         m_widget->update();
     } else if (mimeData->hasFormat(Constants::MIME_TYPE_MATERIAL)) {
         qint32 internalId = mimeData->data(Constants::MIME_TYPE_MATERIAL).toInt();
         ModelNode matNode = modelNodeForInternalId(internalId);
-
+#ifdef QDS_USE_PROJECTSTORAGE
+        m_widget->setDragType(matNode.type());
+#else
         m_widget->setDragType(matNode.metaInfo().typeName());
+#endif
         m_widget->update();
     } else if (mimeData->hasFormat(Constants::MIME_TYPE_BUNDLE_TEXTURE)) {
         m_widget->setDragType(Constants::MIME_TYPE_BUNDLE_TEXTURE);
@@ -358,9 +362,14 @@ void NavigatorView::enableWidget()
         m_widget->enableNavigator();
 }
 
-void NavigatorView::modelNodePreviewPixmapChanged(const ModelNode &node, const QPixmap &pixmap)
+void NavigatorView::modelNodePreviewPixmapChanged(const ModelNode &node,
+                                                  const QPixmap &pixmap,
+                                                  const QByteArray &requestId)
 {
-    m_treeModel->updateToolTipPixmap(node, pixmap);
+    // There might be multiple requests for different preview pixmap sizes.
+    // Here only the one with the default size is picked.
+    if (requestId.isEmpty())
+        m_treeModel->updateToolTipPixmap(node, pixmap);
 }
 
 ModelNode NavigatorView::modelNodeForIndex(const QModelIndex &modelIndex) const
@@ -683,14 +692,14 @@ void NavigatorView::updateItemSelection()
                 itemSelection.select(beginIndex, endIndex);
         } else {
             // if the node index is invalid expand ancestors manually if they are valid.
-            ModelNode parentNode = node;
-            while (parentNode.hasParentProperty()) {
-                parentNode = parentNode.parentProperty().parentQmlObjectNode();
+            ModelNode parentNode = node.parentProperty().parentModelNode();
+            while (parentNode) {
                 QModelIndex parentIndex = indexForModelNode(parentNode);
                 if (parentIndex.isValid())
                     treeWidget()->expand(parentIndex);
                 else
                     break;
+                parentNode = parentNode.parentProperty().parentModelNode();
             }
          }
     }
@@ -700,7 +709,7 @@ void NavigatorView::updateItemSelection()
     blockSelectionChangedSignal(blocked);
 
     if (!selectedModelNodes().isEmpty())
-        treeWidget()->scrollTo(indexForModelNode(selectedModelNodes().constFirst()));
+        treeWidget()->scrollTo(indexForModelNode(selectedModelNodes().constLast()));
 
     // make sure selected nodes are visible
     for (const QModelIndex &selectedIndex : itemSelection.indexes()) {
@@ -752,10 +761,6 @@ void NavigatorView::setupWidget()
 {
     m_widget = new NavigatorWidget(this);
     m_treeModel = new NavigatorTreeModel(this);
-
-    auto navigatorContext = new Internal::NavigatorContext(m_widget.data());
-    Core::ICore::addContextObject(navigatorContext);
-
     m_treeModel->setView(this);
     m_widget->setTreeModel(m_treeModel.data());
     m_currentModelInterface = m_treeModel;

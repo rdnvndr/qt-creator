@@ -22,7 +22,7 @@
 #include <qtsupport/qtkitaspect.h>
 
 #include <utils/hostosinfo.h>
-#include <utils/process.h>
+#include <utils/qtcprocess.h>
 
 #include <QDir>
 #include <QLoggingCategory>
@@ -103,7 +103,7 @@ bool AndroidPackageInstallationStep::init()
 
 QString AndroidPackageInstallationStep::nativeAndroidBuildPath() const
 {
-    QString buildPath = AndroidManager::androidBuildDirectory(target()).toString();
+    QString buildPath = AndroidManager::androidBuildDirectory(target()).toFSPathString();
     if (HostOsInfo::isWindowsHost())
         if (buildEnvironment().searchInPath("sh.exe").isEmpty())
             buildPath = QDir::toNativeSeparators(buildPath);

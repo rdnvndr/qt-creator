@@ -8,8 +8,6 @@
 
 #include <coreplugin/progressmanager/progressmanager.h>
 
-#include <extensionsystem/pluginmanager.h>
-
 #include <projectexplorer/treescanner.h>
 
 #include <utils/async.h>
@@ -102,8 +100,8 @@ static DbContents parseProject(const QByteArray &projectFileContents,
 {
     DbContents dbContents;
     dbContents.entries = readJsonObjects(projectFileContents);
-    dbContents.extraFileName = projectFilePath.toString() +
-                               Constants::COMPILATIONDATABASEPROJECT_FILES_SUFFIX;
+    dbContents.extraFileName = projectFilePath.path()
+                               + Constants::COMPILATIONDATABASEPROJECT_FILES_SUFFIX;
     dbContents.extras = readExtraFiles(dbContents.extraFileName);
     std::sort(dbContents.entries.begin(), dbContents.entries.end(),
               [](const DbEntry &lhs, const DbEntry &rhs) {
@@ -132,17 +130,27 @@ CompilationDbParser::CompilationDbParser(const QString &projectName,
     });
 }
 
+CompilationDbParser::~CompilationDbParser()
+{
+    if (m_treeScanner && !m_treeScanner->isFinished()) {
+        auto future = m_treeScanner->future();
+        future.cancel();
+        future.waitForFinished();
+    }
+}
+
 void CompilationDbParser::start()
 {
     // Check hash first.
-    QFile file(m_projectFilePath.toString());
-    if (!file.open(QIODevice::ReadOnly)) {
+    expected_str<QByteArray> fileContents = m_projectFilePath.fileContents();
+    if (!fileContents) {
         finish(ParseResult::Failure);
         return;
     }
-    m_projectFileContents = file.readAll();
-    const QByteArray newHash = QCryptographicHash::hash(m_projectFileContents,
-                                                        QCryptographicHash::Sha1);
+
+    m_projectFileContents = *std::move(fileContents);
+    const QByteArray newHash
+        = QCryptographicHash::hash(m_projectFileContents, QCryptographicHash::Sha1);
     if (m_projectFileHash == newHash) {
         finish(ParseResult::Cached);
         return;
@@ -155,17 +163,22 @@ void CompilationDbParser::start()
         m_treeScanner = new TreeScanner(this);
         m_treeScanner->setFilter([this](const MimeType &mimeType, const FilePath &fn) {
             // Mime checks requires more resources, so keep it last in check list
-            bool isIgnored = fn.toString().startsWith(m_projectFilePath.toString() + ".user")
-                    || TreeScanner::isWellKnownBinary(mimeType, fn);
+            bool isIgnored = fn.startsWith(m_projectFilePath.path() + ".user")
+                             || TreeScanner::isWellKnownBinary(mimeType, fn);
 
             // Cache mime check result for speed up
             if (!isIgnored) {
-                auto it = m_mimeBinaryCache.find(mimeType.name());
-                if (it != m_mimeBinaryCache.end()) {
+                if (auto it = m_mimeBinaryCache.get<std::optional<bool>>(
+                        [mimeType](const QHash<QString, bool> &cache) -> std::optional<bool> {
+                            const auto cache_it = cache.find(mimeType.name());
+                            if (cache_it != cache.end())
+                                return *cache_it;
+                            return {};
+                        })) {
                     isIgnored = *it;
                 } else {
                     isIgnored = TreeScanner::isMimeBinary(mimeType, fn);
-                    m_mimeBinaryCache[mimeType.name()] = isIgnored;
+                    m_mimeBinaryCache.writeLocked()->insert(mimeType.name(), isIgnored);
                 }
             }
 
@@ -190,7 +203,7 @@ void CompilationDbParser::start()
                                    "CompilationDatabase.Parse");
     ++m_runningParserJobs;
     m_parserWatcher.setFuture(future);
-    ExtensionSystem::PluginManager::futureSynchronizer()->addFuture(future);
+    Utils::futureSynchronizer()->addFuture(future);
 }
 
 void CompilationDbParser::stop()
@@ -209,8 +222,8 @@ void CompilationDbParser::stop()
 QList<FileNode *> CompilationDbParser::scannedFiles() const
 {
     const bool canceled = m_treeScanner->future().isCanceled();
-    const TreeScanner::Result result = m_treeScanner->release();
-    return !canceled ? result.allFiles : QList<FileNode *>();
+    TreeScanner::Result result = m_treeScanner->release();
+    return !canceled ? result.takeAllFiles() : QList<FileNode *>();
 }
 
 void CompilationDbParser::parserJobFinished()

@@ -7,7 +7,10 @@
 
 #include "nodeinstanceglobal.h"
 #include "studioquickwidget.h"
+
 #include <QStandardItemModel>
+
+#include <memory>
 
 namespace QmlDesigner {
 
@@ -28,7 +31,7 @@ public:
     Q_PROPERTY(int currentIndex READ currentIndex WRITE setCurrentIndex NOTIFY currentIndexChanged)
     Q_PROPERTY(DynamicPropertiesModelBackendDelegate *delegate READ delegate CONSTANT)
 
-    DynamicPropertiesModel(bool explicitSelection, AbstractView *parent);
+    DynamicPropertiesModel(bool explicitSelection, AbstractView *view);
 
     AbstractView *view() const;
     DynamicPropertiesModelBackendDelegate *delegate() const;
@@ -43,13 +46,13 @@ public:
     void reset(const QList<ModelNode> &modelNodes = {});
     void setCurrentIndex(int i);
     void setCurrentProperty(const AbstractProperty &property);
-    void setCurrent(int internalId, const PropertyName &name);
+    void setCurrent(int internalId, PropertyNameView name);
 
     void updateItem(const AbstractProperty &property);
     void removeItem(const AbstractProperty &property);
 
     void commitPropertyType(int row, const TypeName &type);
-    void commitPropertyName(int row, const PropertyName &name);
+    void commitPropertyName(int row, PropertyNameView name);
     void commitPropertyValue(int row, const QVariant &value);
 
     void dispatchPropertyChanges(const AbstractProperty &abstractProperty);
@@ -58,7 +61,7 @@ protected:
     QHash<int, QByteArray> roleNames() const override;
 
 private:
-    std::optional<int> findRow(int nodeId, const PropertyName &name) const;
+    std::optional<int> findRow(int nodeId, PropertyNameView name) const;
     DynamicPropertiesItem *itemForRow(int row) const;
     DynamicPropertiesItem *itemForProperty(const AbstractProperty &property) const;
     ModelNode modelNodeForItem(DynamicPropertiesItem *item);
@@ -76,7 +79,7 @@ public:
 
 private:
     AbstractView *m_view = nullptr;
-    DynamicPropertiesModelBackendDelegate *m_delegate = nullptr;
+    std::unique_ptr<DynamicPropertiesModelBackendDelegate> m_delegate;
     int m_currentIndex = -1;
 
     // TODO: Remove.
@@ -94,7 +97,7 @@ class DynamicPropertiesModelBackendDelegate : public QObject
     Q_PROPERTY(StudioQmlTextBackend *value READ value CONSTANT)
 
 public:
-    DynamicPropertiesModelBackendDelegate(DynamicPropertiesModel *parent = nullptr);
+    DynamicPropertiesModelBackendDelegate(DynamicPropertiesModel &model);
 
     void update(const AbstractProperty &property);
 
@@ -113,6 +116,7 @@ private:
     StudioQmlTextBackend *value();
     QString targetNode() const;
 
+    DynamicPropertiesModel &m_model;
     std::optional<int> m_internalNodeId;
     StudioQmlComboBoxBackend m_type;
     StudioQmlTextBackend m_name;

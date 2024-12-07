@@ -13,7 +13,6 @@ const char customQtForMCUs[] = "CustomQtForMCUs";
 const char customQt6Project[] = "CustomQt6Project";
 
 const char mainFilePath[] = "MainFilePath";
-const char customImportPaths[] = "CustomImportPaths";
 const char canonicalProjectDir[] ="CanonicalProjectDir";
 
 const char enviromentLaunchedQDS[] = "QTC_LAUNCHED_QDS";
@@ -35,5 +34,7 @@ const char USER_ENVIRONMENT_CHANGES_KEY[] = "QmlProjectManager.QmlRunConfigurati
 const char EXPORT_MENU[] = "QmlDesigner.ExportMenu";
 const char G_EXPORT_GENERATE[] = "QmlDesigner.Group.GenerateProject";
 const char G_EXPORT_CONVERT[] = "QmlDesigner.Group.ConvertProject";
+
+const char fakeProjectName[] = "fake85673.qmlproject";
 
 } // QmlProjectManager::Constants

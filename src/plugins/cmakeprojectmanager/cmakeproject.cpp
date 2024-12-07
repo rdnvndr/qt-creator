@@ -14,6 +14,7 @@
 #include <projectexplorer/buildinfo.h>
 #include <projectexplorer/buildsteplist.h>
 #include <projectexplorer/kitaspects.h>
+#include <projectexplorer/kitmanager.h>
 #include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/projectnodes.h>
 #include <projectexplorer/target.h>
@@ -29,11 +30,25 @@ using namespace CMakeProjectManager::Internal;
 
 namespace CMakeProjectManager {
 
+static FilePath cmakeListTxtFromFilePath(const FilePath &filepath)
+{
+    if (filepath.endsWith(Constants::CMAKE_CACHE_TXT)) {
+        QString errorMessage;
+        const CMakeConfig config = CMakeConfig::fromFile(filepath, &errorMessage);
+        const FilePath cmakeListsTxt = config.filePathValueOf("CMAKE_HOME_DIRECTORY")
+                                           .pathAppended(Constants::CMAKE_LISTS_TXT);
+        if (cmakeListsTxt.exists())
+            return cmakeListsTxt;
+    }
+    return filepath;
+}
+
 /*!
   \class CMakeProject
 */
 CMakeProject::CMakeProject(const FilePath &fileName)
-    : Project(Utils::Constants::CMAKE_MIMETYPE, fileName)
+    : Project(Utils::Constants::CMAKE_MIMETYPE, cmakeListTxtFromFilePath(fileName))
+    , m_settings(this, true)
 {
     setId(CMakeProjectManager::Constants::CMAKE_PROJECT_ID);
     setProjectLanguages(Core::Context(ProjectExplorer::Constants::CXX_LANGUAGE_ID));
@@ -46,6 +61,9 @@ CMakeProject::CMakeProject(const FilePath &fileName)
     setHasMakeInstallEquivalent(false);
 
     readPresets();
+
+    if (fileName.endsWith(Constants::CMAKE_CACHE_TXT))
+        m_buildDirToImport = fileName.parentDir();
 }
 
 CMakeProject::~CMakeProject()
@@ -118,6 +136,14 @@ Internal::PresetsData CMakeProject::combinePresets(Internal::PresetsData &cmakeP
             result.include->append(cmakeUserPresetsData.include.value());
     } else {
         result.include = cmakeUserPresetsData.include;
+    }
+
+    result.vendor = cmakePresetsData.vendor;
+    if (result.vendor) {
+        if (cmakeUserPresetsData.vendor)
+            result.vendor->insert(cmakeUserPresetsData.vendor.value());
+    } else {
+        result.vendor = cmakeUserPresetsData.vendor;
     }
 
     auto combinePresetsInternal = [](auto &presetsHash,
@@ -232,6 +258,11 @@ void CMakeProject::setupBuildPresets(Internal::PresetsData &presetsData)
     }
 }
 
+Internal::CMakeSpecificSettings &CMakeProject::settings()
+{
+    return m_settings;
+}
+
 void CMakeProject::readPresets()
 {
     auto parsePreset = [](const Utils::FilePath &presetFile) -> Internal::PresetsData {
@@ -306,7 +337,7 @@ void CMakeProject::readPresets()
     setupBuildPresets(m_presetsData);
 
     for (const auto &configPreset : m_presetsData.configurePresets) {
-        if (configPreset.hidden.value())
+        if (configPreset.hidden)
             continue;
 
         if (configPreset.condition) {
@@ -316,6 +347,11 @@ void CMakeProject::readPresets()
         m_presetsData.havePresets = true;
         break;
     }
+}
+
+FilePath CMakeProject::buildDirectoryToImport() const
+{
+    return m_buildDirToImport;
 }
 
 bool CMakeProject::setupTarget(Target *t)

@@ -36,7 +36,7 @@
 #include <utils/aspects.h>
 #include <utils/environment.h>
 #include <utils/fileutils.h>
-#include <utils/process.h>
+#include <utils/qtcprocess.h>
 #include <utils/processinterface.h>
 #include <utils/winutils.h>
 
@@ -84,7 +84,6 @@ QmlProjectRunConfiguration::QmlProjectRunConfiguration(Target *target, Id id)
     qmlViewer.setHistoryCompleter("QmlProjectManager.viewer.history");
 
     arguments.setSettingsKey(Constants::QML_VIEWER_ARGUMENTS_KEY);
-    arguments.setMacroExpander(macroExpander());
 
     setCommandLineGetter([this, target] {
         const FilePath qmlRuntime = qmlRuntimeFilePath();
@@ -97,12 +96,12 @@ QmlProjectRunConfiguration::QmlProjectRunConfiguration(Target *target, Id id)
 
         // arguments from .qmlproject file
         const QmlBuildSystem *bs = qobject_cast<QmlBuildSystem *>(target->buildSystem());
-        for (const QString &importPath : bs->customImportPaths()) {
+        for (const QString &importPath : bs->targetImportPaths()) {
             cmd.addArg("-I");
-            cmd.addArg(bs->targetDirectory().pathAppended(importPath).path());
+            cmd.addArg(importPath);
         }
 
-        for (const QString &fileSelector : bs->customFileSelectors()) {
+        for (const QString &fileSelector : bs->fileSelectors()) {
             cmd.addArg("-S");
             cmd.addArg(fileSelector);
         }
@@ -168,8 +167,6 @@ QmlProjectRunConfiguration::QmlProjectRunConfiguration(Target *target, Id id)
         Environment environment;
         return envModifier(environment);
     });
-
-    x11Forwarding.setMacroExpander(macroExpander());
 
     setRunnableModifier([this](ProcessRunData &r) {
         const QmlBuildSystem *bs = static_cast<QmlBuildSystem *>(activeBuildSystem());
@@ -309,7 +306,7 @@ void QmlProjectRunConfiguration::setupQtVersionAspect()
 bool QmlProjectRunConfiguration::isEnabled(Id) const
 {
     return const_cast<QmlProjectRunConfiguration *>(this)->qmlMainFile.isQmlFilePresent()
-           && !commandLine().executable().isEmpty()
+           && !qmlRuntimeFilePath().isEmpty()
            && activeBuildSystem()->hasParsingData();
 }
 

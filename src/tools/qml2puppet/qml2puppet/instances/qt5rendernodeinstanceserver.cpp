@@ -36,6 +36,8 @@
 
 #include "dummycontextobject.h"
 
+#include <qmlprivategate.h>
+
 #include <private/qquickdesignersupport_p.h>
 
 namespace QmlDesigner {
@@ -144,7 +146,9 @@ void Qt5RenderNodeInstanceServer::collectItemChangesAndSendChangeCommands()
             && !changedPropertyList().isEmpty()
             && nodeInstanceClient()->bytesToWrite() < 10000) {
 
-            Internal::QuickItemNodeInstance::updateDirtyNode(rootNodeInstance().contentItem());
+            QQuickItem *rootItem = rootNodeInstance().contentItem();
+            QQuickDesignerSupport::addDirty(rootItem, QQuickDesignerSupport::Content);
+            QQuickDesignerSupport::updateDirtyNode(rootItem);
             nodeInstanceClient()->pixmapChanged(createPixmapChangedCommand({rootNodeInstance()}));
         }
 
@@ -215,6 +219,112 @@ void QmlDesigner::Qt5RenderNodeInstanceServer::removeSharedMemory(const QmlDesig
 {
     if (command.typeName() == "Image")
         ImageContainer::removeSharedMemorys(command.keyNumbers());
+}
+
+void Qt5RenderNodeInstanceServer::changePropertyValues(const ChangeValuesCommand &command)
+{
+    Qt5NodeInstanceServer::changePropertyValues(command);
+
+    const QVector<PropertyValueContainer> values = command.valueChanges();
+    for (const PropertyValueContainer &container : values) {
+        // In case an effect item visibility changed to false, make sure all children are rendered
+        // again as they might not have valid pixmaps yet
+        if (container.name() == "visible" && !container.value().toBool()
+            && hasInstanceForId(container.instanceId())) {
+            ServerNodeInstance instance = instanceForId(container.instanceId());
+            if (instance.isSubclassOf("QtQuick/PropertyChanges")) {
+                QObject *targetObject = Internal::QmlPrivateGate::PropertyChanges::targetObject(
+                    instance.internalInstance()->object());
+                if (hasInstanceForObject(targetObject))
+                    instance = instanceForObject(targetObject);
+            }
+
+            if (instance.hasParent() && instance.isComposedEffect())
+                makeDirtyRecursive(instance.parent());
+        } else if (container.isDynamic() && hasInstanceForId(container.instanceId())) {
+            // Changes to dynamic properties are not always noticed by normal signal spy mechanism
+            addChangedProperty(InstancePropertyPair(instanceForId(container.instanceId()),
+                                                    container.name()));
+        }
+    }
+}
+
+void Qt5RenderNodeInstanceServer::changePropertyBindings(const ChangeBindingsCommand &command)
+{
+    Qt5NodeInstanceServer::changePropertyBindings(command);
+
+    const QVector<PropertyBindingContainer> changes = command.bindingChanges;
+    for (const PropertyBindingContainer &container : changes) {
+        if (container.isDynamic() && hasInstanceForId(container.instanceId())) {
+            // Changes to dynamic properties are not always noticed by normal signal spy mechanism
+            addChangedProperty(InstancePropertyPair(instanceForId(container.instanceId()),
+                                                    container.name()));
+        }
+    }
+}
+
+void Qt5RenderNodeInstanceServer::reparentInstances(const ReparentInstancesCommand &command)
+{
+    ServerNodeInstance effectNode;
+    ServerNodeInstance oldParent;
+    const QVector<ReparentContainer> containers = command.reparentInstances();
+    for (const ReparentContainer &container : containers) {
+        if (hasInstanceForId(container.instanceId())) {
+            ServerNodeInstance instance = instanceForId(container.instanceId());
+            if (instance.isComposedEffect()) {
+                oldParent = instance.parent();
+                effectNode = instance;
+                break;
+            }
+        }
+    }
+
+    Qt5NodeInstanceServer::reparentInstances(command);
+
+    if (oldParent.isValid())
+        makeDirtyRecursive(oldParent);
+    if (effectNode.isValid()) {
+        ServerNodeInstance newParent = effectNode.parent();
+        if (newParent.isValid()) {
+            // This is a hack to work around Image elements sometimes losing their textures when
+            // used as children of an effect. Toggling the visibility of the affected node seems
+            // to be the only way to fix this issue.
+            // Note that just marking the children's visibility dirty doesn't fix this issue.
+            QQuickItem *parentItem = newParent.rootQuickItem();
+            if (parentItem && parentItem->isVisible()) {
+                parentItem->setVisible(false);
+                parentItem->setVisible(true);
+            }
+        }
+    }
+}
+
+void Qt5RenderNodeInstanceServer::removeInstances(const RemoveInstancesCommand &command)
+{
+    ServerNodeInstance oldParent;
+    const QVector<qint32> ids = command.instanceIds();
+    for (qint32 id : ids) {
+        if (hasInstanceForId(id)) {
+            ServerNodeInstance instance = instanceForId(id);
+            if (instance.isComposedEffect()) {
+                oldParent = instance.parent();
+                break;
+            }
+        }
+    }
+
+    Qt5NodeInstanceServer::removeInstances(command);
+
+    if (oldParent.isValid())
+        makeDirtyRecursive(oldParent);
+}
+
+void Qt5RenderNodeInstanceServer::makeDirtyRecursive(const ServerNodeInstance &instance)
+{
+    m_dirtyInstanceSet.insert(instance);
+    const QList<ServerNodeInstance> children = instance.childItems();
+    for (const auto &child : children)
+        makeDirtyRecursive(child);
 }
 
 } // namespace QmlDesigner

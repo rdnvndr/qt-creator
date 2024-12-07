@@ -7,7 +7,6 @@
 #include <abstractview.h>
 #include <assetslibraryview.h>
 #include <capturingconnectionmanager.h>
-#include <collectionview.h>
 #include <componentaction.h>
 #include <componentview.h>
 #include <contentlibraryview.h>
@@ -21,17 +20,21 @@
 #include <itemlibraryview.h>
 #include <materialbrowserview.h>
 #include <materialeditorview.h>
+#include <model/auxiliarypropertystorageview.h>
 #include <navigatorview.h>
 #include <nodeinstanceview.h>
 #include <propertyeditorview.h>
+#include <qmldesignerplugin.h>
 #include <rewriterview.h>
 #include <stateseditorview.h>
 #include <texteditorview.h>
 #include <textureeditorview.h>
-#include <qmldesignerplugin.h>
+
+#include <qmldesignerbase/settings/designersettings.h>
 
 #include <coreplugin/icore.h>
 
+#include <sqlitedatabase.h>
 #include <utils/algorithm.h>
 
 #include <advanceddockingsystem/dockwidget.h>
@@ -42,14 +45,6 @@
 
 namespace QmlDesigner {
 
-static bool enableModelEditor()
-{
-    Utils::QtcSettings *settings = Core::ICore::settings();
-    const Utils::Key enableModelManagerKey = "QML/Designer/UseExperimentalFeatures44";
-
-    return settings->value(enableModelManagerKey, false).toBool();
-}
-
 static Q_LOGGING_CATEGORY(viewBenchmark, "qtc.viewmanager.attach", QtWarningMsg)
 
 class ViewManagerData
@@ -58,25 +53,29 @@ public:
     ViewManagerData(AsynchronousImageCache &imageCache,
                     ExternalDependenciesInterface &externalDependencies)
         : debugView{externalDependencies}
+        , auxiliaryDataKeyView{auxiliaryDataDatabase, externalDependencies}
         , designerActionManagerView{externalDependencies}
         , nodeInstanceView(QCoreApplication::arguments().contains("-capture-puppet-stream")
                                ? capturingConnectionManager
                                : connectionManager,
                            externalDependencies,
                            true)
-        , collectionView{externalDependencies}
-        , contentLibraryView{externalDependencies}
+        , contentLibraryView{imageCache, externalDependencies}
         , componentView{externalDependencies}
+#ifndef QTC_USE_QML_DESIGNER_LITE
         , edit3DView{externalDependencies}
+#endif
         , formEditorView{externalDependencies}
         , textEditorView{externalDependencies}
         , assetsLibraryView{externalDependencies}
         , itemLibraryView(imageCache, externalDependencies)
         , navigatorView{externalDependencies}
         , propertyEditorView(imageCache, externalDependencies)
+#ifndef QTC_USE_QML_DESIGNER_LITE
         , materialEditorView{externalDependencies}
         , materialBrowserView{imageCache, externalDependencies}
         , textureEditorView{imageCache, externalDependencies}
+#endif
         , statesEditorView{externalDependencies}
     {}
 
@@ -84,21 +83,29 @@ public:
     CapturingConnectionManager capturingConnectionManager;
     QmlModelState savedState;
     Internal::DebugView debugView;
+    Sqlite::Database auxiliaryDataDatabase{
+        Utils::PathString{Core::ICore::userResourcePath("auxiliary_data.db").toString()},
+        Sqlite::JournalMode::Wal,
+        Sqlite::LockingMode::Normal};
+    AuxiliaryPropertyStorageView auxiliaryDataKeyView;
     DesignerActionManagerView designerActionManagerView;
     NodeInstanceView nodeInstanceView;
-    CollectionView collectionView;
     ContentLibraryView contentLibraryView;
     ComponentView componentView;
+#ifndef QTC_USE_QML_DESIGNER_LITE
     Edit3DView edit3DView;
+#endif
     FormEditorView formEditorView;
     TextEditorView textEditorView;
     AssetsLibraryView assetsLibraryView;
     ItemLibraryView itemLibraryView;
     NavigatorView navigatorView;
     PropertyEditorView propertyEditorView;
+#ifndef QTC_USE_QML_DESIGNER_LITE
     MaterialEditorView materialEditorView;
     MaterialBrowserView materialBrowserView;
     TextureEditorView textureEditorView;
+#endif
     StatesEditorView statesEditorView;
 
     std::vector<std::unique_ptr<AbstractView>> additionalViews;
@@ -114,11 +121,12 @@ ViewManager::ViewManager(AsynchronousImageCache &imageCache,
     : d(std::make_unique<ViewManagerData>(imageCache, externalDependencies))
 {
     d->formEditorView.setGotoErrorCallback([this](int line, int column) {
+        if (Internal::DesignModeWidget *w = QmlDesignerPlugin::instance()->mainWidget())
+            w->showDockWidget("TextEditor");
         d->textEditorView.gotoCursorPosition(line, column);
-        if (Internal::DesignModeWidget *designModeWidget = QmlDesignerPlugin::instance()
-                                                               ->mainWidget())
-            designModeWidget->showDockWidget("TextEditor");
     });
+
+    registerViewActions();
 
     registerNanotraceActions();
 }
@@ -164,7 +172,7 @@ void ViewManager::attachRewriterView()
         });
 
         currentModel()->setRewriterView(view);
-        view->reactivateTextMofifierChangeSignals();
+        view->reactivateTextModifierChangeSignals();
         view->restoreAuxiliaryData();
     }
 
@@ -174,7 +182,7 @@ void ViewManager::attachRewriterView()
 void ViewManager::detachRewriterView()
 {
     if (RewriterView *view = currentDesignDocument()->rewriterView()) {
-        view->deactivateTextMofifierChangeSignals();
+        view->deactivateTextModifierChangeSignals();
         currentModel()->setRewriterView(nullptr);
     }
 }
@@ -201,9 +209,23 @@ QList<AbstractView *> ViewManager::views() const
     return list;
 }
 
+void ViewManager::hideView(AbstractView &view)
+{
+    disableView(view);
+    view.setVisibility(false);
+}
+
+void ViewManager::showView(AbstractView &view)
+{
+    view.setVisibility(true);
+    enableView(view);
+}
+
 QList<AbstractView *> ViewManager::standardViews() const
 {
-    QList<AbstractView *> list = {&d->edit3DView,
+#ifndef QTC_USE_QML_DESIGNER_LITE
+    QList<AbstractView *> list = {&d->auxiliaryDataKeyView,
+                                  &d->edit3DView,
                                   &d->formEditorView,
                                   &d->textEditorView,
                                   &d->assetsLibraryView,
@@ -215,9 +237,16 @@ QList<AbstractView *> ViewManager::standardViews() const
                                   &d->textureEditorView,
                                   &d->statesEditorView,
                                   &d->designerActionManagerView};
-
-    if (enableModelEditor())
-        list.append(&d->collectionView);
+#else
+    QList<AbstractView *> list = {&d->formEditorView,
+                                  &d->textEditorView,
+                                  &d->assetsLibraryView,
+                                  &d->itemLibraryView,
+                                  &d->navigatorView,
+                                  &d->propertyEditorView,
+                                  &d->statesEditorView,
+                                  &d->designerActionManagerView};
+#endif
 
     if (QmlDesignerPlugin::instance()
             ->settings()
@@ -266,6 +295,42 @@ void ViewManager::registerNanotraceActions()
 
         d->designerActionManagerView.designerActionManager().addDesignerAction(shutDownNanotraceAction);
     }
+}
+
+void ViewManager::registerViewActions()
+{
+    for (auto view : views()) {
+        if (view->hasWidget())
+            registerViewAction(*view);
+    }
+}
+
+void ViewManager::registerViewAction(AbstractView &view)
+{
+    auto viewAction = view.action();
+    viewAction->setCheckable(true);
+#ifdef DETACH_DISABLED_VIEWS
+    QObject::connect(view.action(),
+                     &AbstractViewAction::viewCheckedChanged,
+                     [&](bool checked, AbstractView &view) {
+                         if (checked)
+                             enableView(view);
+                         else
+                             disableView(view);
+                     });
+#endif
+}
+
+void ViewManager::enableView(AbstractView &view)
+{
+    if (auto model = currentModel())
+        model->attachView(&view);
+}
+
+void ViewManager::disableView(AbstractView &view)
+{
+    if (auto model = currentModel())
+        model->detachView(&view);
 }
 
 void ViewManager::resetPropertyEditorView()
@@ -384,19 +449,21 @@ QList<WidgetInfo> ViewManager::widgetInfos() const
 {
     QList<WidgetInfo> widgetInfoList;
 
+#ifndef QTC_USE_QML_DESIGNER_LITE
     widgetInfoList.append(d->edit3DView.widgetInfo());
+#endif
     widgetInfoList.append(d->formEditorView.widgetInfo());
     widgetInfoList.append(d->textEditorView.widgetInfo());
     widgetInfoList.append(d->assetsLibraryView.widgetInfo());
     widgetInfoList.append(d->itemLibraryView.widgetInfo());
     widgetInfoList.append(d->navigatorView.widgetInfo());
     widgetInfoList.append(d->propertyEditorView.widgetInfo());
+#ifndef QTC_USE_QML_DESIGNER_LITE
     widgetInfoList.append(d->materialEditorView.widgetInfo());
     widgetInfoList.append(d->materialBrowserView.widgetInfo());
     widgetInfoList.append(d->textureEditorView.widgetInfo());
+#endif
     widgetInfoList.append(d->statesEditorView.widgetInfo());
-    if (enableModelEditor())
-        widgetInfoList.append(d->collectionView.widgetInfo());
 
     if (checkEnterpriseLicense())
         widgetInfoList.append(d->contentLibraryView.widgetInfo());
@@ -409,21 +476,7 @@ QList<WidgetInfo> ViewManager::widgetInfos() const
             widgetInfoList.append(view->widgetInfo());
     }
 
-    Utils::sort(widgetInfoList, [](const WidgetInfo &firstWidgetInfo, const WidgetInfo &secondWidgetInfo) {
-        return firstWidgetInfo.placementPriority < secondWidgetInfo.placementPriority;
-    });
-
     return widgetInfoList;
-}
-
-QWidget *ViewManager::widget(const QString &uniqueId) const
-{
-    const QList<WidgetInfo> widgetInfoList = widgetInfos();
-    for (const WidgetInfo &widgetInfo : widgetInfoList) {
-        if (widgetInfo.uniqueId == uniqueId)
-            return widgetInfo.widget;
-    }
-    return nullptr;
 }
 
 void ViewManager::disableWidgets()
@@ -486,7 +539,10 @@ void ViewManager::qmlJSEditorContextHelp(const Core::IContext::HelpCallback &cal
 
 Model *ViewManager::currentModel() const
 {
-    return currentDesignDocument()->currentModel();
+    if (auto document = currentDesignDocument())
+        return document->currentModel();
+
+    return nullptr;
 }
 
 Model *ViewManager::documentModel() const
@@ -528,6 +584,7 @@ void ViewManager::enableStandardViews()
 
 void ViewManager::jumpToCodeInTextEditor(const ModelNode &modelNode)
 {
+    d->textEditorView.action()->setChecked(true);
     ADS::DockWidget *dockWidget = qobject_cast<ADS::DockWidget *>(
         d->textEditorView.widgetInfo().widget->parentWidget());
     if (dockWidget)
@@ -538,6 +595,7 @@ void ViewManager::jumpToCodeInTextEditor(const ModelNode &modelNode)
 void ViewManager::addView(std::unique_ptr<AbstractView> &&view)
 {
     d->additionalViews.push_back(std::move(view));
+    registerViewAction(*d->additionalViews.back());
 }
 
 } // namespace QmlDesigner

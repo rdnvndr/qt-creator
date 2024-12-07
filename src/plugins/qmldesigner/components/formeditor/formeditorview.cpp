@@ -18,7 +18,6 @@
 #include <qmldesignerplugin.h>
 #include <bindingproperty.h>
 #include <designersettings.h>
-#include <designmodecontext.h>
 #include <model.h>
 #include <modelnode.h>
 #include <nodeabstractproperty.h>
@@ -63,9 +62,6 @@ FormEditorView::~FormEditorView()
 void FormEditorView::modelAttached(Model *model)
 {
     AbstractView::modelAttached(model);
-
-    if (!isEnabled())
-        return;
 
     m_formEditorWidget->setBackgoundImage({});
 
@@ -204,9 +200,6 @@ void FormEditorView::createFormEditorWidget()
     m_dragTool = std::make_unique<DragTool>(this);
 
     m_currentTool = m_selectionTool.get();
-
-    auto formEditorContext = new Internal::FormEditorContext(m_formEditorWidget.data());
-    Core::ICore::addContextObject(formEditorContext);
 
     connect(m_formEditorWidget->zoomAction(), &ZoomAction::zoomLevelChanged, [this] {
         m_currentTool->formEditorItemsChanged(scene()->allFormEditorItems());
@@ -368,7 +361,6 @@ WidgetInfo FormEditorView::widgetInfo()
     return createWidgetInfo(m_formEditorWidget.data(),
                             "FormEditor",
                             WidgetInfo::CentralPane,
-                            0,
                             tr("2D"),
                             tr("2D view"),
                             DesignerWidgetFlags::IgnoreErrors);
@@ -863,6 +855,7 @@ QmlItemNode findRecursiveQmlItemNode(const QmlObjectNode &firstQmlObjectNode)
 void FormEditorView::instancePropertyChanged(const QList<QPair<ModelNode, PropertyName> > &propertyList)
 {
     QList<FormEditorItem*> changedItems;
+    bool needEffectUpdate = false;
     for (auto &nodePropertyPair : propertyList) {
         const QmlItemNode qmlItemNode(nodePropertyPair.first);
         const PropertyName propertyName = nodePropertyPair.second;
@@ -873,10 +866,14 @@ void FormEditorView::instancePropertyChanged(const QList<QPair<ModelNode, Proper
                     m_scene->synchronizeOtherProperty(item, propertyName);
                     changedItems.append(item);
                 }
+            } else if (propertyName == "visible" && qmlItemNode.isEffectItem()) {
+                needEffectUpdate = true;
             }
         }
     }
     m_currentTool->formEditorItemsChanged(changedItems);
+    if (needEffectUpdate)
+        updateHasEffects();
 }
 
 bool FormEditorView::isMoveToolAvailable() const
@@ -995,10 +992,8 @@ void FormEditorView::setupRootItemSize()
         formEditorWidget()->setRootItemRect(rootRect);
         formEditorWidget()->centerScene();
 
-        auto contextImage = rootModelNode().auxiliaryData(contextImageProperty);
-
-        if (contextImage)
-            m_formEditorWidget->setBackgoundImage(contextImage.value().value<QImage>());
+        if (auto contextImage = rootModelNode().auxiliaryData(contextImageProperty))
+            formEditorWidget()->setBackgoundImage(contextImage.value().value<QImage>());
     }
 }
 
@@ -1011,7 +1006,7 @@ void FormEditorView::updateHasEffects()
             FormEditorItem *item = m_scene->itemForQmlItemNode(qmlNode);
             if (item)
                 item->setHasEffect(false);
-            if (qmlNode.isEffectItem()) {
+            if (qmlNode.isEffectItem() && qmlNode.instanceIsVisible()) {
                 FormEditorItem *parentItem = m_scene->itemForQmlItemNode(qmlNode.modelParentItem());
                 if (parentItem)
                     parentItem->setHasEffect(true);

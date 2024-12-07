@@ -69,16 +69,14 @@ Group recipe(const Storage<ExternalData> &externalStorage)
         externalStorage->outputImages.insert(repeater.iteration(), data.result());
     };
 
-    const QList<GroupItem> recipe {
+    return Group {
         externalStorage,
         internalStorage,
         NetworkQueryTask(onDownloadSetup, onDownloadDone),
         ConcurrentCallTask<QImage>(onReadSetup, onReadDone),
-        Group {
-            repeater,
-            parallelLimit(QThread::idealThreadCount() - 1),
+        For (repeater) >> Do {
+            parallelIdealThreadCountLimit,
             ConcurrentCallTask<QImage>(onScaleSetup, onScaleDone)
         }
     };
-    return recipe;
 }

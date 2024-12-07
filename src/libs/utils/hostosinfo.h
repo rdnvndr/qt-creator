@@ -41,9 +41,7 @@ public:
 #endif
     }
 
-    enum HostArchitecture { HostArchitectureX86, HostArchitectureAMD64, HostArchitectureItanium,
-                            HostArchitectureArm, HostArchitectureArm64, HostArchitectureUnknown };
-    static HostArchitecture hostArchitecture();
+    static OsArch hostArchitecture();
 
     static constexpr bool isWindowsHost() { return hostOs() == OsTypeWindows; }
     static constexpr bool isLinuxHost() { return hostOs() == OsTypeLinux; }
@@ -56,8 +54,6 @@ public:
         return false;
 #endif
     }
-
-    static bool isRunningUnderRosetta();
 
     static QString withExecutableSuffix(const QString &executable)
     {

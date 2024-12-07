@@ -3,6 +3,7 @@
 
 #include "documentclangtoolrunner.h"
 
+#include "clangtoolscompilationdb.h"
 #include "clangtoolsconstants.h"
 #include "clangtoolrunner.h"
 #include "clangtoolsutils.h"
@@ -132,10 +133,12 @@ static FileInfo getFileInfo(const FilePath &file, Project *project)
             // found the best candidate, early return
             ProjectFile::Kind sourceKind = ProjectFile::sourceKind(projectFile.kind);
             if (projectPart->buildTargetType != BuildTargetType::Unknown)
-                return FileInfo(projectFile.path, sourceKind, projectPart);
+                return FileInfo(projectFile.path, sourceKind, projectInfo->settings(), projectPart);
             // found something but keep looking for better candidates
-            if (candidate.projectPart.isNull())
-                candidate = FileInfo(projectFile.path, sourceKind, projectPart);
+            if (candidate.projectPart.isNull()) {
+                candidate
+                    = FileInfo(projectFile.path, sourceKind, projectInfo->settings(), projectPart);
+            }
         }
     }
 
@@ -156,6 +159,18 @@ static Environment projectBuildEnvironment(Project *project)
 
 void DocumentClangToolRunner::run()
 {
+    for (const ClangToolType type : {ClangToolType::Tidy, ClangToolType::Clazy}) {
+        ClangToolsCompilationDb &db = ClangToolsCompilationDb::getDb(type);
+        db.disconnect(this);
+        if (db.generateIfNecessary()) {
+            connect(&db, &ClangToolsCompilationDb::generated, this, [this](bool success) {
+                if (success)
+                    run();
+            }, Qt::SingleShotConnection);
+            return;
+        }
+    }
+
     if (m_projectSettingsUpdate)
         disconnect(m_projectSettingsUpdate);
     m_taskTreeRunner.reset();
@@ -191,7 +206,7 @@ void DocumentClangToolRunner::run()
     vfso().update();
     const ClangDiagnosticConfig config = diagnosticConfig(runSettings.diagnosticConfigId());
     const Environment env = projectBuildEnvironment(project);
-    QList<GroupItem> tasks;
+    GroupItems tasks;
     const auto addClangTool = [this, &runSettings, &config, &env, &tasks](ClangToolType tool) {
         if (!toolEnabled(tool, config, runSettings))
             return;
@@ -203,21 +218,23 @@ void DocumentClangToolRunner::run()
         const auto [includeDir, clangVersion] = getClangIncludeDirAndVersion(executable);
         if (includeDir.isEmpty() || clangVersion.isEmpty())
             return;
-        const AnalyzeUnits units{{m_fileInfo, includeDir, clangVersion}};
+        const AnalyzeUnits units{{m_fileInfo, tool}};
         const auto diagnosticFilter = [mappedPath = vfso().autoSavedFilePath(m_document)](
                                     const FilePath &path) { return path == mappedPath; };
-        const AnalyzeInputData input{tool,
-                                     runSettings,
-                                     config,
-                                     m_temporaryDir.path(),
-                                     env,
-                                     vfso().overlayFilePath().toString(),
-                                     diagnosticFilter};
+        const AnalyzeInputData input{
+            tool,
+            runSettings,
+            config,
+            m_temporaryDir.path(),
+            env,
+            vfso().overlayFilePath().nativePath(),
+            diagnosticFilter};
         const auto setupHandler = [this, executable](const AnalyzeUnit &) {
             return !m_document->isModified() || isVFSOverlaySupported(executable);
         };
         const auto outputHandler = [this](const AnalyzeOutputData &output) { onDone(output); };
-        tasks.append(Group{finishAllAndSuccess, clangToolTask(units, input, setupHandler, outputHandler)});
+        tasks.append(Group{finishAllAndSuccess,
+                           clangToolTask(tool, units, input, setupHandler, outputHandler)});
     };
     addClangTool(ClangToolType::Tidy);
     addClangTool(ClangToolType::Clazy);
@@ -314,7 +331,7 @@ bool DocumentClangToolRunner::isSuppressed(const Diagnostic &diagnostic) const
             return false;
         FilePath filePath = suppressed.filePath;
         if (filePath.toFileInfo().isRelative())
-            filePath = m_lastProjectDirectory.pathAppended(filePath.toString());
+            filePath = m_lastProjectDirectory.resolvePath(filePath);
         return filePath == diagnostic.location.filePath;
     };
     return Utils::anyOf(m_suppressed, equalsSuppressed);

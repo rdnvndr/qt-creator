@@ -79,7 +79,7 @@ public:
                 Space(10),
                 Group {
                     title(Tr::tr("Automatic Formatting on File Save")),
-                    autoFormatOnSave.groupChecker(),
+                    groupChecker(autoFormatOnSave.groupChecker()),
                     // Conceptually, that's a Form, but this would look odd:
                     // xxxxxx [____]
                     //        [x] xxxxxxxxxxxxxx
@@ -116,8 +116,7 @@ public:
                                   && isApplicable(editor->document()));
         };
 
-        connect(&autoFormatMime, &Utils::StringAspect::changed,
-                this, updateActions);
+        autoFormatMime.addOnChanged(this, updateActions);
         connect(EditorManager::instance(), &EditorManager::currentEditorChanged,
                 this, updateActions);
         connect(EditorManager::instance(), &EditorManager::aboutToSave,

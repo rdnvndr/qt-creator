@@ -13,6 +13,7 @@
 
 #include <projectexplorer/buildinfo.h>
 #include <projectexplorer/projectexplorerconstants.h>
+#include <projectexplorer/kitaspects.h>
 #include <projectexplorer/kitmanager.h>
 #include <projectexplorer/toolchain.h>
 #include <projectexplorer/toolchainmanager.h>
@@ -23,7 +24,7 @@
 #include <qtsupport/qtversionmanager.h>
 
 #include <utils/algorithm.h>
-#include <utils/process.h>
+#include <utils/qtcprocess.h>
 #include <utils/qtcassert.h>
 
 #include <QDir>

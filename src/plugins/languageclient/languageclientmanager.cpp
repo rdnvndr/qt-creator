@@ -68,7 +68,7 @@ LanguageClientManager::LanguageClientManager(QObject *parent)
     connect(ProjectManager::instance(), &ProjectManager::projectAdded,
             this, &LanguageClientManager::projectAdded);
     connect(ProjectManager::instance(), &ProjectManager::projectRemoved,
-            this, [&](Project *project) { project->disconnect(this); });
+            this, [this](Project *project) { project->disconnect(this); });
 
     ExtensionSystem::PluginManager::addObject(this);
 }
@@ -194,7 +194,7 @@ void LanguageClientManager::clientFinished(Client *client)
             openDocumentWithClient(document, nullptr);
     }
 
-    deleteClient(client);
+    deleteClient(client, unexpectedFinish);
     if (isShutdownFinished())
         emit managerInstance->shutdownFinished();
 }
@@ -234,7 +234,7 @@ void LanguageClientManager::shutdownClient(Client *client)
         deleteClient(client);
 }
 
-void LanguageClientManager::deleteClient(Client *client)
+void LanguageClientManager::deleteClient(Client *client, bool unexpected)
 {
     QTC_ASSERT(managerInstance, return);
     QTC_ASSERT(client, return);
@@ -252,7 +252,7 @@ void LanguageClientManager::deleteClient(Client *client)
     managerInstance->trackClientDeletion(client);
 
     if (!PluginManager::isShuttingDown())
-        emit instance()->clientRemoved(client);
+        emit instance()->clientRemoved(client, unexpected);
 }
 
 void LanguageClientManager::shutdown()
@@ -275,13 +275,19 @@ LanguageClientManager *LanguageClientManager::instance()
     return managerInstance;
 }
 
-QList<Client *> LanguageClientManager::clientsSupportingDocument(const TextEditor::TextDocument *doc)
+QList<Client *> LanguageClientManager::clientsSupportingDocument(
+    const TextEditor::TextDocument *doc, bool onlyReachable)
 {
     QTC_ASSERT(managerInstance, return {});
     QTC_ASSERT(doc, return {};);
-    return Utils::filtered(managerInstance->reachableClients(), [doc](Client *client) {
-        return client->isSupportedDocument(doc);
-    });
+    return Utils::filtered(
+        onlyReachable ? managerInstance->reachableClients() : managerInstance->m_clients,
+        [doc](Client *client) { return client->isSupportedDocument(doc); });
+}
+
+void LanguageClientManager::writeSettings()
+{
+    LanguageClientSettings::toSettings(Core::ICore::settings(), managerInstance->m_currentSettings);
 }
 
 void LanguageClientManager::applySettings()
@@ -291,75 +297,67 @@ void LanguageClientManager::applySettings()
     managerInstance->m_currentSettings
         = Utils::transform(LanguageClientSettings::pageSettings(), &BaseSettings::copy);
     const QList<BaseSettings *> restarts = LanguageClientSettings::changedSettings();
-    LanguageClientSettings::toSettings(Core::ICore::settings(), managerInstance->m_currentSettings);
+    writeSettings();
 
-    for (BaseSettings *setting : restarts) {
-        QList<TextEditor::TextDocument *> documents;
-        const QList<Client *> currentClients = clientsForSetting(setting);
-        for (Client *client : currentClients) {
-            documents << managerInstance->m_clientForDocument.keys(client);
-            shutdownClient(client);
+    for (BaseSettings *settings : restarts)
+        applySettings(settings);
+}
+
+void LanguageClientManager::applySettings(BaseSettings *setting)
+{
+    QList<TextEditor::TextDocument *> documents;
+    const QList<Client *> currentClients = clientsForSetting(setting);
+    for (Client *client : currentClients) {
+        documents << managerInstance->m_clientForDocument.keys(client);
+        shutdownClient(client);
+    }
+    for (auto document : std::as_const(documents))
+        managerInstance->m_clientForDocument.remove(document);
+    if (!setting->isValid() || !setting->m_enabled)
+        return;
+    if (setting->m_startBehavior == BaseSettings::AlwaysOn || BaseSettings::RequiresFile) {
+        auto ensureClient = [setting, client = static_cast<Client *>(nullptr)]() mutable {
+            if (!client)
+                client = startClient(setting);
+            return client;
+        };
+        if (setting->m_startBehavior == BaseSettings::AlwaysOn)
+            ensureClient();
+
+        for (TextEditor::TextDocument *previousDocument : std::as_const(documents)) {
+            if (setting->m_languageFilter.isSupported(previousDocument))
+                openDocumentWithClient(previousDocument, ensureClient());
         }
-        for (auto document : std::as_const(documents))
-            managerInstance->m_clientForDocument.remove(document);
-        if (!setting->isValid() || !setting->m_enabled)
-            continue;
-        switch (setting->m_startBehavior) {
-        case BaseSettings::AlwaysOn: {
-            Client *client = startClient(setting);
-            for (TextEditor::TextDocument *document : std::as_const(documents))
-                managerInstance->m_clientForDocument[document] = client;
-            break;
-        }
-        case BaseSettings::RequiresFile: {
-            Client *client = nullptr;
-            for (TextEditor::TextDocument *previousDocument : std::as_const(documents)) {
-                if (setting->m_languageFilter.isSupported(previousDocument)) {
-                    if (!client)
-                        client = startClient(setting);
-                    openDocumentWithClient(previousDocument, client);
-                }
+        const QList<Core::IDocument *> &openedDocuments = Core::DocumentModel::openedDocuments();
+        for (Core::IDocument *document : openedDocuments) {
+            if (documents.contains(document))
+                continue; // already handled above
+            if (auto textDocument = qobject_cast<TextEditor::TextDocument *>(document)) {
+                if (setting->m_languageFilter.isSupported(document))
+                    ensureClient()->openDocument(textDocument);
             }
-            const QList<Core::IDocument *> &openedDocuments = Core::DocumentModel::openedDocuments();
-            for (Core::IDocument *document : openedDocuments) {
-                if (documents.contains(document))
-                    continue; // already handled above
-                if (auto textDocument = qobject_cast<TextEditor::TextDocument *>(document)) {
-                    if (setting->m_languageFilter.isSupported(document)) {
+        }
+    } else if (setting->m_startBehavior == BaseSettings::RequiresProject) {
+        const QList<Core::IDocument *> &openedDocuments = Core::DocumentModel::openedDocuments();
+        QHash<ProjectExplorer::Project *, Client *> clientForProject;
+        for (Core::IDocument *document : openedDocuments) {
+            auto textDocument = qobject_cast<TextEditor::TextDocument *>(document);
+            if (!textDocument || !setting->m_languageFilter.isSupported(textDocument))
+                continue;
+            const Utils::FilePath filePath = textDocument->filePath();
+            for (ProjectExplorer::Project *project :
+                 ProjectExplorer::ProjectManager::projects()) {
+                if (project->isKnownFile(filePath)) {
+                    Client *client = clientForProject[project];
+                    if (!client) {
+                        client = startClient(setting, project);
                         if (!client)
-                            client = startClient(setting);
-                        client->openDocument(textDocument);
+                            continue;
+                        clientForProject[project] = client;
                     }
+                    client->openDocument(textDocument);
                 }
             }
-            break;
-        }
-        case BaseSettings::RequiresProject: {
-            const QList<Core::IDocument *> &openedDocuments = Core::DocumentModel::openedDocuments();
-            QHash<ProjectExplorer::Project *, Client *> clientForProject;
-            for (Core::IDocument *document : openedDocuments) {
-                auto textDocument = qobject_cast<TextEditor::TextDocument *>(document);
-                if (!textDocument || !setting->m_languageFilter.isSupported(textDocument))
-                    continue;
-                const Utils::FilePath filePath = textDocument->filePath();
-                for (ProjectExplorer::Project *project :
-                     ProjectExplorer::ProjectManager::projects()) {
-                    if (project->isKnownFile(filePath)) {
-                        Client *client = clientForProject[project];
-                        if (!client) {
-                            client = startClient(setting, project);
-                            if (!client)
-                                continue;
-                            clientForProject[project] = client;
-                        }
-                        client->openDocument(textDocument);
-                    }
-                }
-            }
-            break;
-        }
-        default:
-            break;
         }
     }
 }
@@ -384,11 +382,17 @@ void LanguageClientManager::enableClientSettings(const QString &settingsId, bool
     managerInstance->applySettings();
 }
 
-QList<Client *> LanguageClientManager::clientsForSetting(const BaseSettings *setting)
+QList<Client *> LanguageClientManager::clientsForSettingId(const QString &settingsId)
 {
     QTC_ASSERT(managerInstance, return {});
     auto instance = managerInstance;
-    return instance->m_clientsForSetting.value(setting->m_id);
+    return instance->m_clientsForSetting.value(settingsId);
+}
+
+QList<Client *> LanguageClientManager::clientsForSetting(const BaseSettings *setting)
+{
+    QTC_ASSERT(setting, return {});
+    return clientsForSettingId(setting->m_id);
 }
 
 const BaseSettings *LanguageClientManager::settingForClient(Client *client)
@@ -407,6 +411,15 @@ const BaseSettings *LanguageClientManager::settingForClient(Client *client)
         }
     }
     return nullptr;
+}
+
+QList<Client *> LanguageClientManager::clientsByName(const QString &name)
+{
+    QTC_ASSERT(managerInstance, return {});
+
+    return Utils::filtered(managerInstance->m_clients, [name](const Client *client) {
+        return client->name() == name;
+    });
 }
 
 void LanguageClientManager::updateWorkspaceConfiguration(const ProjectExplorer::Project *project,

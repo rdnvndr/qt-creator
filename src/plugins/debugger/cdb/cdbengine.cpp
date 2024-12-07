@@ -43,7 +43,7 @@
 #include <utils/environment.h>
 #include <utils/fileutils.h>
 #include <utils/hostosinfo.h>
-#include <utils/process.h>
+#include <utils/qtcprocess.h>
 #include <utils/processinterface.h>
 #include <utils/qtcassert.h>
 #include <utils/stringutils.h>
@@ -255,7 +255,7 @@ int CdbEngine::elapsedLogTime()
 void CdbEngine::createFullBacktrace()
 {
     runCommand({"~*kp", BuiltinCommand, [](const DebuggerResponse &response) {
-        Internal::openTextEditor("Backtrace $", response.data.data());
+        Internal::openTextEditor("Backtrace$", response.data.data());
     }});
 }
 
@@ -280,10 +280,10 @@ void CdbEngine::setupEngine()
     // console, too, but that immediately closes when the debuggee quits.
     // Use the Creator stub instead.
     DebuggerRunParameters sp = runParameters();
-    if (terminal()) {
+    if (usesTerminal()) {
         m_effectiveStartMode = AttachToLocalProcess;
-        sp.inferior.command = CommandLine();
-        sp.attachPID = ProcessHandle(terminal()->applicationPid());
+        sp.inferior.command = {};
+        sp.attachPID = ProcessHandle(applicationPid());
         sp.startMode = AttachToLocalProcess;
         sp.useTerminal = false; // Force no terminal.
         showMessage(QString("Attaching to %1...").arg(sp.attachPID.pid()), LogMisc);
@@ -372,7 +372,7 @@ void CdbEngine::setupEngine()
         if (sp.startMode == AttachToCrashedProcess) {
             debugger.addArgs({"-e", sp.crashParameter, "-g"});
         } else {
-            if (terminal())
+            if (usesTerminal())
                 debugger.addArgs({"-pr", "-pb"});
         }
         break;
@@ -1042,6 +1042,8 @@ void CdbEngine::doUpdateLocals(const UpdateParameters &updateParameters)
         cmd.arg("partialvar", updateParameters.partialVariable);
         cmd.arg("qobjectnames", s.showQObjectNames());
         cmd.arg("timestamps", s.logTimeStamps());
+        cmd.arg("qtversion", runParameters().qtVersion);
+        cmd.arg("qtnamespace", runParameters().qtNamespace);
 
         StackFrame frame = stackHandler()->currentFrame();
         cmd.arg("context", frame.context);
@@ -2774,7 +2776,7 @@ void CdbEngine::setupScripting(const DebuggerResponse &response)
             showMessage("Reading " + codeFile.toUserOutput(), LogInput);
             runCommand({QString("module = types.ModuleType('%1')").arg(module), ScriptCommand});
             runCommand({QString("code = bytes.fromhex('%1').decode('utf-8')")
-                            .arg(QString::fromUtf8(code->toHex())), ScriptCommand | DebuggerCommand::Silent});
+                            .arg(QString::fromUtf8(code->toHex())), ScriptCommand | Silent});
             runCommand({QString("exec(code, module.__dict__)"), ScriptCommand});
             runCommand({QString("sys.modules['%1'] = module").arg(module), ScriptCommand});
             runCommand({QString("import %1").arg(module), ScriptCommand});
@@ -2798,7 +2800,7 @@ void CdbEngine::setupScripting(const DebuggerResponse &response)
     }
 
     const FilePath path = settings().extraDumperFile();
-    if (!path.isEmpty() && path.isReadableFile()) {
+    if (path.isReadableFile()) {
         DebuggerCommand cmd("theDumper.addDumperModule", ScriptCommand);
         cmd.arg("path", path.path());
         runCommand(cmd);
@@ -2808,10 +2810,6 @@ void CdbEngine::setupScripting(const DebuggerResponse &response)
         for (const auto &command : commands.split('\n', Qt::SkipEmptyParts))
             runCommand({command, ScriptCommand});
     }
-
-    DebuggerCommand cmd0("theDumper.setFallbackQtVersion", ScriptCommand);
-    cmd0.arg("version", runParameters().fallbackQtVersion);
-    runCommand(cmd0);
 
     runCommand({"theDumper.loadDumpers(None)", ScriptCommand,
                 [this](const DebuggerResponse &response) {

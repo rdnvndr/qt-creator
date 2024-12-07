@@ -19,7 +19,8 @@
 
     \ingroup creator-tutorials
 
-    \title Debugging a Qt Quick Application
+    \keyword {Debugging a Qt Quick Application}
+    \title Tutorial: Qt Quick debugging
 
     \brief How to debug a Qt Quick application.
 
@@ -33,7 +34,7 @@
     \if defined(qtdesignstudio)
     \note In this tutorial, you are using advanced menu items. These are not
     visible by default. To toggle the visibility of advanced menu items, see
-    \l{Customizing the Menu}.
+    \l{Customizing the Menu Bar}.
 
     \endif
 

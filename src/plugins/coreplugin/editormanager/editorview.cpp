@@ -14,10 +14,11 @@
 
 #include <utils/algorithm.h>
 #include <utils/infobar.h>
-#include <utils/qtcassert.h>
-#include <utils/theme/theme.h>
 #include <utils/layoutbuilder.h>
 #include <utils/link.h>
+#include <utils/overlaywidget.h>
+#include <utils/qtcassert.h>
+#include <utils/theme/theme.h>
 #include <utils/utilsicons.h>
 
 #include <QFileInfo>
@@ -38,14 +39,16 @@ namespace Core::Internal {
 
 // EditorView
 
-EditorView::EditorView(SplitterOrView *parentSplitterOrView, QWidget *parent) :
-    QWidget(parent),
-    m_parentSplitterOrView(parentSplitterOrView),
-    m_toolBar(new EditorToolBar(this)),
-    m_container(new QStackedWidget(this)),
-    m_infoBarDisplay(new InfoBarDisplay(this)),
-    m_statusHLine(Layouting::createHr(this)),
-    m_statusWidget(new QFrame(this))
+EditorView::EditorView(SplitterOrView *parentSplitterOrView, QWidget *parent)
+    : QWidget(parent)
+    , m_parentSplitterOrView(parentSplitterOrView)
+    , m_toolBar(new EditorToolBar(this))
+    , m_container(new QStackedWidget(this))
+    , m_infoBarDisplay(new InfoBarDisplay(this))
+    , m_statusHLine(Layouting::createHr(this))
+    , m_statusWidget(new QFrame(this))
+    , m_backMenu(new QMenu(this))
+    , m_forwardMenu(new QMenu(this))
 {
     auto tl = new QVBoxLayout(this);
     tl->setSpacing(0);
@@ -66,6 +69,8 @@ EditorView::EditorView(SplitterOrView *parentSplitterOrView, QWidget *parent) :
         connect(m_toolBar, &EditorToolBar::splitNewWindowClicked, this, &EditorView::splitNewWindow);
         connect(m_toolBar, &EditorToolBar::closeSplitClicked, this, &EditorView::closeSplit);
         m_toolBar->setMenuProvider([this](QMenu *menu) { fillListContextMenu(menu); });
+        m_toolBar->setGoBackMenu(m_backMenu);
+        m_toolBar->setGoForwardMenu(m_forwardMenu);
         tl->addWidget(m_toolBar);
     }
 
@@ -125,6 +130,57 @@ EditorView::EditorView(SplitterOrView *parentSplitterOrView, QWidget *parent) :
             this, &EditorView::openDroppedFiles);
 
     updateNavigatorActions();
+
+    auto currentViewOverlay = new OverlayWidget;
+    currentViewOverlay->attachToWidget(this);
+    currentViewOverlay->setAttribute(Qt::WA_OpaquePaintEvent);
+    currentViewOverlay->setResizeFunction([this](QWidget *w, const QSize &) {
+        const QRect toolbarRect = m_toolBar->geometry();
+        w->setGeometry(toolbarRect.x(), toolbarRect.bottom() - 1, toolbarRect.width(), 2);
+    });
+    currentViewOverlay->setPaintFunction([](QWidget *w, QPainter &p, QPaintEvent *) {
+        p.fillRect(w->rect(), w->palette().color(QPalette::Highlight));
+    });
+    currentViewOverlay->setVisible(false);
+    const auto updateCurrentViewOverlay = [this, currentViewOverlay] {
+        currentViewOverlay->setVisible(
+            EditorManagerPrivate::hasMoreThanOneview()
+            && EditorManagerPrivate::currentEditorView() == this);
+    };
+    connect(
+        EditorManagerPrivate::instance(),
+        &EditorManagerPrivate::currentViewChanged,
+        currentViewOverlay,
+        updateCurrentViewOverlay);
+    connect(
+        EditorManagerPrivate::instance(),
+        &EditorManagerPrivate::viewCountChanged,
+        currentViewOverlay,
+        updateCurrentViewOverlay);
+}
+
+bool EditorView::isInSplit() const
+{
+    SplitterOrView *viewParent = parentSplitterOrView();
+    SplitterOrView *parentSplitter = (viewParent ? viewParent->findParentSplitter() : nullptr);
+    return parentSplitter && parentSplitter->isSplitter();
+}
+
+EditorView *EditorView::split(Qt::Orientation orientation)
+{
+    return parentSplitterOrView()->split(orientation);
+}
+
+EditorArea *EditorView::editorArea() const
+{
+    QWidget *current = parentSplitterOrView();
+    while (current) {
+        if (auto area = qobject_cast<EditorArea *>(current))
+            return area;
+        current = current->parentWidget();
+    }
+    QTC_CHECK(false);
+    return nullptr;
 }
 
 EditorView::~EditorView() = default;
@@ -232,22 +288,17 @@ bool EditorView::canGoBack() const
     return m_currentNavigationHistoryPosition > 0;
 }
 
+bool EditorView::canReopen() const
+{
+    return !m_closedEditorHistory.isEmpty();
+}
+
 void EditorView::updateEditorHistory(IEditor *editor, QList<EditLocation> &history)
 {
-    if (!editor)
-        return;
-    IDocument *document = editor->document();
+    IDocument *document = editor ? editor->document() : nullptr;
+    QTC_ASSERT(document, return);
 
-    if (!document)
-        return;
-
-    QByteArray state = editor->saveState();
-
-    EditLocation location;
-    location.document = document;
-    location.filePath = document->filePath();
-    location.id = document->id();
-    location.state = state;
+    const auto location = EditLocation::forEditor(editor);
 
     for (int i = 0; i < history.size(); ++i) {
         const EditLocation &item = history.at(i);
@@ -275,11 +326,11 @@ void EditorView::paintEvent(QPaintEvent *)
 
     QRect rect = m_container->geometry();
     if (creatorTheme()->flag(Theme::FlatToolBars)) {
-        painter.fillRect(rect, creatorTheme()->color(Theme::EditorPlaceholderColor));
+        painter.fillRect(rect, creatorColor(Theme::EditorPlaceholderColor));
     } else {
         painter.setRenderHint(QPainter::Antialiasing, true);
         painter.setPen(Qt::NoPen);
-        painter.setBrush(creatorTheme()->color(Theme::EditorPlaceholderColor));
+        painter.setBrush(creatorColor(Theme::EditorPlaceholderColor));
         const int r = 3;
         painter.drawRoundedRect(rect.adjusted(r , r, -r, -r), r * 2, r * 2);
     }
@@ -295,6 +346,23 @@ void EditorView::mousePressEvent(QMouseEvent *e)
 void EditorView::focusInEvent(QFocusEvent *)
 {
     EditorManagerPrivate::setCurrentView(this);
+}
+
+bool EditorView::event(QEvent *e)
+{
+    if (e->type() == QEvent::NativeGesture) {
+        auto ev = static_cast<QNativeGestureEvent *>(e);
+        if (ev->gestureType() == Qt::SwipeNativeGesture) {
+            if (ev->value() > 0 && canGoBack()) { // swipe from right to left == go back
+                goBackInNavigationHistory();
+                return true;
+            } else if (ev->value() <= 0 && canGoForward()) {
+                goForwardInNavigationHistory();
+                return true;
+            }
+        }
+    }
+    return QWidget::event(e);
 }
 
 void EditorView::addEditor(IEditor *editor)
@@ -354,22 +422,20 @@ void EditorView::fillListContextMenu(QMenu *menu) const
     IEditor *editor = currentEditor();
     DocumentModel::Entry *entry = editor ? DocumentModel::entryForDocument(editor->document())
                                          : nullptr;
-    EditorManager::addSaveAndCloseEditorActions(menu, entry, editor);
-    menu->addSeparator();
-    EditorManager::addNativeDirAndOpenWithActions(menu, entry);
+    EditorManager::addContextMenuActions(menu, entry, editor);
 }
 
 void EditorView::splitHorizontally()
 {
     if (m_parentSplitterOrView)
-        m_parentSplitterOrView->split(Qt::Vertical);
+        EditorManagerPrivate::activateView(m_parentSplitterOrView->split(Qt::Vertical));
     EditorManagerPrivate::updateActions();
 }
 
 void EditorView::splitVertically()
 {
     if (m_parentSplitterOrView)
-        m_parentSplitterOrView->split(Qt::Horizontal);
+        EditorManagerPrivate::activateView(m_parentSplitterOrView->split(Qt::Horizontal));
     EditorManagerPrivate::updateActions();
 }
 
@@ -463,24 +529,11 @@ constexpr int navigationHistorySize = 100;
 void EditorView::addCurrentPositionToNavigationHistory(const QByteArray &saveState)
 {
     IEditor *editor = currentEditor();
-    if (!editor)
-        return;
-    IDocument *document = editor->document();
 
-    if (!document)
+    if (!editor || !editor->document())
         return;
 
-    QByteArray state;
-    if (saveState.isNull())
-        state = editor->saveState();
-    else
-        state = saveState;
-
-    EditLocation location;
-    location.document = document;
-    location.filePath = document->filePath();
-    location.id = document->id();
-    location.state = state;
+    const auto location = EditLocation::forEditor(editor, saveState);
     m_currentNavigationHistoryPosition = qMin(m_currentNavigationHistoryPosition, m_navigationHistory.size()); // paranoia
     m_navigationHistory.insert(m_currentNavigationHistoryPosition, location);
     ++m_currentNavigationHistoryPosition;
@@ -496,6 +549,21 @@ void EditorView::addCurrentPositionToNavigationHistory(const QByteArray &saveSta
     updateNavigatorActions();
 }
 
+void EditorView::addClosedEditorToCloseHistory(IEditor *editor)
+{
+    static const int MAX_ITEMS = 20;
+
+    if (!editor || !editor->document())
+        return;
+
+    EditLocation location = EditLocation::forEditor(editor);
+
+    m_closedEditorHistory.push_back(location);
+
+    if (m_closedEditorHistory.size() > MAX_ITEMS)
+        m_closedEditorHistory.removeFirst();
+}
+
 void EditorView::cutForwardNavigationHistory()
 {
     while (m_currentNavigationHistoryPosition < m_navigationHistory.size() - 1)
@@ -504,6 +572,33 @@ void EditorView::cutForwardNavigationHistory()
 
 void EditorView::updateNavigatorActions()
 {
+    static const int MAX_ITEMS = 20;
+    QString lastDisplay;
+    m_backMenu->clear();
+    int count = 0;
+    for (int i = m_currentNavigationHistoryPosition - 1; i >= 0; i--) {
+        const EditLocation &loc = m_navigationHistory.at(i);
+        if (!loc.displayName().isEmpty() && loc.displayName() != lastDisplay) {
+            lastDisplay = loc.displayName();
+            m_backMenu->addAction(lastDisplay, this, [this, i] { goToNavigationHistory(i); });
+            ++count;
+            if (count >= MAX_ITEMS)
+                break;
+        }
+    }
+    lastDisplay.clear();
+    m_forwardMenu->clear();
+    count = 0;
+    for (int i = m_currentNavigationHistoryPosition + 1; i < m_navigationHistory.size(); i++) {
+        const EditLocation &loc = m_navigationHistory.at(i);
+        if (!loc.displayName().isEmpty() && loc.displayName() != lastDisplay) {
+            lastDisplay = loc.displayName();
+            m_forwardMenu->addAction(lastDisplay, this, [this, i] { goToNavigationHistory(i); });
+            ++count;
+            if (count >= MAX_ITEMS)
+                break;
+        }
+    }
     m_toolBar->setCanGoBack(canGoBack());
     m_toolBar->setCanGoForward(canGoForward());
 }
@@ -524,7 +619,6 @@ void EditorView::updateCurrentPositionInNavigationHistory()
     if (!editor || !editor->document())
         return;
 
-    IDocument *document = editor->document();
     EditLocation *location;
     if (m_currentNavigationHistoryPosition < m_navigationHistory.size()) {
         location = &m_navigationHistory[m_currentNavigationHistoryPosition];
@@ -532,10 +626,7 @@ void EditorView::updateCurrentPositionInNavigationHistory()
         m_navigationHistory.append(EditLocation());
         location = &m_navigationHistory[m_navigationHistory.size()-1];
     }
-    location->document = document;
-    location->filePath = document->filePath();
-    location->id = document->id();
-    location->state = editor->saveState();
+    *location = EditLocation::forEditor(editor);
 }
 
 static bool fileNameWasRemoved(const FilePath &filePath)
@@ -543,31 +634,45 @@ static bool fileNameWasRemoved(const FilePath &filePath)
     return !filePath.isEmpty() && !filePath.exists();
 }
 
+bool EditorView::openEditorFromNavigationHistory(int index)
+{
+    EditLocation location = m_navigationHistory.at(index);
+    IEditor *editor = nullptr;
+    if (location.document) {
+        editor = EditorManagerPrivate::activateEditorForDocument(
+            this, location.document, EditorManager::IgnoreNavigationHistory);
+    }
+    if (!editor) {
+        if (fileNameWasRemoved(location.filePath))
+            return false;
+        editor = EditorManagerPrivate::openEditor(
+            this, location.filePath, location.id, EditorManager::IgnoreNavigationHistory);
+        if (!editor)
+            return false;
+    }
+    editor->restoreState(location.state);
+    return true;
+}
+
+void EditorView::goToNavigationHistory(int index)
+{
+    if (index >= m_navigationHistory.size())
+        return;
+    updateCurrentPositionInNavigationHistory();
+    if (!openEditorFromNavigationHistory(index))
+        m_navigationHistory.removeAt(index);
+    m_currentNavigationHistoryPosition = index;
+    updateNavigatorActions();
+}
+
 void EditorView::goBackInNavigationHistory()
 {
     updateCurrentPositionInNavigationHistory();
     while (m_currentNavigationHistoryPosition > 0) {
         --m_currentNavigationHistoryPosition;
-        EditLocation location = m_navigationHistory.at(m_currentNavigationHistoryPosition);
-        IEditor *editor = nullptr;
-        if (location.document) {
-            editor = EditorManagerPrivate::activateEditorForDocument(this, location.document,
-                                        EditorManager::IgnoreNavigationHistory);
-        }
-        if (!editor) {
-            if (fileNameWasRemoved(location.filePath)) {
-                m_navigationHistory.removeAt(m_currentNavigationHistoryPosition);
-                continue;
-            }
-            editor = EditorManagerPrivate::openEditor(this, location.filePath, location.id,
-                                    EditorManager::IgnoreNavigationHistory);
-            if (!editor) {
-                m_navigationHistory.removeAt(m_currentNavigationHistoryPosition);
-                continue;
-            }
-        }
-        editor->restoreState(location.state);
-        break;
+        if (openEditorFromNavigationHistory(m_currentNavigationHistoryPosition))
+            break;
+        m_navigationHistory.removeAt(m_currentNavigationHistoryPosition);
     }
     updateNavigatorActions();
 }
@@ -579,30 +684,20 @@ void EditorView::goForwardInNavigationHistory()
         return;
     ++m_currentNavigationHistoryPosition;
     while (m_currentNavigationHistoryPosition < m_navigationHistory.size()) {
-        IEditor *editor = nullptr;
-        EditLocation location = m_navigationHistory.at(m_currentNavigationHistoryPosition);
-        if (location.document) {
-            editor = EditorManagerPrivate::activateEditorForDocument(this, location.document,
-                                                                     EditorManager::IgnoreNavigationHistory);
-        }
-        if (!editor) {
-            if (fileNameWasRemoved(location.filePath)) {
-                m_navigationHistory.removeAt(m_currentNavigationHistoryPosition);
-                continue;
-            }
-            editor = EditorManagerPrivate::openEditor(this, location.filePath, location.id,
-                                                      EditorManager::IgnoreNavigationHistory);
-            if (!editor) {
-                m_navigationHistory.removeAt(m_currentNavigationHistoryPosition);
-                continue;
-            }
-        }
-        editor->restoreState(location.state);
-        break;
+        if (openEditorFromNavigationHistory(m_currentNavigationHistoryPosition))
+            break;
+        m_navigationHistory.removeAt(m_currentNavigationHistoryPosition);
     }
     if (m_currentNavigationHistoryPosition >= m_navigationHistory.size())
         m_currentNavigationHistoryPosition = qMax<int>(m_navigationHistory.size() - 1, 0);
     updateNavigatorActions();
+}
+
+void EditorView::reopenLastClosedDocument()
+{
+    if (m_closedEditorHistory.isEmpty())
+        return;
+    goToEditLocation(m_closedEditorHistory.takeLast());
 }
 
 void EditorView::goToEditLocation(const EditLocation &location)
@@ -730,9 +825,9 @@ EditorView *SplitterOrView::takeView()
     return oldView;
 }
 
-void SplitterOrView::split(Qt::Orientation orientation, bool activateView)
+EditorView *SplitterOrView::split(Qt::Orientation orientation)
 {
-    Q_ASSERT(m_view && m_splitter == nullptr);
+    QTC_ASSERT(m_view && m_splitter == nullptr, return nullptr);
     m_splitter = new MiniSplitter(this);
     m_splitter->setOrientation(orientation);
     m_layout->addWidget(m_splitter);
@@ -769,12 +864,11 @@ void SplitterOrView::split(Qt::Orientation orientation, bool activateView)
     if (e)
         e->restoreState(state);
 
-    if (activateView)
-        EditorManagerPrivate::activateView(otherView->view());
     emit splitStateChanged();
+    return otherView->view();
 }
 
-void SplitterOrView::unsplitAll()
+void SplitterOrView::unsplitAll(EditorView *currentView)
 {
     QTC_ASSERT(m_splitter, return);
     // avoid focus changes while unsplitting is in progress
@@ -786,7 +880,6 @@ void SplitterOrView::unsplitAll()
         }
     }
 
-    EditorView *currentView = EditorManagerPrivate::currentEditorView();
     if (currentView) {
         currentView->parentSplitterOrView()->takeView();
         currentView->setParentSplitterOrView(this);
@@ -949,7 +1042,7 @@ void SplitterOrView::restoreState(const QByteArray &state)
         qint32 orientation;
         QByteArray splitter, first, second;
         stream >> orientation >> splitter >> first >> second;
-        split((Qt::Orientation) orientation, false);
+        split((Qt::Orientation) orientation);
         m_splitter->restoreState(splitter);
         static_cast<SplitterOrView*>(m_splitter->widget(0))->restoreState(first);
         static_cast<SplitterOrView*>(m_splitter->widget(1))->restoreState(second);
@@ -1003,6 +1096,31 @@ EditLocation EditLocation::load(const QByteArray &data)
     stream >> loc.id;
     stream >> loc.state;
     return loc;
+}
+
+EditLocation EditLocation::forEditor(const IEditor *editor, const QByteArray &saveState)
+{
+    QTC_ASSERT(editor, return EditLocation());
+
+    IDocument *document = editor->document();
+    QTC_ASSERT(document, return EditLocation());
+
+    const QByteArray &state = saveState.isEmpty() ? editor->saveState() : saveState;
+
+    EditLocation location;
+    location.document = document;
+    location.filePath = document->filePath();
+    location.id = document->id();
+    location.state = state;
+
+    return location;
+}
+
+QString EditLocation::displayName() const
+{
+    if (document)
+        return document->displayName();
+    return filePath.fileName();
 }
 
 } // Core::Internal

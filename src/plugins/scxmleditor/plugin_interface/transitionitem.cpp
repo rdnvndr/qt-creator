@@ -28,6 +28,28 @@ using namespace ScxmlEditor::PluginInterface;
 
 const qreal SELECTION_DISTANCE = 10;
 
+static QString wrapText(const QString &text)
+{
+    if (text.isEmpty())
+        return QString();
+
+    QString wrappedText = "[" + text.trimmed() + "]";
+    return wrappedText;
+}
+
+static QString unwrapText(const QString &text)
+{
+    QString unwrappedText = text.trimmed();
+
+    if (unwrappedText.startsWith("["))
+        unwrappedText = unwrappedText.mid(1);
+
+    if (unwrappedText.endsWith("]"))
+        unwrappedText.chop(1);
+
+    return unwrappedText;
+}
+
 TransitionItem::TransitionItem(BaseItem *parent)
     : BaseItem(parent)
     , m_startTargetFactor(0.5, 0.5)
@@ -35,11 +57,6 @@ TransitionItem::TransitionItem(BaseItem *parent)
 {
     setFlag(ItemIsSelectable, true);
 
-    m_highlightPen = QPen(QColor(0xff, 0x00, 0x60));
-    m_highlightPen.setWidth(8);
-    m_highlightPen.setJoinStyle(Qt::MiterJoin);
-
-    m_pen = QPen(QColor(0x12, 0x12, 0x12));
     m_pen.setWidth(2);
 
     m_arrow << QPointF(0, 0)
@@ -52,6 +69,15 @@ TransitionItem::TransitionItem(BaseItem *parent)
     });
     connect(m_eventTagItem, &TagTextItem::textReady, this, &TransitionItem::textHasChanged);
     connect(m_eventTagItem, &TagTextItem::movePointChanged, this, &TransitionItem::textItemPositionChanged);
+
+    m_condTagItem = new TagTextItem(this);
+    connect(m_condTagItem, &TagTextItem::selected, this, [this](bool sel) { setItemSelected(sel); });
+    connect(m_condTagItem, &TagTextItem::textReady, this, [this](const QString &text) {
+        setTagValue("cond", unwrapText(text));
+        updateEventName();
+    });
+    connect(m_condTagItem, &TagTextItem::movePointChanged,
+            this, &TransitionItem::textItemPositionChanged);
 
     checkWarningItems();
 }
@@ -80,8 +106,10 @@ void TransitionItem::setTag(ScxmlTag *tag)
 {
     BaseItem::setTag(tag);
     if (tag) {
-        if (tag->tagType() == InitialTransition)
+        if (tag->tagType() == InitialTransition) {
             m_eventTagItem->setVisible(false);
+            m_condTagItem->setVisible(false);
+        }
     }
 }
 
@@ -96,12 +124,22 @@ void TransitionItem::textItemPositionChanged()
     }
     setEditorInfo(Constants::C_SCXML_EDITORINFO_MOVEPOINT, data);
 
+    QPointF p2 = m_condTagItem->movePoint();
+    QString data2;
+    if (p2.toPoint() != QPoint(0, 0)) {
+        Serializer s;
+        s.append(p2);
+        data2 = s.data();
+    }
+    setEditorInfo(Constants::C_SCXML_EDITORINFO_MOVEPOINT_COND, data2);
+
     updateComponents();
 }
 
 void TransitionItem::textHasChanged(const QString &text)
 {
     setTagValue("event", text);
+    updateComponents();
 }
 
 void TransitionItem::createGrabbers()
@@ -876,13 +914,19 @@ void TransitionItem::updateComponents()
     QLineF nameLine(m_cornerPoints[ind], m_cornerPoints[ind + 1]);
     if (m_targetType <= InternalNoTarget) {
         m_eventTagItem->setPos(m_cornerPoints[1].x() + 6, m_cornerPoints[1].y() - m_eventTagItem->boundingRect().height() / 3);
+        m_condTagItem->setPos(m_cornerPoints[1].x() + 6, m_cornerPoints[1].y() + m_condTagItem->boundingRect().height() / 3);
     } else {
-        const qreal w2 = m_eventTagItem->boundingRect().width() / 2;
-        QPointF startPos = nameLine.pointAt(0.5);
-        QLineF targetLine(startPos, startPos + QPointF(SELECTION_DISTANCE, SELECTION_DISTANCE));
-        targetLine.setAngle(nameLine.angle() + 90);
+        const qreal widthEventItem = m_eventTagItem->boundingRect().width() / 2;
+        m_eventTagItem->setPos(
+            nameLine.pointAt(0.5) + m_eventTagItem->movePoint()
+            + QPointF(-widthEventItem, -m_eventTagItem->boundingRect().height() / 1.5));
 
-        m_eventTagItem->setPos(targetLine.p2() + m_eventTagItem->movePoint() - QPointF(w2, m_eventTagItem->boundingRect().height() / 2));
+        qreal width = qMax(nameLine.length(), m_eventTagItem->boundingRect().width());
+        m_condTagItem->setTextMaxWidth(width);
+
+        const qreal widthCondItem = m_condTagItem->boundingRect().width() / 2;
+        m_condTagItem->setPos(
+            nameLine.pointAt(0.5) + m_condTagItem->movePoint() + QPointF(-widthCondItem, 2));
     }
 
     if (m_warningItem)
@@ -904,9 +948,15 @@ void TransitionItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *op
     Q_UNUSED(widget)
 
     painter->save();
-
     painter->setRenderHint(QPainter::Antialiasing, true);
+
+    m_pen.setColor(painter->pen().color());
     painter->setPen(m_pen);
+
+    QPen highlightPen;
+    highlightPen.setWidth(8);
+    highlightPen.setJoinStyle(Qt::MiterJoin);
+    highlightPen.setColor(scene()->palette().color(QPalette::HighlightedText));
 
     if (m_cornerPoints.count() >= 2) {
         if (m_targetType == InternalSameTarget) {
@@ -916,7 +966,7 @@ void TransitionItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *op
             painter->drawArc(rect, 0, 180 * 16);
         } else {
             if (highlight()) {
-                painter->setPen(m_highlightPen);
+                painter->setPen(highlightPen);
                 painter->drawPolyline(m_cornerPoints);
             }
             painter->setPen(m_pen);
@@ -928,7 +978,7 @@ void TransitionItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *op
         painter->drawEllipse(m_cornerPoints[i], 2, 2);
 
     if (highlight()) {
-        painter->setPen(m_highlightPen);
+        painter->setPen(highlightPen);
         painter->drawPolyline(m_arrow);
     }
 
@@ -943,10 +993,15 @@ void TransitionItem::updateEditorInfo(bool allChilds)
     BaseItem::updateEditorInfo(allChilds);
 
     const QColor fontColor = editorInfo(Constants::C_SCXML_EDITORINFO_FONTCOLOR);
-    m_eventTagItem->setDefaultTextColor(fontColor.isValid() ? fontColor : Qt::black);
+
+    if (fontColor.isValid()) {
+        m_eventTagItem->setDefaultTextColor(fontColor);
+        m_condTagItem->setDefaultTextColor(fontColor);
+    }
 
     const QColor stateColor = editorInfo(Constants::C_SCXML_EDITORINFO_STATECOLOR);
-    m_pen.setColor(stateColor.isValid() ? stateColor : qRgb(0x12, 0x12, 0x12));
+    if (stateColor.isValid())
+        m_pen.setColor(stateColor);
 }
 
 void TransitionItem::updateTarget(bool fixValue)
@@ -1026,6 +1081,7 @@ void TransitionItem::readUISpecifiedProperties(const ScxmlTag *tag)
             }
 
             m_eventTagItem->resetMovePoint(loadPoint(Constants::C_SCXML_EDITORINFO_MOVEPOINT));
+            m_condTagItem->resetMovePoint(loadPoint(Constants::C_SCXML_EDITORINFO_MOVEPOINT_COND));
 
             if (m_lineSelected)
                 createGrabbers();
@@ -1048,6 +1104,7 @@ void TransitionItem::finalizeCreation()
 void TransitionItem::checkVisibility(double scaleFactor)
 {
     m_eventTagItem->setVisible(scaleFactor > 0.5);
+    m_condTagItem->setVisible(scaleFactor > 0.5);
 }
 
 bool TransitionItem::containsScenePoint(const QPointF &p) const
@@ -1092,6 +1149,8 @@ void TransitionItem::findEndItem()
 void TransitionItem::updateEventName()
 {
     m_eventTagItem->setText(tagValue("event"));
+    m_condTagItem->setText(wrapText(tagValue("cond")));
+    updateComponents();
 }
 
 void TransitionItem::storeGeometry(bool block)
@@ -1123,6 +1182,11 @@ void TransitionItem::storeMovePoint(bool block)
         setEditorInfo(Constants::C_SCXML_EDITORINFO_MOVEPOINT, QString(), block);
     else
         savePoint(m_eventTagItem->movePoint(), Constants::C_SCXML_EDITORINFO_MOVEPOINT);
+
+    if (m_condTagItem->movePoint().toPoint() == QPoint(0, 0))
+        setEditorInfo(Constants::C_SCXML_EDITORINFO_MOVEPOINT_COND, QString(), block);
+    else
+        savePoint(m_condTagItem->movePoint(), Constants::C_SCXML_EDITORINFO_MOVEPOINT_COND);
 }
 
 void TransitionItem::storeTargetFactors(bool block)
@@ -1176,6 +1240,7 @@ void TransitionItem::updateTargetType()
 
     if (type <= InternalNoTarget) {
         m_eventTagItem->resetMovePoint();
+        m_condTagItem->resetMovePoint();
         m_arrowSize = 6;
         // Remove extra points
         while (m_cornerPoints.count() > 2)
@@ -1187,8 +1252,10 @@ void TransitionItem::updateTargetType()
         setEditorInfo(Constants::C_SCXML_EDITORINFO_GEOMETRY, QString(), true);
         setEditorInfo(Constants::C_SCXML_EDITORINFO_LOCALGEOMETRY, QString(), true);
         setEditorInfo(Constants::C_SCXML_EDITORINFO_MOVEPOINT, QString(), true);
+        setEditorInfo(Constants::C_SCXML_EDITORINFO_MOVEPOINT_COND, QString(), true);
         setEditorInfo(Constants::C_SCXML_EDITORINFO_STARTTARGETFACTORS, QString(), true);
         setEditorInfo(Constants::C_SCXML_EDITORINFO_ENDTARGETFACTORS, QString(), true);
+        updateComponents();
     } else {
         m_arrowSize = 10;
     }
@@ -1244,10 +1311,10 @@ void TransitionItem::updateZValue()
 
 qreal TransitionItem::textWidth() const
 {
-    return m_eventTagItem->boundingRect().width();
+    return m_eventTagItem->boundingRect().width() + m_condTagItem->boundingRect().width();
 }
 
 QRectF TransitionItem::wholeBoundingRect() const
 {
-    return boundingRect().united(m_eventTagItem->sceneBoundingRect());
+    return boundingRect().united(m_eventTagItem->sceneBoundingRect().united(m_condTagItem->sceneBoundingRect()));
 }

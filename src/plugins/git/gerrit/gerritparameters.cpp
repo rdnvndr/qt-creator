@@ -3,8 +3,12 @@
 
 #include "gerritparameters.h"
 #include "gerritplugin.h"
+#include "../gitclient.h"
+
+#include <coreplugin/icore.h>
 
 #include <utils/commandline.h>
+#include <utils/datafromprocess.h>
 #include <utils/environment.h>
 #include <utils/hostosinfo.h>
 #include <utils/pathchooser.h>
@@ -13,10 +17,10 @@
 #include <QDir>
 #include <QStandardPaths>
 
+using namespace Core;
 using namespace Utils;
 
-namespace Gerrit {
-namespace Internal {
+namespace Gerrit::Internal {
 
 const char settingsGroupC[] = "Gerrit";
 const char hostKeyC[] = "Host";
@@ -37,7 +41,7 @@ static FilePath detectApp(const QString &defaultExe)
     if (!app.isEmpty() || !HostOsInfo::isWindowsHost())
         return FilePath::fromString(app);
     // Windows: Use app.exe from git if it cannot be found.
-    const FilePath gitBinDir = GerritPlugin::gitBinDirectory();
+    const FilePath gitBinDir = Git::Internal::gitClient().gitBinDirectory();
     if (gitBinDir.isEmpty())
         return {};
     FilePath path = gitBinDir.pathAppended(defaultApp);
@@ -70,8 +74,12 @@ void GerritParameters::setPortFlagBySshType()
 {
     bool isPlink = false;
     if (!ssh.isEmpty()) {
-        const QString version = PathChooser::toolVersion({ssh, {"-V"}});
-        isPlink = version.contains("plink", Qt::CaseInsensitive);
+        DataFromProcess<QString>::Parameters
+            params({ssh, {"-V"}}, [](const QString &output, const QString &) { return output; });
+        using namespace std::chrono_literals;
+        params.timeout = 1s;
+        if (const auto version = DataFromProcess<QString>::getData(params))
+            isPlink = version->contains("plink", Qt::CaseInsensitive);
     }
     portFlag = QLatin1String(isPlink ? "-P" : defaultPortFlag);
 }
@@ -81,13 +89,9 @@ GerritParameters::GerritParameters()
 {
 }
 
-bool GerritParameters::equals(const GerritParameters &rhs) const
+void GerritParameters::toSettings() const
 {
-    return server == rhs.server && ssh == rhs.ssh && curl == rhs.curl && https == rhs.https;
-}
-
-void GerritParameters::toSettings(QtcSettings *s) const
-{
+    QtcSettings *s = ICore::settings();
     s->beginGroup(settingsGroupC);
     s->setValue(hostKeyC, server.host);
     s->setValue(userKeyC, server.user.userName);
@@ -99,15 +103,17 @@ void GerritParameters::toSettings(QtcSettings *s) const
     s->endGroup();
 }
 
-void GerritParameters::saveQueries(QtcSettings *s) const
+void GerritParameters::saveQueries() const
 {
+    QtcSettings *s = ICore::settings();
     s->beginGroup(settingsGroupC);
     s->setValue(savedQueriesKeyC, savedQueries.join(','));
     s->endGroup();
 }
 
-void GerritParameters::fromSettings(const QtcSettings *s)
+void GerritParameters::fromSettings()
 {
+    QtcSettings *s = ICore::settings();
     const Key rootKey = Key(settingsGroupC) + '/';
     server.host = s->value(rootKey + hostKeyC, GerritServer::defaultHost()).toString();
     server.user.userName = s->value(rootKey + userKeyC, QString()).toString();
@@ -129,5 +135,10 @@ bool GerritParameters::isValid() const
     return !server.host.isEmpty() && !server.user.userName.isEmpty() && !ssh.isEmpty();
 }
 
-} // namespace Internal
-} // namespace Gerrit
+GerritParameters &gerritSettings()
+{
+    static GerritParameters theGerritSettings;
+    return theGerritSettings;
+}
+
+} // Gerrit::Internal

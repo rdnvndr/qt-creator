@@ -4,27 +4,32 @@
 #include "propertyeditorqmlbackend.h"
 
 #include "propertyeditortransaction.h"
+#include "propertyeditorutils.h"
 #include "propertyeditorvalue.h"
 #include "propertymetainfo.h"
 
 #include <auxiliarydataproperties.h>
 #include <bindingproperty.h>
 #include <nodemetainfo.h>
-#include <variantproperty.h>
 #include <qmldesignerconstants.h>
 #include <qmldesignerplugin.h>
 #include <qmlobjectnode.h>
 #include <qmltimeline.h>
+#include <sourcepathcache.h>
+#include <variantproperty.h>
 
 #include <theme.h>
 
+#include <qmldesignerbase/settings/designersettings.h>
+
 #include <coreplugin/icore.h>
 #include <coreplugin/messagebox.h>
+#include <qmljs/qmljssimplereader.h>
 #include <utils/algorithm.h>
 #include <utils/environment.h>
 #include <utils/fileutils.h>
 #include <utils/qtcassert.h>
-#include <qmljs/qmljssimplereader.h>
+#include <utils/smallstring.h>
 
 #include <QApplication>
 #include <QDir>
@@ -81,17 +86,18 @@ namespace QmlDesigner {
 
 PropertyEditorQmlBackend::PropertyEditorQmlBackend(PropertyEditorView *propertyEditor,
                                                    AsynchronousImageCache &imageCache)
-    : m_view(new Quick2PropertyEditorView(imageCache))
-    , m_propertyEditorTransaction(new PropertyEditorTransaction(propertyEditor))
-    , m_dummyPropertyEditorValue(new PropertyEditorValue())
-    , m_contextObject(new PropertyEditorContextObject())
+    : m_view(Utils::makeUniqueObjectPtr<Quick2PropertyEditorView>(imageCache))
+    , m_propertyEditorTransaction(std::make_unique<PropertyEditorTransaction>(propertyEditor))
+    , m_dummyPropertyEditorValue(std::make_unique<PropertyEditorValue>())
+    , m_contextObject(std::make_unique<PropertyEditorContextObject>(m_view.get()))
 {
     m_view->engine()->setOutputWarningsToStandardError(QmlDesignerPlugin::instance()
         ->settings().value(DesignerSettingsKey::SHOW_PROPERTYEDITOR_WARNINGS).toBool());
 
     m_view->engine()->addImportPath(propertyEditorResourcesPath() + "/imports");
     m_dummyPropertyEditorValue->setValue(QLatin1String("#000000"));
-    context()->setContextProperty(QLatin1String("dummyBackendValue"), m_dummyPropertyEditorValue.data());
+    context()->setContextProperty(QLatin1String("dummyBackendValue"),
+                                  m_dummyPropertyEditorValue.get());
     m_contextObject->setBackendValues(&m_backendValuesPropertyMap);
     m_contextObject->setModel(propertyEditor->model());
     m_contextObject->insertInQmlContext(context());
@@ -102,11 +108,11 @@ PropertyEditorQmlBackend::PropertyEditorQmlBackend(PropertyEditorView *propertyE
 
 PropertyEditorQmlBackend::~PropertyEditorQmlBackend() = default;
 
-void PropertyEditorQmlBackend::setupPropertyEditorValue(const PropertyName &name,
+void PropertyEditorQmlBackend::setupPropertyEditorValue(PropertyNameView name,
                                                         PropertyEditorView *propertyEditor,
                                                         const NodeMetaInfo &type)
 {
-    QmlDesigner::PropertyName propertyName(name);
+    QmlDesigner::PropertyName propertyName(name.toByteArray());
     propertyName.replace('.', '_');
     auto valueObject = qobject_cast<PropertyEditorValue*>(variantToQObject(backendValuesPropertyMap().value(QString::fromUtf8(propertyName))));
     if (!valueObject) {
@@ -124,7 +130,7 @@ void PropertyEditorQmlBackend::setupPropertyEditorValue(const PropertyName &name
 namespace {
 PropertyName auxNamePostFix(Utils::SmallStringView propertyName)
 {
-    return PropertyName(propertyName) + "__AUX";
+    return PropertyNameView(propertyName) + "__AUX";
 }
 
 QVariant properDefaultAuxiliaryProperties(const QmlObjectNode &qmlObjectNode,
@@ -139,9 +145,9 @@ QVariant properDefaultAuxiliaryProperties(const QmlObjectNode &qmlObjectNode,
 }
 
 QVariant properDefaultLayoutAttachedProperties(const QmlObjectNode &qmlObjectNode,
-                                               const PropertyName &propertyName)
+                                               PropertyNameView propertyName)
 {
-    const QVariant value = qmlObjectNode.modelValue("Layout." + propertyName);
+    const QVariant value = qmlObjectNode.modelValue("Layout."_sv + propertyName);
     QVariant marginsValue = qmlObjectNode.modelValue("Layout.margins");
 
     if (!marginsValue.isValid())
@@ -174,9 +180,9 @@ QVariant properDefaultLayoutAttachedProperties(const QmlObjectNode &qmlObjectNod
 }
 
 QVariant properDefaultInsightAttachedProperties(const QmlObjectNode &qmlObjectNode,
-                                                const PropertyName &propertyName)
+                                                PropertyNameView propertyName)
 {
-    const QVariant value = qmlObjectNode.modelValue("InsightCategory." + propertyName);
+    const QVariant value = qmlObjectNode.modelValue("InsightCategory."_sv + propertyName);
 
     if (value.isValid())
         return value;
@@ -194,8 +200,12 @@ void PropertyEditorQmlBackend::setupLayoutAttachedProperties(const QmlObjectNode
                 "minimumHeight", "minimumWidth", "preferredHeight", "preferredWidth", "row", "rowSpan",
                 "topMargin", "bottomMargin", "leftMargin", "rightMargin", "margins"};
 
-        for (const PropertyName &propertyName : propertyNames) {
-            createPropertyEditorValue(qmlObjectNode, "Layout." + propertyName, properDefaultLayoutAttachedProperties(qmlObjectNode, propertyName), propertyEditor);
+        for (PropertyNameView propertyName : propertyNames) {
+            createPropertyEditorValue(qmlObjectNode,
+                                      "Layout."_sv + propertyName,
+                                      properDefaultLayoutAttachedProperties(qmlObjectNode,
+                                                                            propertyName),
+                                      propertyEditor);
         }
     }
 }
@@ -205,7 +215,7 @@ void PropertyEditorQmlBackend::setupInsightAttachedProperties(const QmlObjectNod
 {
     const PropertyName propertyName = "category";
     createPropertyEditorValue(qmlObjectNode,
-                              "InsightCategory." + propertyName,
+                              "InsightCategory."_sv + propertyName,
                               properDefaultInsightAttachedProperties(qmlObjectNode, propertyName),
                               propertyEditor);
 }
@@ -283,12 +293,33 @@ void PropertyEditorQmlBackend::setupAuxiliaryProperties(const QmlObjectNode &qml
     }
 }
 
+void PropertyEditorQmlBackend::handleInstancePropertyChangedInModelNodeProxy(
+    const ModelNode &modelNode, PropertyNameView propertyName)
+{
+    m_backendModelNode.handleInstancePropertyChanged(modelNode, propertyName);
+}
+
+void PropertyEditorQmlBackend::handleVariantPropertyChangedInModelNodeProxy(const VariantProperty &property)
+{
+    m_backendModelNode.handleVariantPropertyChanged(property);
+}
+
+void PropertyEditorQmlBackend::handleBindingPropertyChangedInModelNodeProxy(const BindingProperty &property)
+{
+    m_backendModelNode.handleBindingPropertyChanged(property);
+}
+
+void PropertyEditorQmlBackend::handlePropertiesRemovedInModelNodeProxy(const AbstractProperty &property)
+{
+    m_backendModelNode.handlePropertiesRemoved(property);
+}
+
 void PropertyEditorQmlBackend::createPropertyEditorValue(const QmlObjectNode &qmlObjectNode,
-                                                         const PropertyName &name,
+                                                         PropertyNameView name,
                                                          const QVariant &value,
                                                          PropertyEditorView *propertyEditor)
 {
-    PropertyName propertyName(name);
+    PropertyName propertyName(name.toByteArray());
     propertyName.replace('.', '_');
     auto valueObject = qobject_cast<PropertyEditorValue*>(variantToQObject(backendValuesPropertyMap().value(QString::fromUtf8(propertyName))));
     if (!valueObject) {
@@ -302,7 +333,8 @@ void PropertyEditorQmlBackend::createPropertyEditorValue(const QmlObjectNode &qm
     valueObject->setName(name);
     valueObject->setModelNode(qmlObjectNode);
 
-    if (qmlObjectNode.propertyAffectedByCurrentState(name) && !(qmlObjectNode.modelNode().property(name).isBindingProperty()))
+    if (qmlObjectNode.propertyAffectedByCurrentState(name)
+        && !(qmlObjectNode.hasBindingProperty(name)))
         valueObject->setValue(qmlObjectNode.modelValue(name));
 
     else
@@ -320,10 +352,12 @@ void PropertyEditorQmlBackend::createPropertyEditorValue(const QmlObjectNode &qm
     }
 }
 
-void PropertyEditorQmlBackend::setValue(const QmlObjectNode & , const PropertyName &name, const QVariant &value)
+void PropertyEditorQmlBackend::setValue(const QmlObjectNode &,
+                                        PropertyNameView name,
+                                        const QVariant &value)
 {
     // Vector*D values need to be split into their subcomponents
-    if (value.typeId() == QVariant::Vector2D) {
+    if (value.typeId() == QMetaType::QVector2D) {
         const char *suffix[2] = {"_x", "_y"};
         auto vecValue = value.value<QVector2D>();
         for (int i = 0; i < 2; ++i) {
@@ -334,7 +368,7 @@ void PropertyEditorQmlBackend::setValue(const QmlObjectNode & , const PropertyNa
             if (propertyValue)
                 propertyValue->setValue(QVariant(vecValue[i]));
         }
-    } else if (value.typeId() == QVariant::Vector3D) {
+    } else if (value.typeId() == QMetaType::QVector3D) {
         const char *suffix[3] = {"_x", "_y", "_z"};
         auto vecValue = value.value<QVector3D>();
         for (int i = 0; i < 3; ++i) {
@@ -345,7 +379,7 @@ void PropertyEditorQmlBackend::setValue(const QmlObjectNode & , const PropertyNa
             if (propertyValue)
                 propertyValue->setValue(QVariant(vecValue[i]));
         }
-    } else if (value.typeId() == QVariant::Vector4D) {
+    } else if (value.typeId() == QMetaType::QVector4D) {
         const char *suffix[4] = {"_x", "_y", "_z", "_w"};
         auto vecValue = value.value<QVector4D>();
         for (int i = 0; i < 4; ++i) {
@@ -358,7 +392,7 @@ void PropertyEditorQmlBackend::setValue(const QmlObjectNode & , const PropertyNa
                 propertyValue->setValue(QVariant(vecValue[i]));
         }
     } else {
-        PropertyName propertyName = name;
+        PropertyName propertyName = name.toByteArray();
         propertyName.replace('.', '_');
         auto propertyValue = qobject_cast<PropertyEditorValue *>(variantToQObject(m_backendValuesPropertyMap.value(QString::fromUtf8(propertyName))));
         if (propertyValue)
@@ -366,7 +400,7 @@ void PropertyEditorQmlBackend::setValue(const QmlObjectNode & , const PropertyNa
     }
 }
 
-void PropertyEditorQmlBackend::setExpression(const PropertyName &propName, const QString &exp)
+void PropertyEditorQmlBackend::setExpression(PropertyNameView propName, const QString &exp)
 {
     PropertyEditorValue *propertyValue = propertyValueForName(QString::fromUtf8(propName));
     if (propertyValue)
@@ -380,12 +414,12 @@ QQmlContext *PropertyEditorQmlBackend::context()
 
 PropertyEditorContextObject *PropertyEditorQmlBackend::contextObject()
 {
-    return m_contextObject.data();
+    return m_contextObject.get();
 }
 
 QQuickWidget *PropertyEditorQmlBackend::widget()
 {
-    return m_view;
+    return m_view.get();
 }
 
 void PropertyEditorQmlBackend::setSource(const QUrl &url)
@@ -410,7 +444,7 @@ DesignerPropertyMap &PropertyEditorQmlBackend::backendValuesPropertyMap() {
 }
 
 PropertyEditorTransaction *PropertyEditorQmlBackend::propertyEditorTransaction() {
-    return m_propertyEditorTransaction.data();
+    return m_propertyEditorTransaction.get();
 }
 
 PropertyEditorValue *PropertyEditorQmlBackend::propertyValueForName(const QString &propertyName)
@@ -430,7 +464,7 @@ void PropertyEditorQmlBackend::setup(const QmlObjectNode &qmlObjectNode, const Q
         if (propertyEditorBenchmark().isInfoEnabled())
             time.start();
 
-        for (const auto &property : qmlObjectNode.modelNode().metaInfo().properties()) {
+        for (const auto &property : PropertyEditorUtils::filteredProperties(qmlObjectNode.metaInfo())) {
             auto propertyName = property.name();
             createPropertyEditorValue(qmlObjectNode,
                                       propertyName,
@@ -473,12 +507,9 @@ void PropertyEditorQmlBackend::setup(const QmlObjectNode &qmlObjectNode, const Q
 
         // anchors
         m_backendAnchorBinding.setup(qmlObjectNode.modelNode());
-        context()->setContextProperties(
-            QVector<QQmlContext::PropertyPair>{
-                {{"anchorBackend"}, QVariant::fromValue(&m_backendAnchorBinding)},
-                {{"transaction"}, QVariant::fromValue(m_propertyEditorTransaction.data())}
-            }
-        );
+        context()->setContextProperties(QVector<QQmlContext::PropertyPair>{
+            {{"anchorBackend"}, QVariant::fromValue(&m_backendAnchorBinding)},
+            {{"transaction"}, QVariant::fromValue(m_propertyEditorTransaction.get())}});
 
         contextObject()->setHasMultiSelection(
             !qmlObjectNode.view()->singleSelectedModelNode().isValid());
@@ -514,6 +545,12 @@ void PropertyEditorQmlBackend::setup(const QmlObjectNode &qmlObjectNode, const Q
 
         NodeMetaInfo metaInfo = qmlObjectNode.modelNode().metaInfo();
 
+#ifdef QDS_USE_PROJECTSTORAGE
+        contextObject()->setMajorVersion(-1);
+        contextObject()->setMinorVersion(-1);
+        contextObject()->setMajorQtQuickVersion(-1);
+        contextObject()->setMinorQtQuickVersion(-1);
+#else
         if (metaInfo.isValid()) {
             contextObject()->setMajorVersion(metaInfo.majorVersion());
             contextObject()->setMinorVersion(metaInfo.minorVersion());
@@ -523,7 +560,7 @@ void PropertyEditorQmlBackend::setup(const QmlObjectNode &qmlObjectNode, const Q
             contextObject()->setMajorQtQuickVersion(-1);
             contextObject()->setMinorQtQuickVersion(-1);
         }
-
+#endif
         contextObject()->setMajorQtQuickVersion(qmlObjectNode.view()->majorQtQuickVersion());
         contextObject()->setMinorQtQuickVersion(qmlObjectNode.view()->minorQtQuickVersion());
 
@@ -537,7 +574,7 @@ void PropertyEditorQmlBackend::initialSetup(const TypeName &typeName, const QUrl
 {
     NodeMetaInfo metaInfo = propertyEditor->model()->metaInfo(typeName);
 
-    for (const auto &property : metaInfo.properties()) {
+    for (const auto &property : PropertyEditorUtils::filteredProperties(metaInfo)) {
         setupPropertyEditorValue(property.name(), propertyEditor, property.propertyType());
     }
 
@@ -564,13 +601,10 @@ void PropertyEditorQmlBackend::initialSetup(const TypeName &typeName, const QUrl
     QObject::connect(valueObject, &PropertyEditorValue::valueChanged, &backendValuesPropertyMap(), &DesignerPropertyMap::valueChanged);
     m_backendValuesPropertyMap.insert(QLatin1String("id"), QVariant::fromValue(valueObject));
 
-    context()->setContextProperties(
-        QVector<QQmlContext::PropertyPair>{
-            {{"anchorBackend"}, QVariant::fromValue(&m_backendAnchorBinding)},
-            {{"modelNodeBackend"}, QVariant::fromValue(&m_backendModelNode)},
-            {{"transaction"}, QVariant::fromValue(m_propertyEditorTransaction.data())}
-        }
-    );
+    context()->setContextProperties(QVector<QQmlContext::PropertyPair>{
+        {{"anchorBackend"}, QVariant::fromValue(&m_backendAnchorBinding)},
+        {{"modelNodeBackend"}, QVariant::fromValue(&m_backendModelNode)},
+        {{"transaction"}, QVariant::fromValue(m_propertyEditorTransaction.get())}});
 
     contextObject()->setSpecificsUrl(qmlSpecificsFile);
 
@@ -590,7 +624,9 @@ QString PropertyEditorQmlBackend::propertyEditorResourcesPath()
     return Core::ICore::resourcePath("qmldesigner/propertyEditorQmlSources").toString();
 }
 
-inline bool dotPropertyHeuristic(const QmlObjectNode &node, const NodeMetaInfo &type, const PropertyName &name)
+inline bool dotPropertyHeuristic(const QmlObjectNode &node,
+                                 const NodeMetaInfo &type,
+                                 PropertyNameView name)
 {
     if (!name.contains("."))
         return true;
@@ -598,7 +634,7 @@ inline bool dotPropertyHeuristic(const QmlObjectNode &node, const NodeMetaInfo &
     if (name.count('.') > 1)
         return false;
 
-    QList<QByteArray> list = name.split('.');
+    QList<QByteArray> list = name.toByteArray().split('.');
     const PropertyName parentProperty = list.first();
     const PropertyName itemProperty = list.last();
 
@@ -619,10 +655,20 @@ inline bool dotPropertyHeuristic(const QmlObjectNode &node, const NodeMetaInfo &
     return true;
 }
 
+#ifndef QDS_USE_PROJECTSTORAGE
 QString PropertyEditorQmlBackend::templateGeneration(const NodeMetaInfo &metaType,
                                                      const NodeMetaInfo &superType,
                                                      const QmlObjectNode &node)
 {
+    // If we have dynamically generated specifics file for the type, prefer using it
+    QUrl dynamicUrl = PropertyEditorQmlBackend::getQmlFileUrl(
+        metaType.typeName() + "SpecificsDynamic", metaType);
+
+    if (checkIfUrlExists(dynamicUrl)) {
+        Utils::FilePath fp = Utils::FilePath::fromString(fileFromUrl(dynamicUrl));
+        return QString::fromUtf8(fp.fileContents().value_or(QByteArray()));
+    }
+
     if (!templateConfiguration() || !templateConfiguration()->isValid())
         return QString();
 
@@ -649,7 +695,7 @@ QString PropertyEditorQmlBackend::templateGeneration(const NodeMetaInfo &metaTyp
     PropertyMetaInfos separateSectionProperties;
 
     // Iterate over all properties and isolate the properties which have their own template
-    for (const auto &property : metaType.properties()) {
+    for (const auto &property : PropertyEditorUtils::filteredProperties(metaType)) {
         const auto &propertyName = property.name();
         if (propertyName.startsWith("__"))
             continue; // private API
@@ -703,7 +749,7 @@ QString PropertyEditorQmlBackend::templateGeneration(const NodeMetaInfo &metaTyp
 
     Utils::sort(basicProperties, propertyMetaInfoCompare);
 
-    auto findAndFillTemplate = [&nodes, &node, &needsTypeArgTypes](const PropertyName &label,
+    auto findAndFillTemplate = [&nodes, &node, &needsTypeArgTypes](PropertyNameView label,
                                                                    const PropertyMetaInfo &property) {
         const auto &propertyName = property.name();
         PropertyName underscoreProperty = propertyName;
@@ -749,7 +795,8 @@ QString PropertyEditorQmlBackend::templateGeneration(const NodeMetaInfo &metaTyp
     qmlTemplate += "Column {\n";
     qmlTemplate += "width: parent.width\n";
 
-    if (node.modelNode().isComponent())
+    bool isEditableComponent = node.modelNode().isComponent() && !QmlItemNode(node).isEffectItem();
+    if (isEditableComponent)
         qmlTemplate += "ComponentButton {}\n";
 
     QString qmlInnerTemplate = "";
@@ -839,6 +886,7 @@ QUrl PropertyEditorQmlBackend::getQmlFileUrl(const TypeName &relativeTypeName, c
 {
     return fileToUrl(locateQmlFile(info, QString::fromUtf8(fixTypeNameForPanes(relativeTypeName) + ".qml")));
 }
+#endif // QDS_USE_PROJECTSTORAGE
 
 TypeName PropertyEditorQmlBackend::fixTypeNameForPanes(const TypeName &typeName)
 {
@@ -873,11 +921,18 @@ NodeMetaInfo PropertyEditorQmlBackend::findCommonAncestor(const ModelNode &node)
     return node.metaInfo();
 }
 
+void PropertyEditorQmlBackend::refreshBackendModel()
+{
+    m_backendModelNode.refresh();
+}
+
+#ifndef QDS_USE_PROJECTSTORAGE
 TypeName PropertyEditorQmlBackend::qmlFileName(const NodeMetaInfo &nodeInfo)
 {
     const TypeName fixedTypeName = fixTypeNameForPanes(nodeInfo.typeName());
     return fixedTypeName + "Pane.qml";
 }
+#endif
 
 QUrl PropertyEditorQmlBackend::fileToUrl(const QString &filePath)  {
     QUrl fileUrl;
@@ -923,9 +978,10 @@ void PropertyEditorQmlBackend::emitSelectionChanged()
     m_backendModelNode.emitSelectionChanged();
 }
 
-void PropertyEditorQmlBackend::setValueforLayoutAttachedProperties(const QmlObjectNode &qmlObjectNode, const PropertyName &name)
+void PropertyEditorQmlBackend::setValueforLayoutAttachedProperties(const QmlObjectNode &qmlObjectNode,
+                                                                   PropertyNameView name)
 {
-    PropertyName propertyName = name;
+    PropertyName propertyName = name.toByteArray();
     propertyName.replace("Layout.", "");
     setValue(qmlObjectNode, name, properDefaultLayoutAttachedProperties(qmlObjectNode, propertyName));
 
@@ -939,9 +995,9 @@ void PropertyEditorQmlBackend::setValueforLayoutAttachedProperties(const QmlObje
 }
 
 void PropertyEditorQmlBackend::setValueforInsightAttachedProperties(const QmlObjectNode &qmlObjectNode,
-                                                                    const PropertyName &name)
+                                                                    PropertyNameView name)
 {
-    PropertyName propertyName = name;
+    PropertyName propertyName = name.toByteArray();
     propertyName.replace("InsightCategory.", "");
     setValue(qmlObjectNode, name, properDefaultInsightAttachedProperties(qmlObjectNode, propertyName));
 }
@@ -953,6 +1009,7 @@ void PropertyEditorQmlBackend::setValueforAuxiliaryProperties(const QmlObjectNod
     setValue(qmlObjectNode, propertyName, qmlObjectNode.modelNode().auxiliaryDataWithDefault(key));
 }
 
+#ifndef QDS_USE_PROJECTSTORAGE
 std::tuple<QUrl, NodeMetaInfo> PropertyEditorQmlBackend::getQmlUrlForMetaInfo(const NodeMetaInfo &metaInfo)
 {
     QString className;
@@ -975,9 +1032,11 @@ QString PropertyEditorQmlBackend::locateQmlFile(const NodeMetaInfo &info, const 
 {
     static const QDir fileSystemDir(PropertyEditorQmlBackend::propertyEditorResourcesPath());
 
+    constexpr QLatin1String qmlDesignerSubfolder{"/designer/"};
     const QDir resourcesDir(QStringLiteral(":/propertyEditorQmlSources"));
-    const QDir importDir(info.importDirectoryPath() + Constants::QML_DESIGNER_SUBFOLDER);
-    const QDir importDirVersion(info.importDirectoryPath() + QStringLiteral(".") + QString::number(info.majorVersion()) + Constants::QML_DESIGNER_SUBFOLDER);
+    const QDir importDir(info.importDirectoryPath() + qmlDesignerSubfolder);
+    const QDir importDirVersion(info.importDirectoryPath() + QStringLiteral(".")
+                                + QString::number(info.majorVersion()) + qmlDesignerSubfolder);
 
     const QString relativePathWithoutEnding = relativePath.left(relativePath.size() - 4);
     const QString relativePathWithVersion = QString("%1_%2_%3.qml").arg(relativePathWithoutEnding
@@ -1016,7 +1075,7 @@ QString PropertyEditorQmlBackend::locateQmlFile(const NodeMetaInfo &info, const 
         return QFileInfo::exists(possibleFilePath);
     });
 }
-
+#endif // QDS_USE_PROJECTSTORAGE
 
 } //QmlDesigner
 

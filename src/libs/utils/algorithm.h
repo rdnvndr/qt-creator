@@ -22,7 +22,9 @@
 
 #include <memory>
 #include <optional>
+#include <tuple>
 #include <type_traits>
+#include <utility>
 
 namespace Utils
 {
@@ -453,6 +455,30 @@ template<typename C, typename R, typename S>
 bool contains(const C &container, R S::*member)
 {
     return anyOf(container, std::mem_fn(member));
+}
+
+template<typename T, std::size_t Size, typename V>
+[[nodiscard]] bool contains(const T (&array)[Size], const V &value)
+{
+    auto begin = std::begin(array);
+    auto end = std::end(array);
+
+    auto found = std::find(begin, end, value);
+
+    return found != end;
+}
+
+//////////////////
+// containsInSorted
+/////////////////
+
+template<typename C, typename V>
+[[nodiscard]] bool containsInSorted(const C &container, const V &value)
+{
+    auto begin = std::begin(container);
+    auto end = std::end(container);
+
+    return std::binary_search(begin, end, value);
 }
 
 //////////////////
@@ -982,6 +1008,14 @@ C filtered(const C &container, R (S::*predicate)() const)
     C out;
     std::copy_if(std::begin(container), std::end(container),
                  inserter(out), std::mem_fn(predicate));
+    return out;
+}
+
+template<typename C, typename R, typename S>
+Q_REQUIRED_RESULT C filtered(const C &container, R S::*predicate)
+{
+    C out;
+    std::copy_if(std::begin(container), std::end(container), inserter(out), std::mem_fn(predicate));
     return out;
 }
 
@@ -1530,6 +1564,17 @@ template <class Key, class T>
 void addToHash(QHash<Key, T> *result, const QHash<Key, T> &additionalContents)
 {
     result->insert(additionalContents);
+}
+
+template <typename Tuple, std::size_t... I>
+static std::size_t tupleHashHelper(uint seed, const Tuple &tuple, std::index_sequence<I...>)
+{
+    return qHashMulti(seed, (std::get<I>(tuple), ...));
+}
+
+template<typename... T> std::size_t qHash(const std::tuple<T...> &tuple, uint seed = 0)
+{
+    return tupleHashHelper(seed, tuple, std::make_index_sequence<sizeof...(T)>());
 }
 
 // Workaround for missing information from QSet::insert()

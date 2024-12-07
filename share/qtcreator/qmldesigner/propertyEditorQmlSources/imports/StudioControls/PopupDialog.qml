@@ -45,7 +45,7 @@ QtObject {
         window.raise()
     }
 
-    function show(target: Item) {
+    function show(target: Item): void {
         var originGlobal = target.mapToGlobal(0, 0)
         root.__itemGlobal = Qt.rect(originGlobal.x, originGlobal.y, target.width, target.height)
         //root.chevronVisible = true
@@ -104,7 +104,7 @@ QtObject {
                 return root.maximumHeight + (2 * window.margin)
         }
         visible: false
-        flags: Qt.FramelessWindowHint | Qt.Dialog | Qt.WindowStaysOnTopHint
+        flags: Qt.FramelessWindowHint | Qt.Tool
         color: "transparent"
 
         onClosing: function (close) {
@@ -154,7 +154,7 @@ QtObject {
             return true
         }
 
-        function getRegions(source: rect, target: rect) {
+        function getRegions(source: rect, target: rect): var {
             var edges = {}
 
             // Overlaps or Inside
@@ -229,7 +229,7 @@ QtObject {
             return edges
         }
 
-        function popoverGeometry(edge: int, anchor: point, region: rect) {
+        function popoverGeometry(edge: int, anchor: point, region: rect): rect {
             if (edge === Qt.TopEdge) {
                 let height = Math.min(window.height, region.height)
                 return Qt.rect(Math.max(region.x,

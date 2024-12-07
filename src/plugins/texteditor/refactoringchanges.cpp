@@ -53,12 +53,12 @@ RefactoringFile::RefactoringFile(const FilePath &filePath) : m_filePath(filePath
 
 bool RefactoringFile::create(const QString &contents, bool reindent, bool openInEditor)
 {
-    if (m_filePath.isEmpty() || m_filePath.exists() || m_editor)
+    if (m_filePath.isEmpty() || m_filePath.exists() || m_editor || m_document)
         return false;
 
     // Create a text document for the new file:
-    auto document = new QTextDocument;
-    QTextCursor cursor(document);
+    m_document = new QTextDocument;
+    QTextCursor cursor(m_document);
     cursor.beginEditBlock();
     cursor.insertText(contents);
 
@@ -74,8 +74,9 @@ bool RefactoringFile::create(const QString &contents, bool reindent, bool openIn
     TextFileFormat format;
     format.codec = EditorManager::defaultTextCodec();
     QString error;
-    bool saveOk = format.writeFile(m_filePath, document->toPlainText(), &error);
-    delete document;
+    bool saveOk = format.writeFile(m_filePath, m_document->toPlainText(), &error);
+    delete m_document;
+    m_document = nullptr;
     if (!saveOk)
         return false;
 
@@ -214,6 +215,9 @@ void RefactoringFile::setOpenEditor(bool activate, int pos)
 
 bool RefactoringFile::apply()
 {
+    if (m_changes.isEmpty())
+        return true;
+
     // test file permissions
     if (!m_filePath.isWritableFile()) {
         ReadOnlyFilesDialog roDialog(m_filePath, ICore::dialogParent());
@@ -276,7 +280,7 @@ bool RefactoringFile::apply()
 
             fileChanged();
             if (withUnmodifiedEditor && EditorManager::autoSaveAfterRefactoring())
-                m_editor->textDocument()->save(nullptr, m_filePath, false);
+                DocumentManager::saveDocument(m_editor->textDocument(), m_filePath);
         }
     }
 
@@ -285,6 +289,12 @@ bool RefactoringFile::apply()
 
     m_appliedOnce = true;
     return result;
+}
+
+bool RefactoringFile::apply(const Utils::ChangeSet &changeSet)
+{
+    setChangeSet(changeSet);
+    return apply();
 }
 
 void RefactoringFile::setupFormattingRanges(const QList<ChangeSet::EditOp> &replaceList)
@@ -347,6 +357,7 @@ void RefactoringFile::doFormatting()
         indenterOwner.reset(factory ? factory->createIndenter(document)
                                     : new PlainTextIndenter(document));
         indenter = indenterOwner.get();
+        indenter->setFileName(filePath());
         tabSettings = TabSettings::settingsForFile(filePath());
     }
     QTC_ASSERT(document, return);
@@ -359,7 +370,7 @@ void RefactoringFile::doFormatting()
     Utils::sort(m_formattingCursors, [](const auto &tc1, const auto &tc2) {
         return tc1.first.selectionStart() < tc2.first.selectionStart();
     });
-    static const QString clangFormatLineRemovalBlocker("// QTC_TEMP");
+    static const QString clangFormatLineRemovalBlocker("");
     for (auto &[formattingCursor, _] : m_formattingCursors) {
         const QTextBlock firstBlock = document->findBlock(formattingCursor.selectionStart());
         const QTextBlock lastBlock = document->findBlock(formattingCursor.selectionEnd());

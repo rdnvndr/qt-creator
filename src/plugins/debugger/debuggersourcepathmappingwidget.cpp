@@ -9,10 +9,11 @@
 
 #include <utils/buildablehelperlibrary.h>
 #include <utils/fancylineedit.h>
+#include <utils/fileutils.h>
 #include <utils/hostosinfo.h>
 #include <utils/layoutbuilder.h>
 #include <utils/pathchooser.h>
-#include <utils/process.h>
+#include <utils/qtcprocess.h>
 #include <utils/qtcassert.h>
 #include <utils/variablechooser.h>
 
@@ -309,7 +310,7 @@ QString DebuggerSourcePathMappingWidget::editSourceField() const
 
 QString DebuggerSourcePathMappingWidget::editTargetField() const
 {
-    return m_targetChooser->rawFilePath().toString();
+    return m_targetChooser->unexpandedFilePath().toString();
 }
 
 void DebuggerSourcePathMappingWidget::setEditFieldMapping(const Mapping &m)
@@ -467,7 +468,7 @@ bool SourcePathMapAspect::isDirty()
     return m_internal != m_buffer;
 }
 
-void SourcePathMapAspect::addToLayout(Layouting::LayoutItem &parent)
+void SourcePathMapAspect::addToLayoutImpl(Layouting::Layout &parent)
 {
     QTC_CHECK(!d->m_widget);
     d->m_widget = createSubWidget<DebuggerSourcePathMappingWidget>();

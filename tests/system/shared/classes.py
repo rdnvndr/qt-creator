@@ -25,7 +25,7 @@ class Targets:
     @staticmethod
     def availableTargetClasses(ignoreValidity=False):
         availableTargets = set(Targets.ALL_TARGETS)
-        if platform.system() == 'Darwin':
+        if platform.system() not in ('Windows', 'Microsoft'):
             availableTargets.remove(Targets.DESKTOP_5_4_1_GCC)
         return availableTargets
 
@@ -56,7 +56,7 @@ class ProjectSettings:
 
 # this class defines some constants for the views of the creator's MainWindow
 class ViewConstants:
-    WELCOME, EDIT, DESIGN, DEBUG, PROJECTS, HELP = range(6)
+    WELCOME, EDIT, DESIGN, DEBUG, PROJECTS, EXTENSIONS, HELP = range(7)
     FIRST_AVAILABLE = 0
     # always adjust the following to the highest value of the available ViewConstants when adding new
     LAST_AVAILABLE = HELP
@@ -84,7 +84,7 @@ class QtPath:
     def getPaths(pathSpec):
         qtTargets = [Targets.DESKTOP_5_10_1_DEFAULT, Targets.DESKTOP_5_14_1_DEFAULT,
                      Targets.DESKTOP_6_2_4]
-        if platform.system() != 'Darwin':
+        if platform.system() in ('Windows', 'Microsoft'):
             qtTargets.append(Targets.DESKTOP_5_4_1_GCC)
         if pathSpec == QtPath.DOCS:
             return map(lambda target: QtPath.docsPath(target), qtTargets)

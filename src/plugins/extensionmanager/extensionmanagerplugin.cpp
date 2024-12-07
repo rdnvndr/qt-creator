@@ -5,6 +5,9 @@
 
 #include "extensionmanagerconstants.h"
 #include "extensionmanagerwidget.h"
+#ifdef WITH_TESTS
+#include "extensionmanager_test.h"
+#endif // WITH_TESTS
 
 #include <coreplugin/actionmanager/actioncontainer.h>
 #include <coreplugin/actionmanager/actionmanager.h>
@@ -15,16 +18,9 @@
 #include <coreplugin/imode.h>
 
 #include <extensionsystem/iplugin.h>
-#include <extensionsystem/pluginspec.h>
 
 #include <utils/icon.h>
-#include <utils/layoutbuilder.h>
-#include <utils/styledbar.h>
 
-#include <QAction>
-#include <QMainWindow>
-
-using namespace ExtensionSystem;
 using namespace Core;
 using namespace Utils;
 
@@ -41,22 +37,10 @@ public:
         setDisplayName(Tr::tr("Extensions"));
         const Icon FLAT({{":/extensionmanager/images/mode_extensionmanager_mask.png",
                           Theme::IconsBaseColor}});
-        const Icon FLAT_ACTIVE({{":/extensionmanager/images/mode_extensionmanager_mask.png",
-                                 Theme::IconsModeWelcomeActiveColor}});
-        setIcon(Utils::Icon::modeIcon(FLAT, FLAT, FLAT_ACTIVE));
+        setIcon(Icon::sideBarIcon(FLAT, FLAT));
         setPriority(72);
-
-        using namespace Layouting;
-        auto widget = Column {
-            new StyledBar,
-            new ExtensionManagerWidget,
-            noMargin, spacing(0),
-        }.emerge();
-
-        setWidget(widget);
+        setWidgetCreator(&createExtensionManagerWidget);
     }
-
-    ~ExtensionManagerMode() { delete widget(); }
 };
 
 class ExtensionManagerPlugin final : public ExtensionSystem::IPlugin
@@ -73,6 +57,10 @@ public:
     void initialize() final
     {
         m_mode = new ExtensionManagerMode;
+
+#ifdef WITH_TESTS
+        addTestCreator(createExtensionsModelTest);
+#endif // WITH_TESTS
     }
 
 private:

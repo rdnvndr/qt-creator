@@ -5,17 +5,23 @@
 
 #include "bindingproperty.h"
 #include "createtexture.h"
-#include "designmodecontext.h"
 #include "externaldependenciesinterface.h"
 #include "materialbrowsermodel.h"
 #include "materialbrowsertexturesmodel.h"
 #include "materialbrowserwidget.h"
-#include "nodeabstractproperty.h"
-#include "nodeinstanceview.h"
-#include "nodemetainfo.h"
-#include "qmldesignerconstants.h"
-#include "qmlobjectnode.h"
-#include "variantproperty.h"
+
+#include <bindingproperty.h>
+#include <createtexture.h>
+#include <designmodewidget.h>
+#include <externaldependenciesinterface.h>
+#include <nodeabstractproperty.h>
+#include <nodeinstanceview.h>
+#include <nodemetainfo.h>
+#include <qmldesignerconstants.h>
+#include <qmldesignerplugin.h>
+#include <qmlobjectnode.h>
+#include <variantproperty.h>
+#include <utils3d.h>
 
 #include <coreplugin/icore.h>
 
@@ -46,6 +52,9 @@ MaterialBrowserView::MaterialBrowserView(AsynchronousImageCache &imageCache,
 {
     m_previewTimer.setSingleShot(true);
     connect(&m_previewTimer, &QTimer::timeout, this, &MaterialBrowserView::requestPreviews);
+
+    m_selectionTimer.setSingleShot(true);
+    connect(&m_selectionTimer, &QTimer::timeout, this, &MaterialBrowserView::handleModelSelectionChange);
 }
 
 MaterialBrowserView::~MaterialBrowserView()
@@ -61,33 +70,35 @@ WidgetInfo MaterialBrowserView::widgetInfo()
     if (m_widget.isNull()) {
         m_widget = new MaterialBrowserWidget(m_imageCache, this);
 
-        auto matEditorContext = new Internal::MaterialBrowserContext(m_widget.data());
-        Core::ICore::addContextObject(matEditorContext);
-
         // custom notifications below are sent to the MaterialEditor
         MaterialBrowserModel *matBrowserModel = m_widget->materialBrowserModel().data();
 
-        connect(matBrowserModel, &MaterialBrowserModel::selectedIndexChanged, this, [&] (int idx) {
-            ModelNode matNode = m_widget->materialBrowserModel()->materialAt(idx);
-            emitCustomNotification("selected_material_changed", {matNode}, {});
+        connect(matBrowserModel, &MaterialBrowserModel::selectedIndexChanged, this, [this](int idx) {
+            if (!model())
+                return;
+            m_pendingMaterialIndex = idx;
+            m_selectionTimer.start(0);
         });
 
         connect(matBrowserModel, &MaterialBrowserModel::applyToSelectedTriggered, this,
                 [&] (const ModelNode &material, bool add) {
-            emitCustomNotification("apply_to_selected_triggered", {material}, {add});
+            Utils3D::applyMaterialToModels(this, material, Utils3D::getSelectedModels(this), add);
         });
 
         connect(matBrowserModel, &MaterialBrowserModel::renameMaterialTriggered, this,
                 [&] (const ModelNode &material, const QString &newName) {
+            QmlDesignerPlugin::instance()->mainWidget()->showDockWidget("MaterialEditor");
             emitCustomNotification("rename_material", {material}, {newName});
         });
 
         connect(matBrowserModel, &MaterialBrowserModel::addNewMaterialTriggered, this, [&] {
+            QmlDesignerPlugin::instance()->mainWidget()->showDockWidget("MaterialEditor");
             emitCustomNotification("add_new_material");
         });
 
         connect(matBrowserModel, &MaterialBrowserModel::duplicateMaterialTriggered, this,
                 [&] (const ModelNode &material) {
+            QmlDesignerPlugin::instance()->mainWidget()->showDockWidget("MaterialEditor");
             emitCustomNotification("duplicate_material", {material});
         });
 
@@ -99,26 +110,33 @@ WidgetInfo MaterialBrowserView::widgetInfo()
             executeInTransaction(__FUNCTION__, [&] {
                 if (all) { // all material properties copied
                     // remove current properties
-                    PropertyNameList propNames;
                     if (mat.isInBaseState()) {
                         const QList<AbstractProperty> baseProps = material.properties();
+                        PropertyNameViews propNames;
                         for (const auto &baseProp : baseProps) {
                             if (!baseProp.isDynamic())
                                 propNames.append(baseProp.name());
                         }
+
+                        for (PropertyNameView propName : propNames) {
+                            if (propName != "objectName" && propName != "data")
+                                mat.removeProperty(propName);
+                        }
                     } else {
                         QmlPropertyChanges changes = mat.propertyChangeForCurrentState();
                         if (changes.isValid()) {
+                            PropertyNameViews propNames;
                             const QList<AbstractProperty> changedProps = changes.targetProperties();
                             for (const auto &changedProp : changedProps) {
                                 if (!changedProp.isDynamic())
                                     propNames.append(changedProp.name());
                             }
+
+                            for (PropertyNameView propName : propNames) {
+                                if (propName != "objectName" && propName != "data")
+                                    mat.removeProperty(propName);
+                            }
                         }
-                    }
-                    for (const PropertyName &propName : std::as_const(propNames)) {
-                        if (propName != "objectName" && propName != "data")
-                            mat.removeProperty(propName);
                     }
                 }
 
@@ -126,7 +144,7 @@ WidgetInfo MaterialBrowserView::widgetInfo()
                 for (const QmlDesigner::MaterialBrowserModel::PropertyCopyData &propData : propDatas) {
                     if (propData.isValid) {
                         const bool isDynamic = !propData.dynamicTypeName.isEmpty();
-                        const bool isBaseState = currentState().isBaseState();
+                        const bool isBaseState = QmlModelState::isBaseState(currentStateNode());
                         const bool hasProperty = mat.hasProperty(propData.name);
                         if (propData.isBinding) {
                             if (isDynamic && (!hasProperty || isBaseState)) {
@@ -156,12 +174,15 @@ WidgetInfo MaterialBrowserView::widgetInfo()
 
         // custom notifications below are sent to the TextureEditor
         MaterialBrowserTexturesModel *texturesModel = m_widget->materialBrowserTexturesModel().data();
-        connect(texturesModel, &MaterialBrowserTexturesModel::selectedIndexChanged, this, [&] (int idx) {
-            ModelNode texNode = m_widget->materialBrowserTexturesModel()->textureAt(idx);
-            emitCustomNotification("selected_texture_changed", {texNode});
+        connect(texturesModel, &MaterialBrowserTexturesModel::selectedIndexChanged, this, [this](int idx) {
+            if (!model())
+                return;
+            m_pendingTextureIndex = idx;
+            m_selectionTimer.start(0);
         });
         connect(texturesModel, &MaterialBrowserTexturesModel::duplicateTextureTriggered, this,
                 [&] (const ModelNode &texture) {
+            QmlDesignerPlugin::instance()->mainWidget()->showDockWidget("TextureEditor");
             emitCustomNotification("duplicate_texture", {texture});
         });
 
@@ -175,25 +196,29 @@ WidgetInfo MaterialBrowserView::widgetInfo()
 
         connect(texturesModel, &MaterialBrowserTexturesModel::applyToSelectedModelTriggered, this,
                 [&] (const ModelNode &texture) {
-            if (m_selectedModels.size() != 1)
+            const QList<ModelNode> selectedModels = Utils3D::getSelectedModels(this);
+
+            if (selectedModels.size() != 1)
                 return;
-            applyTextureToModel3D(m_selectedModels[0], texture);
+            applyTextureToModel3D(selectedModels[0], texture);
         });
 
         connect(texturesModel, &MaterialBrowserTexturesModel::addNewTextureTriggered, this, [&] {
+            QmlDesignerPlugin::instance()->mainWidget()->showDockWidget("TextureEditor");
             emitCustomNotification("add_new_texture");
         });
 
-        connect(texturesModel, &MaterialBrowserTexturesModel::updateSceneEnvStateRequested, this, [&]() {
+        connect(texturesModel, &MaterialBrowserTexturesModel::updateSceneEnvStateRequested, this, [this] {
             ModelNode activeSceneEnv = CreateTexture(this).resolveSceneEnv(m_sceneId);
             const bool sceneEnvExists = activeSceneEnv.isValid();
             m_widget->materialBrowserTexturesModel()->setHasSceneEnv(sceneEnvExists);
         });
 
-        connect(texturesModel, &MaterialBrowserTexturesModel::updateModelSelectionStateRequested, this, [&]() {
+        connect(texturesModel, &MaterialBrowserTexturesModel::updateModelSelectionStateRequested, this, [this] {
             bool hasModel = false;
-            if (m_selectedModels.size() == 1)
-                hasModel = getMaterialOfModel(m_selectedModels.at(0)).isValid();
+            const QList<ModelNode> selectedModels = Utils3D::getSelectedModels(this);
+            if (selectedModels.size() == 1)
+                hasModel = Utils3D::getMaterialOfModel(selectedModels.at(0)).isValid();
             m_widget->materialBrowserTexturesModel()->setHasSingleModelSelection(hasModel);
         });
 
@@ -208,7 +233,6 @@ WidgetInfo MaterialBrowserView::widgetInfo()
     return createWidgetInfo(m_widget.data(),
                             "MaterialBrowser",
                             WidgetInfo::LeftPane,
-                            0,
                             tr("Material Browser"),
                             tr("Material Browser view"));
 }
@@ -240,7 +264,7 @@ void MaterialBrowserView::modelAttached(Model *model)
         loadPropertyGroups(); // Needs the delay because it uses metaInfo
     });
 
-    m_sceneId = model->active3DSceneId();
+    m_sceneId = Utils3D::active3DSceneId(model);
 }
 
 void MaterialBrowserView::refreshModel(bool updateImages)
@@ -268,6 +292,9 @@ void MaterialBrowserView::refreshModel(bool updateImages)
 
     if (updateImages)
         updateMaterialsPreview();
+
+    updateMaterialSelection();
+    updateTextureSelection();
 }
 
 void MaterialBrowserView::updateMaterialsPreview()
@@ -275,6 +302,33 @@ void MaterialBrowserView::updateMaterialsPreview()
     const QList<ModelNode> materials = m_widget->materialBrowserModel()->materials();
     for (const ModelNode &node : materials)
         m_previewRequests.insert(node);
+    if (!m_previewRequests.isEmpty())
+        m_previewTimer.start(0);
+}
+
+template<typename T, typename> // T can be either BindingProperty or VariantProperty
+void MaterialBrowserView::updatePropertyList(const QList<T> &propertyList)
+{
+    for (const AbstractProperty &property : propertyList) {
+        ModelNode node(property.parentModelNode());
+        if (isMaterial(node)) {
+            if (property.name() == "objectName")
+                m_widget->materialBrowserModel()->updateMaterialName(node);
+            else
+                m_previewRequests << node;
+        } else if (isTexture(node)) {
+            QmlObjectNode selectedTex = m_widget->materialBrowserTexturesModel()->selectedTexture();
+            if (property.name() == "source")
+                m_widget->materialBrowserTexturesModel()->updateTextureSource(node);
+            else if (property.name() == "objectName")
+                m_widget->materialBrowserTexturesModel()->updateTextureName(node);
+        } else {
+            QmlObjectNode selectedTex = m_widget->materialBrowserTexturesModel()->selectedTexture();
+            if (property.name() == "source" && selectedTex.propertyChangeForCurrentState() == node)
+                m_widget->materialBrowserTexturesModel()->updateTextureSource(selectedTex);
+        }
+    }
+
     if (!m_previewRequests.isEmpty())
         m_previewTimer.start(0);
 }
@@ -297,6 +351,8 @@ void MaterialBrowserView::modelAboutToBeDetached(Model *model)
     m_widget->materialBrowserModel()->setMaterials({}, m_hasQuick3DImport);
     m_widget->materialBrowserModel()->setHasMaterialLibrary(false);
     m_widget->clearPreviewCache();
+    m_pendingMaterialIndex = -1;
+    m_pendingTextureIndex = -1;
 
     if (m_propertyGroupsLoaded) {
         m_propertyGroupsLoaded = false;
@@ -306,23 +362,21 @@ void MaterialBrowserView::modelAboutToBeDetached(Model *model)
     AbstractView::modelAboutToBeDetached(model);
 }
 
-void MaterialBrowserView::selectedNodesChanged(const QList<ModelNode> &selectedNodeList,
+void MaterialBrowserView::selectedNodesChanged([[maybe_unused]] const QList<ModelNode> &selectedNodeList,
                                                [[maybe_unused]] const QList<ModelNode> &lastSelectedNodeList)
 {
-    m_selectedModels = Utils::filtered(selectedNodeList, [](const ModelNode &node) {
-        return node.metaInfo().isQtQuick3DModel();
-    });
+    const QList<ModelNode> selectedModels = Utils3D::getSelectedModels(this);
 
-    m_widget->materialBrowserModel()->setHasModelSelection(!m_selectedModels.isEmpty());
+    m_widget->materialBrowserModel()->setHasModelSelection(!selectedModels.isEmpty());
 
     // the logic below selects the material of the first selected model if auto selection is on
     if (!m_autoSelectModelMaterial)
         return;
 
-    if (selectedNodeList.size() > 1 || m_selectedModels.isEmpty())
+    if (selectedNodeList.size() > 1 || selectedModels.isEmpty())
         return;
 
-    ModelNode mat = getMaterialOfModel(m_selectedModels.at(0));
+    ModelNode mat = Utils3D::getMaterialOfModel(selectedModels.at(0));
 
     if (!mat.isValid())
         return;
@@ -332,9 +386,16 @@ void MaterialBrowserView::selectedNodesChanged(const QList<ModelNode> &selectedN
     m_widget->materialBrowserModel()->selectMaterial(idx);
 }
 
-void MaterialBrowserView::modelNodePreviewPixmapChanged(const ModelNode &node, const QPixmap &pixmap)
+void MaterialBrowserView::modelNodePreviewPixmapChanged(const ModelNode &node,
+                                                        const QPixmap &pixmap,
+                                                        const QByteArray &requestId)
 {
-    if (isMaterial(node))
+    if (!isMaterial(node))
+        return;
+
+    // There might be multiple requests for different preview pixmap sizes.
+    // Here only the one with the default size is picked.
+    if (requestId.isEmpty())
         m_widget->updateMaterialPreview(node, pixmap);
 }
 
@@ -342,32 +403,24 @@ void MaterialBrowserView::nodeIdChanged(const ModelNode &node, [[maybe_unused]] 
                                                                [[maybe_unused]] const QString &oldId)
 {
     if (isTexture(node))
-        m_widget->materialBrowserTexturesModel()->updateTextureSource(node);
+        m_widget->materialBrowserTexturesModel()->updateTextureId(node);
 }
 
 void MaterialBrowserView::variantPropertiesChanged(const QList<VariantProperty> &propertyList,
                                                    [[maybe_unused]] PropertyChangeFlags propertyChange)
 {
-    for (const VariantProperty &property : propertyList) {
-        ModelNode node(property.parentModelNode());
-        if (isMaterial(node) && property.name() == "objectName") {
-            m_widget->materialBrowserModel()->updateMaterialName(node);
-        } else if (property.name() == "source") {
-            QmlObjectNode selectedTex = m_widget->materialBrowserTexturesModel()->selectedTexture();
-            if (isTexture(node))
-                m_widget->materialBrowserTexturesModel()->updateTextureSource(node);
-            else if (selectedTex.propertyChangeForCurrentState() == node)
-                m_widget->materialBrowserTexturesModel()->updateTextureSource(selectedTex);
-        }
-    }
+    updatePropertyList(propertyList);
+}
+
+void MaterialBrowserView::bindingPropertiesChanged(const QList<BindingProperty> &propertyList,
+                                                   [[maybe_unused]] PropertyChangeFlags propertyChange)
+{
+    updatePropertyList(propertyList);
 }
 
 void MaterialBrowserView::propertiesRemoved(const QList<AbstractProperty> &propertyList)
 {
-    for (const AbstractProperty &prop : propertyList) {
-        if (isTexture(prop.parentModelNode()) && prop.name() == "source")
-            m_widget->materialBrowserTexturesModel()->updateTextureSource(prop.parentModelNode());
-    }
+    updatePropertyList(propertyList);
 }
 
 void MaterialBrowserView::nodeReparented(const ModelNode &node,
@@ -445,8 +498,13 @@ void QmlDesigner::MaterialBrowserView::loadPropertyGroups()
     if (!m_hasQuick3DImport || m_propertyGroupsLoaded || !model())
         return;
 
+#ifdef QDS_USE_PROJECTSTORAGE
+    // TODO
+    QString matPropsPath;
+#else
     QString matPropsPath = model()->metaInfo("QtQuick3D.Material").importDirectoryPath()
                                + "/designer/propertyGroups.json";
+#endif
     m_propertyGroupsLoaded = m_widget->materialBrowserModel()->loadPropertyGroups(matPropsPath);
 }
 
@@ -454,26 +512,63 @@ void MaterialBrowserView::requestPreviews()
 {
     if (model() && model()->nodeInstanceView()) {
         for (const auto &node : std::as_const(m_previewRequests))
-            model()->nodeInstanceView()->previewImageDataForGenericNode(node, {});
+            static_cast<const NodeInstanceView *>(model()->nodeInstanceView())
+                ->previewImageDataForGenericNode(node, {});
     }
     m_previewRequests.clear();
 }
 
-ModelNode MaterialBrowserView::getMaterialOfModel(const ModelNode &model, int idx)
+void MaterialBrowserView::updateMaterialSelection()
 {
-    QmlObjectNode qmlObjNode(model);
-    QString matExp = qmlObjNode.expression("materials");
-    if (matExp.isEmpty())
-        return {};
+    QTC_ASSERT(model(), return);
 
-    const QStringList mats = matExp.remove('[').remove(']').split(',', Qt::SkipEmptyParts);
-    if (mats.isEmpty())
-        return {};
+    ModelNode node = Utils3D::selectedMaterial(this);
+    int idx = m_widget->materialBrowserModel()->materialIndex(node);
+    if (idx == -1 && !m_widget->materialBrowserModel()->isEmpty())
+        idx = 0;
+    if (idx != -1) {
+        m_widget->materialBrowserModel()->selectMaterial(idx);
+        m_widget->focusMaterialSection(true);
+    }
+}
 
-    ModelNode mat = modelNodeForId(mats.at(idx));
-    QTC_ASSERT(mat.isValid(), return {});
+void MaterialBrowserView::updateTextureSelection()
+{
+    QTC_ASSERT(model(), return);
 
-    return mat;
+    ModelNode node = Utils3D::selectedTexture(this);
+    int idx = m_widget->materialBrowserTexturesModel()->textureIndex(node);
+    if (idx == -1 && !m_widget->materialBrowserTexturesModel()->isEmpty())
+        idx = 0;
+    if (idx != -1) {
+        m_widget->materialBrowserTexturesModel()->selectTexture(idx);
+        m_widget->materialBrowserTexturesModel()->refreshSearch();
+        m_widget->focusMaterialSection(false);
+    }
+}
+
+// This method is asynchronously called in response to a selection change in the material and
+// texture models to update the selection state to the main scene model.
+void MaterialBrowserView::handleModelSelectionChange()
+{
+    if (!model())
+        return;
+
+    if (m_pendingMaterialIndex >= 0) {
+        ModelNode matNode = m_widget->materialBrowserModel()->materialAt(m_pendingMaterialIndex);
+        ModelNode current = Utils3D::selectedMaterial(this);
+        if (current != matNode)
+            Utils3D::selectMaterial(matNode);
+        m_pendingMaterialIndex = -1;
+    }
+
+    if (m_pendingTextureIndex >= 0) {
+        ModelNode texNode = m_widget->materialBrowserTexturesModel()->textureAt(m_pendingTextureIndex);
+        ModelNode current = Utils3D::selectedTexture(this);
+        if (current != texNode)
+            Utils3D::selectTexture(texNode);
+        m_pendingTextureIndex = -1;
+    }
 }
 
 void MaterialBrowserView::importsChanged([[maybe_unused]] const Imports &addedImports,
@@ -497,32 +592,10 @@ void MaterialBrowserView::customNotification(const AbstractView *view,
                                              const QList<ModelNode> &nodeList,
                                              const QList<QVariant> &data)
 {
-    if (view == this && identifier != "select_texture")
+    if (view == this)
         return;
 
-    if (identifier == "select_material") {
-        ModelNode matNode;
-        if (!data.isEmpty() && !m_selectedModels.isEmpty()) {
-            ModelNode model3D = m_selectedModels.at(0);
-            QTC_ASSERT(model3D.isValid(), return);
-            matNode = getMaterialOfModel(model3D, data[0].toInt());
-        } else {
-            matNode = nodeList.first();
-        }
-        QTC_ASSERT(matNode.isValid(), return);
-
-        int idx = m_widget->materialBrowserModel()->materialIndex(matNode);
-        if (idx != -1)
-            m_widget->materialBrowserModel()->selectMaterial(idx);
-    } else if (identifier == "select_texture") {
-        int idx = m_widget->materialBrowserTexturesModel()->textureIndex(nodeList.first());
-        if (idx != -1) {
-            m_widget->materialBrowserTexturesModel()->selectTexture(idx);
-            m_widget->materialBrowserTexturesModel()->refreshSearch();
-            if (!data.isEmpty() && data[0].toBool())
-                m_widget->focusMaterialSection(false);
-        }
-    } else if (identifier == "refresh_material_browser") {
+    if (identifier == "refresh_material_browser") {
         QTimer::singleShot(0, model(), [this] {
             refreshModel(true);
         });
@@ -533,8 +606,6 @@ void MaterialBrowserView::customNotification(const AbstractView *view,
         applyTextureToModel3D(nodeList.at(0));
     } else if (identifier == "apply_texture_to_model3D") {
         applyTextureToModel3D(nodeList.at(0), nodeList.at(1));
-    } else if (identifier == "apply_texture_to_material") {
-        applyTextureToMaterial({nodeList.at(0)}, nodeList.at(1));
     } else if (identifier == "focus_material_section") {
         m_widget->focusMaterialSection(true);
     }
@@ -583,6 +654,18 @@ void MaterialBrowserView::instancePropertyChanged(const QList<QPair<ModelNode, P
         // of delay to reduce unnecessary rendering
         m_previewTimer.start(500);
     }
+}
+
+void MaterialBrowserView::auxiliaryDataChanged(const ModelNode &,
+                                               AuxiliaryDataKeyView type,
+                                               const QVariant &data)
+{
+    if (type == Utils3D::active3dSceneProperty)
+        active3DSceneChanged(data.toInt());
+    else if (type == Utils3D::matLibSelectedMaterialProperty)
+        updateMaterialSelection();
+    else if ( type == Utils3D::matLibSelectedTextureProperty)
+        updateTextureSelection();
 }
 
 void MaterialBrowserView::applyTextureToModel3D(const QmlObjectNode &model3D, const ModelNode &texture)

@@ -123,9 +123,9 @@ void BuildDirectoryAspect::fromMap(const Store &map)
     }
 }
 
-void BuildDirectoryAspect::addToLayout(Layouting::LayoutItem &parent)
+void BuildDirectoryAspect::addToLayoutImpl(Layouting::Layout &parent)
 {
-    FilePathAspect::addToLayout(parent);
+    FilePathAspect::addToLayoutImpl(parent);
     d->genericProblemSpacer = new QLabel;
     d->specialProblemSpacer = new QLabel;
     d->genericProblemLabel = new InfoLabel({}, InfoLabel::Warning);
@@ -150,7 +150,7 @@ void BuildDirectoryAspect::addToLayout(Layouting::LayoutItem &parent)
         });
     }
 
-    const auto buildDevice = DeviceKitAspect::device(d->target->kit());
+    const auto buildDevice = BuildDeviceKitAspect::device(d->target->kit());
     if (buildDevice && buildDevice->type() != ProjectExplorer::Constants::DESKTOP_DEVICE_TYPE)
         pathChooser()->setAllowPathFromDevice(true);
     else
@@ -190,15 +190,15 @@ QString BuildDirectoryAspect::updateProblemLabelsHelper(const QString &value)
 
     QString genericProblem;
     QString genericProblemLabelString;
-    if (ProjectExplorerPlugin::projectExplorerSettings().warnAgainstNonAsciiBuildDir) {
+    if (projectExplorerSettings().warnAgainstNonAsciiBuildDir) {
         const auto isInvalid = [](QChar c) { return c.isSpace() || !isascii(c.toLatin1()); };
         if (const auto invalidChar = Utils::findOr(value, std::nullopt, isInvalid)) {
             genericProblem = Tr::tr(
                                  "Build directory contains potentially problematic character \"%1\".")
                                  .arg(*invalidChar);
             genericProblemLabelString
-                = genericProblem
-                  + Tr::tr(" This warning can be suppressed <a href=\"dummy\">here</a>.");
+                = genericProblem + " "
+                  + Tr::tr("This warning can be suppressed <a href=\"dummy\">here</a>.");
         }
     }
 

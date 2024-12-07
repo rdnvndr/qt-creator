@@ -145,14 +145,13 @@ public:
         return BehaviorSilent;
     }
 
-    bool reload(QString *errorString, ReloadFlag flag, ChangeType type) final
+    Result reload(ReloadFlag flag, ChangeType type) final
     {
-        Q_UNUSED(errorString)
         Q_UNUSED(flag)
         Q_UNUSED(type)
 
         emit m_project->projectFileIsDirty(filePath());
-        return true;
+        return Result::Ok;
     }
 
 private:
@@ -509,7 +508,7 @@ bool Project::copySteps(Target *sourceTarget, Target *newTarget)
 
     const Project * const project = newTarget->project();
     for (BuildConfiguration *sourceBc : sourceTarget->buildConfigurations()) {
-        BuildConfiguration *newBc = BuildConfigurationFactory::clone(newTarget, sourceBc);
+        BuildConfiguration *newBc = sourceBc->clone(newTarget);
         if (!newBc) {
             buildconfigurationError << sourceBc->displayName();
             continue;
@@ -548,7 +547,7 @@ bool Project::copySteps(Target *sourceTarget, Target *newTarget)
     }
 
     for (RunConfiguration *sourceRc : sourceTarget->runConfigurations()) {
-        RunConfiguration *newRc = RunConfigurationFactory::clone(newTarget, sourceRc);
+        RunConfiguration *newRc = sourceRc->clone(newTarget);
         if (!newRc) {
             runconfigurationError << sourceRc->displayName();
             continue;
@@ -793,20 +792,7 @@ void Project::toMap(Store &map) const
 
 FilePath Project::projectDirectory() const
 {
-    return projectDirectory(projectFilePath());
-}
-
-/*!
-    Returns the directory that contains the file \a top.
-
-    This includes the absolute path.
-*/
-
-FilePath Project::projectDirectory(const FilePath &top)
-{
-    if (top.isEmpty())
-        return {};
-    return top.absolutePath();
+    return projectFilePath().absolutePath();
 }
 
 void Project::changeRootProjectDirectory()
@@ -945,6 +931,20 @@ const Node *Project::nodeForFilePath(const FilePath &filePath,
     for (auto it = range.first; it != range.second; ++it) {
         if ((*it)->filePath() == filePath && (!extraMatcher || extraMatcher(*it)))
             return *it;
+    }
+    return nullptr;
+}
+
+ProjectNode *Project::productNodeForFilePath(
+    const Utils::FilePath &filePath, const NodeMatcher &extraMatcher) const
+{
+    const Node * const fileNode = nodeForFilePath(filePath, extraMatcher);
+    if (!fileNode)
+        return nullptr;
+    for (ProjectNode *projectNode = fileNode->parentProjectNode(); projectNode;
+         projectNode = projectNode->parentProjectNode()) {
+        if (projectNode->isProduct())
+            return projectNode;
     }
     return nullptr;
 }
@@ -1265,6 +1265,14 @@ void Project::addVariablesToMacroExpander(const QByteArray &prefix,
                                             return project->projectFilePath();
                                         return {};
                                     });
+    expander->registerVariable(fullPrefix + "ProjectDirectory",
+                               //: %1 is something like "Active project"
+                               ::PE::Tr::tr("%1: Full path to Project Directory.").arg(descriptor),
+                               [projectGetter]() -> QString {
+                                   if (const Project *const project = projectGetter())
+                                       return project->projectDirectory().toUserOutput();
+                                   return {};
+                               });
     expander->registerVariable(fullPrefix + "Kit:Name",
                                //: %1 is something like "Active project"
                                ::PE::Tr::tr("%1: The name of the active kit.").arg(descriptor),
@@ -1379,7 +1387,7 @@ const QString TEST_PROJECT_MIMETYPE = "application/vnd.test.qmakeprofile";
 const QString TEST_PROJECT_DISPLAYNAME = "testProjectFoo";
 const char TEST_PROJECT_ID[] = "Test.Project.Id";
 
-class TestBuildSystem : public BuildSystem
+class TestBuildSystem final : public BuildSystem
 {
 public:
     using BuildSystem::BuildSystem;
@@ -1395,7 +1403,7 @@ public:
     {
         setId(TEST_PROJECT_ID);
         setDisplayName(TEST_PROJECT_DISPLAYNAME);
-        setBuildSystemCreator([](Target *t) { return new TestBuildSystem(t); });
+        setBuildSystemCreator<TestBuildSystem>();
         setNeedsBuildConfigurations(false);
         setNeedsDeployConfigurations(false);
 

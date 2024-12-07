@@ -48,23 +48,19 @@ void drawIcon(QPainter *painter,
               int iconSize,
               const QColor &penColor)
 {
-    static QFontDatabase a;
-
     const QString fontName = "qtds_propertyIconFont.ttf";
 
-    Q_ASSERT(a.hasFamily(fontName));
+    QTC_ASSERT(QFontDatabase::hasFamily(fontName), return);
 
-    if (a.hasFamily(fontName)) {
-        QFont font(fontName);
-        font.setPixelSize(fontSize);
+    QFont font(fontName);
+    font.setPixelSize(fontSize);
 
-        painter->save();
-        painter->setPen(penColor);
-        painter->setFont(font);
-        painter->drawText(QRectF(x, y, iconSize, iconSize), iconSymbol);
+    painter->save();
+    painter->setPen(penColor);
+    painter->setFont(font);
+    painter->drawText(QRectF(x, y, iconSize, iconSize), iconSymbol);
 
-        painter->restore();
-    }
+    painter->restore();
 }
 
 FormEditorScene *FormEditorItem::scene() const {
@@ -204,7 +200,7 @@ qreal FormEditorItem::selectionWeigth(const QPointF &point, int iteration)
     return weight;
 }
 
-void FormEditorItem::synchronizeOtherProperty(const QByteArray &propertyName)
+void FormEditorItem::synchronizeOtherProperty(PropertyNameView propertyName)
 {
     if (propertyName == "opacity")
         setOpacity(qmlItemNode().instanceValue("opacity").toDouble());
@@ -309,7 +305,7 @@ void FormEditorItem::paintBoundingRect(QPainter *painter) const
     pen.setJoinStyle(Qt::MiterJoin);
 
     const QColor frameColor(0xaa, 0xaa, 0xaa);
-    static const QColor selectionColor = Utils::creatorTheme()->color(
+    static const QColor selectionColor = Utils::creatorColor(
         Utils::Theme::QmlDesigner_FormEditorSelectionColor);
 
     if (scene()->showBoundingRects()) {
@@ -561,7 +557,7 @@ QmlItemNode FormEditorItem::qmlItemNode() const
     return m_qmlItemNode;
 }
 
-void FormEditorFlowItem::synchronizeOtherProperty(const QByteArray &)
+void FormEditorFlowItem::synchronizeOtherProperty(PropertyNameView)
 {
     setContentVisible(true);
 }
@@ -787,7 +783,7 @@ QTransform FormEditorFlowActionItem::instanceSceneContentItemTransform() const
     return sceneTransform();
 }
 
-void FormEditorTransitionItem::synchronizeOtherProperty(const QByteArray &)
+void FormEditorTransitionItem::synchronizeOtherProperty(PropertyNameView)
 {
     setContentVisible(true);
 }
@@ -830,20 +826,18 @@ public:
     {
         if (node.modelNode().hasBindingProperty("from")) {
             if (node.modelNode().bindingProperty("from").isList())
-                from = Utils::transform<QList>(node.modelNode().bindingProperty("from").resolveToModelNodeList(),
-                                               [](const ModelNode &node) {
-                    return QmlItemNode(node);
-                });
+                from = Utils::transform<QList>(
+                    node.modelNode().bindingProperty("from").resolveToModelNodeList(),
+                    &QmlItemNode::create);
             else
                 from = QList<QmlItemNode>({node.modelNode().bindingProperty("from").resolveToModelNode()});
         }
 
         if (node.modelNode().hasBindingProperty("to")) {
             if (node.modelNode().bindingProperty("to").isList())
-                to = Utils::transform<QList>(node.modelNode().bindingProperty("to").resolveToModelNodeList(),
-                                               [](const ModelNode &node) {
-                    return QmlItemNode(node);
-                });
+                to = Utils::transform<QList>(
+                    node.modelNode().bindingProperty("to").resolveToModelNodeList(),
+                    &QmlItemNode::create);
             else
                 to = QList<QmlItemNode>({node.modelNode().bindingProperty("to").resolveToModelNode()});
         }

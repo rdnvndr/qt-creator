@@ -6,6 +6,7 @@
 #include "target.h"
 
 #include <utils/algorithm.h>
+#include <utils/macroexpander.h>
 #include <utils/qtcassert.h>
 
 using namespace ProjectExplorer;
@@ -40,11 +41,6 @@ Kit *ProjectConfiguration::kit() const
 Id ProjectConfiguration::id() const
 {
     return m_id;
-}
-
-Key ProjectConfiguration::settingsIdKey()
-{
-    return CONFIGURATION_ID_KEY;
 }
 
 void ProjectConfiguration::setDisplayName(const QString &name)

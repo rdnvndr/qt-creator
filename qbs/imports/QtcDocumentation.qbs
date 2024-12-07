@@ -12,10 +12,11 @@ Product {
     property string versionTag: qtc.qtcreator_version.replace(/\.|-/g, "")
 
     Qt.core.qdocEnvironment: [
+        "GENERATED_ATTRIBUTIONS_DIR=" + product.buildDirectory,
         "IDE_DISPLAY_NAME=" + qtc.ide_display_name,
         "IDE_CASED_ID=" + qtc.ide_cased_id,
         "IDE_ID=" + qtc.ide_id,
-        "QTCREATOR_COPYRIGHT_YEAR=" + qtc.qtcreator_copyright_year,
+        "QTCREATOR_COPYRIGHT=" + qtc.qtcreator_copyright_string,
         "QTC_VERSION=" + qtc.qtcreator_version,
         "QTC_VERSION_TAG=" + qtc.qtcreator_version,
         "QT_INSTALL_DOCS=" + Qt.core.docPath,

@@ -1,21 +1,27 @@
-// Copyright (C) 2023 The Qt Company Ltd.
+// Copyright (C) 2024 Jarek Kobus
+// Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 #include "tasktree.h"
 
-#include <QDebug>
-#include <QEventLoop>
-#include <QFutureWatcher>
-#include <QHash>
-#include <QMetaEnum>
-#include <QMutex>
-#include <QPromise>
-#include <QPointer>
-#include <QSet>
-#include <QTime>
-#include <QTimer>
+#include "barrier.h"
 
+#include <QtCore/QDebug>
+#include <QtCore/QEventLoop>
+#include <QtCore/QFutureWatcher>
+#include <QtCore/QHash>
+#include <QtCore/QMetaEnum>
+#include <QtCore/QMutex>
+#include <QtCore/QPointer>
+#include <QtCore/QPromise>
+#include <QtCore/QSet>
+#include <QtCore/QTime>
+#include <QtCore/QTimer>
+
+using namespace Qt::StringLiterals;
 using namespace std::chrono;
+
+QT_BEGIN_NAMESPACE
 
 namespace Tasking {
 
@@ -314,6 +320,12 @@ private:
 */
 
 /*!
+    \typealias GroupItems
+
+    Type alias for QList<GroupItem>.
+*/
+
+/*!
     \class Tasking::GroupItem
     \inheaderfile solutions/tasking/tasktree.h
     \inmodule TaskingSolution
@@ -377,7 +389,7 @@ private:
 */
 
 /*!
-    \fn GroupItem::GroupItem(const QList<GroupItem> &items)
+    \fn GroupItem::GroupItem(const GroupItems &items)
 
     Constructs a \c GroupItem element with a given list of \a items.
 
@@ -413,7 +425,7 @@ private:
 /*!
     \fn GroupItem::GroupItem(std::initializer_list<GroupItem> items)
     \overload
-    \sa GroupItem(const QList<Tasking::GroupItem> &items)
+    \sa GroupItem(const GroupItems &items)
 */
 
 /*!
@@ -502,7 +514,7 @@ private:
 */
 
 /*!
-    \fn Group::Group(const QList<GroupItem> &children)
+    \fn Group::Group(const GroupItems &children)
 
     Constructs a group with a given list of \a children.
 
@@ -512,7 +524,7 @@ private:
     \code
         const QStringList sourceList = ...;
 
-        QList<GroupItem> groupItems { parallel };
+        GroupItems groupItems { parallel };
 
         for (const QString &source : sourceList) {
             const NetworkQueryTask task(...); // use source for setup handler
@@ -623,19 +635,19 @@ private:
 */
 
 /*!
-    \typealias CustomTask::Task
+    \typealias Tasking::CustomTask::Task
 
     Type alias for the task type associated with the custom task's \c Adapter.
 */
 
 /*!
-    \typealias CustomTask::Deleter
+    \typealias Tasking::CustomTask::Deleter
 
     Type alias for the task's type deleter associated with the custom task's \c Adapter.
 */
 
 /*!
-    \typealias CustomTask::TaskSetupHandler
+    \typealias Tasking::CustomTask::TaskSetupHandler
 
     Type alias for \c std::function<SetupResult(Task &)>.
 
@@ -670,9 +682,9 @@ private:
 */
 
 /*!
-    \typealias CustomTask::TaskDoneHandler
+    \typealias Tasking::CustomTask::TaskDoneHandler
 
-    Type alias for \c std::function<DoneResult(const Task &, DoneWith)>.
+    Type alias for \c std::function<DoneResult(const Task &, DoneWith)> or DoneResult.
 
     The \c TaskDoneHandler is an optional argument of a custom task element's constructor.
     Any function with the above signature, when passed as a task done handler,
@@ -696,6 +708,9 @@ private:
     In this case, the final result of the task will be equal to the value indicated by
     the DoneWith argument. When the handler returns the DoneResult value,
     the task's final result may be tweaked inside the done handler's body by the returned value.
+
+    For a \c TaskDoneHandler of the DoneResult type, no additional handling is executed,
+    and the task finishes unconditionally with the passed value of DoneResult.
 
     \sa CustomTask(), TaskSetupHandler, GroupDoneHandler
 */
@@ -856,7 +871,83 @@ private:
 */
 
 /*!
-    \variable sequential
+    \variable Tasking::nullItem
+
+    A convenient global group's element indicating a no-op item.
+
+    This is useful in conditional expressions to indicate the absence of an optional element:
+
+    \code
+        const ExecutableItem task = ...;
+        const std::optional<ExecutableItem> optionalTask = ...;
+
+        Group group {
+            task,
+            optionalTask ? *optionalTask : nullItem
+        };
+    \endcode
+*/
+
+/*!
+    \variable Tasking::successItem
+
+    A convenient global executable element containing an empty, successful, synchronous task.
+
+    This is useful in if-statements to indicate that a branch ends with success:
+
+    \code
+        const ExecutableItem conditionalTask = ...;
+
+        Group group {
+            stopOnDone,
+            If (conditionalTask) >> Then {
+                ...
+            } >> Else {
+                successItem
+            },
+            nextTask
+        };
+    \endcode
+
+    In the above example, if the \c conditionalTask finishes with an error, the \c Else branch
+    is chosen, which finishes immediately with success. This causes the \c nextTask to be skipped
+    (because of the stopOnDone workflow policy of the \c group)
+    and the \c group finishes with success.
+
+    \sa errorItem
+*/
+
+/*!
+    \variable Tasking::errorItem
+
+    A convenient global executable element containing an empty, erroneous, synchronous task.
+
+    This is useful in if-statements to indicate that a branch ends with an error:
+
+    \code
+        const ExecutableItem conditionalTask = ...;
+
+        Group group {
+            stopOnError,
+            If (conditionalTask) >> Then {
+                ...
+            } >> Else {
+                errorItem
+            },
+            nextTask
+        };
+    \endcode
+
+    In the above example, if the \c conditionalTask finishes with an error, the \c Else branch
+    is chosen, which finishes immediately with an error. This causes the \c nextTask to be skipped
+    (because of the stopOnError workflow policy of the \c group)
+    and the \c group finishes with an error.
+
+    \sa successItem
+*/
+
+/*!
+    \variable Tasking::sequential
     A convenient global group's element describing the sequential execution mode.
 
     This is the default execution mode of the Group element.
@@ -871,7 +962,7 @@ private:
 */
 
 /*!
-    \variable parallel
+    \variable Tasking::parallel
     A convenient global group's element describing the parallel execution mode.
 
     All the direct child tasks of a group are started after the group is started,
@@ -882,39 +973,53 @@ private:
 */
 
 /*!
-    \variable stopOnError
+    \variable Tasking::parallelIdealThreadCountLimit
+    A convenient global group's element describing the parallel execution mode with a limited
+    number of tasks running simultanously. The limit is equal to the ideal number of threads
+    excluding the calling thread.
+
+    This is a shortcut to:
+    \code
+        parallelLimit(qMax(QThread::idealThreadCount() - 1, 1))
+    \endcode
+
+    \sa parallel, parallelLimit()
+*/
+
+/*!
+    \variable Tasking::stopOnError
     A convenient global group's element describing the StopOnError workflow policy.
 
     This is the default workflow policy of the Group element.
 */
 
 /*!
-    \variable continueOnError
+    \variable Tasking::continueOnError
     A convenient global group's element describing the ContinueOnError workflow policy.
 */
 
 /*!
-    \variable stopOnSuccess
+    \variable Tasking::stopOnSuccess
     A convenient global group's element describing the StopOnSuccess workflow policy.
 */
 
 /*!
-    \variable continueOnSuccess
+    \variable Tasking::continueOnSuccess
     A convenient global group's element describing the ContinueOnSuccess workflow policy.
 */
 
 /*!
-    \variable stopOnSuccessOrError
+    \variable Tasking::stopOnSuccessOrError
     A convenient global group's element describing the StopOnSuccessOrError workflow policy.
 */
 
 /*!
-    \variable finishAllAndSuccess
+    \variable Tasking::finishAllAndSuccess
     A convenient global group's element describing the FinishAllAndSuccess workflow policy.
 */
 
 /*!
-    \variable finishAllAndError
+    \variable Tasking::finishAllAndError
     A convenient global group's element describing the FinishAllAndError workflow policy.
 */
 
@@ -1005,7 +1110,7 @@ private:
 */
 
 /*!
-    \typealias GroupItem::GroupSetupHandler
+    \typealias Tasking::GroupItem::GroupSetupHandler
 
     Type alias for \c std::function<SetupResult()>.
 
@@ -1035,9 +1140,9 @@ private:
 */
 
 /*!
-    \typealias GroupItem::GroupDoneHandler
+    \typealias Tasking::GroupItem::GroupDoneHandler
 
-    Type alias for \c std::function<DoneResult(DoneWith)>.
+    Type alias for \c std::function<DoneResult(DoneWith)> or DoneResult.
 
     The \c GroupDoneHandler is an argument of the onGroupDone() element.
     Any function with the above signature, when passed as a group done handler,
@@ -1051,6 +1156,10 @@ private:
     In this case, the final result of the group will be equal to the value indicated by
     the DoneWith argument. When the handler returns the DoneResult value,
     the group's final result may be tweaked inside the done handler's body by the returned value.
+
+    For a \c GroupDoneHandler of the DoneResult type, no additional handling is executed,
+    and the group finishes unconditionally with the passed value of DoneResult,
+    ignoring the group's workflow policy.
 
     \sa onGroupDone(), GroupSetupHandler, CustomTask::TaskDoneHandler
 */
@@ -1139,9 +1248,9 @@ private:
 
     \sa sequential, parallel
 */
-GroupItem parallelLimit(int limit)
+GroupItem ParallelLimitFunctor::operator()(int limit) const
 {
-    return Group::parallelLimit(qMax(limit, 0));
+    return GroupItem({{}, limit});
 }
 
 /*!
@@ -1152,15 +1261,17 @@ GroupItem parallelLimit(int limit)
     \sa stopOnError, continueOnError, stopOnSuccess, continueOnSuccess, stopOnSuccessOrError,
         finishAllAndSuccess, finishAllAndError, WorkflowPolicy
 */
-GroupItem workflowPolicy(WorkflowPolicy policy)
+GroupItem WorkflowPolicyFunctor::operator()(WorkflowPolicy policy) const
 {
-    return Group::workflowPolicy(policy);
+    return GroupItem({{}, {}, policy});
 }
 
-const GroupItem nullItem = GroupItem({});
+const ParallelLimitFunctor parallelLimit = ParallelLimitFunctor();
+const WorkflowPolicyFunctor workflowPolicy = WorkflowPolicyFunctor();
 
 const GroupItem sequential = parallelLimit(1);
 const GroupItem parallel = parallelLimit(0);
+const GroupItem parallelIdealThreadCountLimit = parallelLimit(qMax(QThread::idealThreadCount() - 1, 1));
 
 const GroupItem stopOnError = workflowPolicy(WorkflowPolicy::StopOnError);
 const GroupItem continueOnError = workflowPolicy(WorkflowPolicy::ContinueOnError);
@@ -1169,6 +1280,16 @@ const GroupItem continueOnSuccess = workflowPolicy(WorkflowPolicy::ContinueOnSuc
 const GroupItem stopOnSuccessOrError = workflowPolicy(WorkflowPolicy::StopOnSuccessOrError);
 const GroupItem finishAllAndSuccess = workflowPolicy(WorkflowPolicy::FinishAllAndSuccess);
 const GroupItem finishAllAndError = workflowPolicy(WorkflowPolicy::FinishAllAndError);
+
+// Keep below the above in order to avoid static initialization fiasco.
+const GroupItem nullItem = GroupItem({});
+const ExecutableItem successItem = Group { finishAllAndSuccess };
+const ExecutableItem errorItem = Group { finishAllAndError };
+
+Group operator>>(const For &forItem, const Do &doItem)
+{
+    return {forItem.m_loop, doItem.m_children};
+}
 
 // Please note the thread_local keyword below guarantees a separate instance per thread.
 // The s_activeTaskTrees is currently used internally only and is not exposed in the public API.
@@ -1271,6 +1392,12 @@ const void *Loop::valuePtr() const
 
 using StoragePtr = void *;
 
+static constexpr QLatin1StringView s_activeStorageWarning =
+    "The referenced storage is not reachable in the running tree. "
+    "A nullptr will be returned which might lead to a crash in the calling code. "
+    "It is possible that no storage was added to the tree, "
+    "or the storage is not reachable from where it is referenced."_L1;
+
 class StorageThreadData
 {
     Q_DISABLE_COPY_MOVE(StorageThreadData)
@@ -1279,7 +1406,7 @@ public:
     StorageThreadData() = default;
     void pushStorage(StoragePtr storagePtr)
     {
-        m_activeStorageStack.push_back(storagePtr);
+        m_activeStorageStack.push_back({storagePtr, activeTaskTree()});
     }
     void popStorage()
     {
@@ -1288,16 +1415,16 @@ public:
     }
     StoragePtr activeStorage() const
     {
-        QT_ASSERT(m_activeStorageStack.size(), qWarning(
-            "The referenced storage is not reachable in the running tree. "
-            "A nullptr will be returned which might lead to a crash in the calling code. "
-            "It is possible that no storage was added to the tree, "
-            "or the storage is not reachable from where it is referenced."); return nullptr);
-        return m_activeStorageStack.last();
+        QT_ASSERT(m_activeStorageStack.size(),
+                  qWarning().noquote() << s_activeStorageWarning; return nullptr);
+        const QPair<StoragePtr, TaskTree *> &top = m_activeStorageStack.last();
+        QT_ASSERT(top.second == activeTaskTree(),
+                  qWarning().noquote() << s_activeStorageWarning; return nullptr);
+        return top.first;
     }
 
 private:
-    QList<StoragePtr> m_activeStorageStack;
+    QList<QPair<StoragePtr, TaskTree *>> m_activeStorageStack;
 };
 
 class StorageData
@@ -1325,7 +1452,7 @@ void *StorageBase::activeStorageVoid() const
     return m_storageData->threadData().activeStorage();
 }
 
-void GroupItem::addChildren(const QList<GroupItem> &children)
+void GroupItem::addChildren(const GroupItems &children)
 {
     QT_ASSERT(m_type == Type::Group || m_type == Type::List,
               qWarning("Only Group or List may have children, skipping..."); return);
@@ -1412,8 +1539,8 @@ void GroupItem::addChildren(const QList<GroupItem> &children)
     immediately with the task's result. Otherwise, \a handler is invoked (if provided),
     the task is canceled, and the returned item finishes with an error.
 */
-ExecutableItem ExecutableItem::withTimeout(milliseconds timeout,
-                                           const std::function<void()> &handler) const
+Group ExecutableItem::withTimeout(milliseconds timeout,
+                                  const std::function<void()> &handler) const
 {
     const auto onSetup = [timeout](milliseconds &timeoutData) { timeoutData = timeout; };
     return Group {
@@ -1430,6 +1557,11 @@ ExecutableItem ExecutableItem::withTimeout(milliseconds timeout,
 
 static QString currentTime() { return QTime::currentTime().toString(Qt::ISODateWithMs); }
 
+static QString logHeader(const QString &logName)
+{
+    return QString::fromLatin1("TASK TREE LOG [%1] \"%2\"").arg(currentTime(), logName);
+};
+
 /*!
     Attaches a custom debug printout to a copy of \c this ExecutableItem,
     issued on task startup and after the task is finished, and returns the coupled item.
@@ -1441,11 +1573,8 @@ static QString currentTime() { return QTime::currentTime().toString(Qt::ISODateW
     synchronous or asynchronous, its result (the value described by the DoneWith enum),
     and the total execution time in milliseconds.
 */
-ExecutableItem ExecutableItem::withLog(const QString &logName) const
+Group ExecutableItem::withLog(const QString &logName) const
 {
-    const auto header = [logName] {
-        return QString("TASK TREE LOG [%1] \"%2\"").arg(currentTime(), logName);
-    };
     struct LogStorage
     {
         time_point<system_clock, nanoseconds> start;
@@ -1454,22 +1583,168 @@ ExecutableItem ExecutableItem::withLog(const QString &logName) const
     const Storage<LogStorage> storage;
     return Group {
         storage,
-        onGroupSetup([storage, header] {
+        onGroupSetup([storage, logName] {
             storage->start = system_clock::now();
             storage->asyncCount = activeTaskTree()->asyncCount();
-            qDebug().noquote() << header() << "started.";
+            qDebug().noquote().nospace() << logHeader(logName) << " started.";
         }),
         *this,
-        onGroupDone([storage, header](DoneWith result) {
+        onGroupDone([storage, logName](DoneWith result) {
             const auto elapsed = duration_cast<milliseconds>(system_clock::now() - storage->start);
             const int asyncCountDiff = activeTaskTree()->asyncCount() - storage->asyncCount;
             QT_CHECK(asyncCountDiff >= 0);
             const QMetaEnum doneWithEnum = QMetaEnum::fromType<DoneWith>();
-            const QString syncType = asyncCountDiff ? QString("asynchronously")
-                                                    : QString("synchronously");
-            qDebug().noquote().nospace() << header() << " finished " << syncType << " with "
-                << doneWithEnum.valueToKey(int(result)) << " within " << elapsed.count() << "ms.";
+            const QString syncType = asyncCountDiff ? QString::fromLatin1("asynchronously")
+                                                    : QString::fromLatin1("synchronously");
+            qDebug().noquote().nospace() << logHeader(logName) << " finished " << syncType
+                                         << " with " << doneWithEnum.valueToKey(int(result))
+                                         << " within " << elapsed.count() << "ms.";
         })
+    };
+}
+
+/*!
+    \fn Group ExecutableItem::operator!(const ExecutableItem &item)
+
+    Returns a Group with the DoneResult of \a item negated.
+
+    If \a item reports DoneResult::Success, the returned item reports DoneResult::Error.
+    If \a item reports DoneResult::Error, the returned item reports DoneResult::Success.
+
+    The returned item is equivalent to:
+    \code
+        Group {
+            item,
+            onGroupDone([](DoneWith doneWith) { return toDoneResult(doneWith == DoneWith::Error); })
+        }
+    \endcode
+
+    \sa operator&&(), operator||()
+*/
+Group operator!(const ExecutableItem &item)
+{
+    return {
+        item,
+        onGroupDone([](DoneWith doneWith) { return toDoneResult(doneWith == DoneWith::Error); })
+    };
+}
+
+/*!
+    \fn Group ExecutableItem::operator&&(const ExecutableItem &first, const ExecutableItem &second)
+
+    Returns a Group with \a first and \a second tasks merged with conjunction.
+
+    Both \a first and \a second tasks execute in sequence.
+    If both tasks report DoneResult::Success, the returned item reports DoneResult::Success.
+    Otherwise, the returned item reports DoneResult::Error.
+
+    The returned item is
+    \l {https://en.wikipedia.org/wiki/Short-circuit_evaluation}{short-circuiting}:
+    if the \a first task reports DoneResult::Error, the \a second task is skipped,
+    and the returned item reports DoneResult::Error immediately.
+
+    The returned item is equivalent to:
+    \code
+        Group { stopOnError, first, second }
+    \endcode
+
+    \note Parallel execution of conjunction in a short-circuit manner can be achieved with the
+          following code: \c {Group { parallel, stopOnError, first, second }}. In this case:
+          if the \e {first finished} task reports DoneResult::Error,
+          the \e other task is canceled, and the group reports DoneResult::Error immediately.
+
+    \sa operator||(), operator!()
+*/
+Group operator&&(const ExecutableItem &first, const ExecutableItem &second)
+{
+    return { stopOnError, first, second };
+}
+
+/*!
+    \fn Group ExecutableItem::operator||(const ExecutableItem &first, const ExecutableItem &second)
+
+    Returns a Group with \a first and \a second tasks merged with disjunction.
+
+    Both \a first and \a second tasks execute in sequence.
+    If both tasks report DoneResult::Error, the returned item reports DoneResult::Error.
+    Otherwise, the returned item reports DoneResult::Success.
+
+    The returned item is
+    \l {https://en.wikipedia.org/wiki/Short-circuit_evaluation}{short-circuiting}:
+    if the \a first task reports DoneResult::Success, the \a second task is skipped,
+    and the returned item reports DoneResult::Success immediately.
+
+    The returned item is equivalent to:
+    \code
+        Group { stopOnSuccess, first, second }
+    \endcode
+
+    \note Parallel execution of disjunction in a short-circuit manner can be achieved with the
+          following code: \c {Group { parallel, stopOnSuccess, first, second }}. In this case:
+          if the \e {first finished} task reports DoneResult::Success,
+          the \e other task is canceled, and the group reports DoneResult::Success immediately.
+
+    \sa operator&&(), operator!()
+*/
+Group operator||(const ExecutableItem &first, const ExecutableItem &second)
+{
+    return { stopOnSuccess, first, second };
+}
+
+/*!
+    \fn Group ExecutableItem::operator&&(const ExecutableItem &item, DoneResult result)
+    \overload ExecutableItem::operator&&()
+
+    Returns the \a item task if the \a result is DoneResult::Success; otherwise returns
+    the \a item task with its done result tweaked to DoneResult::Error.
+
+    The \c {task && DoneResult::Error} is an eqivalent to tweaking the task's done result
+    into DoneResult::Error unconditionally.
+*/
+Group operator&&(const ExecutableItem &item, DoneResult result)
+{
+    return { result == DoneResult::Success ? stopOnError : finishAllAndError, item };
+}
+
+/*!
+    \fn Group ExecutableItem::operator||(const ExecutableItem &item, DoneResult result)
+    \overload ExecutableItem::operator||()
+
+    Returns the \a item task if the \a result is DoneResult::Error; otherwise returns
+    the \a item task with its done result tweaked to DoneResult::Success.
+
+    The \c {task || DoneResult::Success} is an eqivalent to tweaking the task's done result
+    into DoneResult::Success unconditionally.
+*/
+Group operator||(const ExecutableItem &item, DoneResult result)
+{
+    return { result == DoneResult::Error ? stopOnError : finishAllAndSuccess, item };
+}
+
+Group ExecutableItem::withCancelImpl(
+    const std::function<void(QObject *, const std::function<void()> &)> &connectWrapper) const
+{
+    const auto onSetup = [connectWrapper](Barrier &barrier) {
+        connectWrapper(&barrier, [barrierPtr = &barrier] { barrierPtr->advance(); });
+    };
+    return Group {
+        parallel,
+        stopOnSuccessOrError,
+        BarrierTask(onSetup) && errorItem,
+        *this
+    };
+}
+
+Group ExecutableItem::withAcceptImpl(
+    const std::function<void(QObject *, const std::function<void()> &)> &connectWrapper) const
+{
+    const auto onSetup = [connectWrapper](Barrier &barrier) {
+        connectWrapper(&barrier, [barrierPtr = &barrier] { barrierPtr->advance(); });
+    };
+    return Group {
+        parallel,
+        BarrierTask(onSetup),
+        *this
     };
 }
 
@@ -1603,6 +1878,16 @@ public:
               typename ReturnType = std::invoke_result_t<Handler, Args...>>
     ReturnType invokeHandler(Container *container, Handler &&handler, Args &&...args)
     {
+        QT_ASSERT(!m_guard.isLocked(), qWarning("Nested execution of handlers detected."
+            "This may happen when one task's handler has entered a nested event loop,"
+            "and other task finished during nested event loop's processing, "
+            "causing stopping (canceling) the task executing the nested event loop. "
+            "This includes the case when QCoreApplication::processEvents() was called from "
+            "the handler. It may also happen when the Barrier task is advanced directly "
+            "from some other task handler. This will lead to a crash. "
+            "Avoid event processing during handlers' execution. "
+            "If it can't be avoided, make sure no other tasks are run in parallel when "
+            "processing events from the handler."));
         ExecutionContextActivator activator(container);
         GuardLocker locker(m_guard);
         return std::invoke(std::forward<Handler>(handler), std::forward<Args>(args)...);
@@ -1847,7 +2132,7 @@ void RuntimeIteration::deleteChild(RuntimeTask *task)
 }
 
 static std::vector<TaskNode> createChildren(TaskTreePrivate *taskTreePrivate,
-                                            const QList<GroupItem> &children)
+                                            const GroupItems &children)
 {
     std::vector<TaskNode> result;
     result.reserve(children.size());
@@ -1927,13 +2212,6 @@ SetupResult TaskTreePrivate::start(RuntimeContainer *container)
             container->m_successBit = startAction == SetupResult::StopWithSuccess;
         }
     }
-    if (startAction == SetupResult::Continue
-        && (containerNode.m_children.empty()
-            || (containerNode.m_loop && !invokeLoopHandler(container)))) {
-        if (isProgressive(container))
-            advanceProgress(containerNode.m_taskCount);
-        startAction = toSetupResult(container->m_successBit);
-    }
     return continueStart(container, startAction);
 }
 
@@ -1941,23 +2219,24 @@ SetupResult TaskTreePrivate::continueStart(RuntimeContainer *container, SetupRes
 {
     const SetupResult groupAction = startAction == SetupResult::Continue ? startChildren(container)
                                                                          : startAction;
-    if (groupAction != SetupResult::Continue) {
-        const bool bit = container->updateSuccessBit(groupAction == SetupResult::StopWithSuccess);
-        RuntimeIteration *parentIteration = container->parentIteration();
-        RuntimeTask *parentTask = container->m_parentTask;
-        QT_CHECK(parentTask);
-        const bool result = invokeDoneHandler(container, bit ? DoneWith::Success : DoneWith::Error);
-        if (parentIteration) {
-            parentIteration->deleteChild(parentTask);
-            if (!parentIteration->m_container->isStarting())
-                childDone(parentIteration, result);
-        } else {
-            QT_CHECK(m_runtimeRoot.get() == parentTask);
-            m_runtimeRoot.reset();
-            emitDone(result ? DoneWith::Success : DoneWith::Error);
-        }
+    if (groupAction == SetupResult::Continue)
+        return groupAction;
+
+    const bool bit = container->updateSuccessBit(groupAction == SetupResult::StopWithSuccess);
+    RuntimeIteration *parentIteration = container->parentIteration();
+    RuntimeTask *parentTask = container->m_parentTask;
+    QT_CHECK(parentTask);
+    const bool result = invokeDoneHandler(container, bit ? DoneWith::Success : DoneWith::Error);
+    if (parentIteration) {
+        parentIteration->deleteChild(parentTask);
+        if (!parentIteration->m_container->isStarting())
+            childDone(parentIteration, result);
+    } else {
+        QT_CHECK(m_runtimeRoot.get() == parentTask);
+        m_runtimeRoot.reset();
+        emitDone(result ? DoneWith::Success : DoneWith::Error);
     }
-    return groupAction;
+    return toSetupResult(result);
 }
 
 SetupResult TaskTreePrivate::startChildren(RuntimeContainer *container)
@@ -1966,14 +2245,14 @@ SetupResult TaskTreePrivate::startChildren(RuntimeContainer *container)
     const int childCount = int(containerNode.m_children.size());
 
     if (container->m_iterationCount == 0) {
+        if (container->m_shouldIterate && !invokeLoopHandler(container)) {
+            if (isProgressive(container))
+                advanceProgress(containerNode.m_taskCount);
+            return toSetupResult(container->m_successBit);
+        }
         container->m_iterations.emplace_back(
             std::make_unique<RuntimeIteration>(container->m_iterationCount, container));
         ++container->m_iterationCount;
-    } else if (containerNode.m_parallelLimit == 0) {
-        container->deleteFinishedIterations();
-        if (container->m_iterations.empty())
-            return toSetupResult(container->m_successBit);
-        return SetupResult::Continue;
     }
 
     GuardLocker locker(container->m_startGuard);
@@ -1982,17 +2261,20 @@ SetupResult TaskTreePrivate::startChildren(RuntimeContainer *container)
            || container->m_runningChildren < containerNode.m_parallelLimit) {
         container->deleteFinishedIterations();
         if (container->m_nextToStart == childCount) {
-            if (container->m_shouldIterate && invokeLoopHandler(container)) {
+            if (invokeLoopHandler(container)) {
                 container->m_nextToStart = 0;
                 container->m_iterations.emplace_back(
                     std::make_unique<RuntimeIteration>(container->m_iterationCount, container));
                 ++container->m_iterationCount;
+            } else if (container->m_iterations.empty()) {
+                return toSetupResult(container->m_successBit);
             } else {
-                if (container->m_iterations.empty())
-                    return toSetupResult(container->m_successBit);
                 return SetupResult::Continue;
             }
         }
+        if (containerNode.m_children.size() == 0) // Empty loop body.
+            continue;
+
         RuntimeIteration *iteration = container->m_iterations.back().get();
         RuntimeTask *newTask = new RuntimeTask{containerNode.m_children.at(container->m_nextToStart),
                                                iteration};
@@ -2346,7 +2628,8 @@ bool TaskTreePrivate::invokeDoneHandler(RuntimeTask *node, DoneWith doneWith)
 
     \code
         const auto onSetup = [](QProcess &process) {
-            process.setCommand({"sleep", {"3"}});
+            process.setProgram("sleep");
+            process.setArguments({"3"});
         };
         const Group root {
             QProcessTask(onSetup)
@@ -2389,11 +2672,12 @@ bool TaskTreePrivate::invokeDoneHandler(RuntimeTask *node, DoneWith doneWith)
     \section2 Task's Done Handler
 
     When a running task finishes, the task tree invokes an optionally provided done handler.
-    The handler should always take a \c const \e reference to the associated task class object:
+    The handler should take a \c const \e reference to the associated task class object:
 
     \code
         const auto onSetup = [](QProcess &process) {
-            process.setCommand({"sleep", {"3"}});
+            process.setProgram("sleep");
+            process.setArguments({"3"});
         };
         const auto onDone = [](const QProcess &process, DoneWith result) {
             if (result == DoneWith::Success)
@@ -3010,9 +3294,6 @@ DoneWith TaskTree::runBlocking(const QFuture<void> &future)
 /*!
     Constructs a temporary task tree using the passed \a recipe and runs it blocking.
 
-    The optionally provided \a timeout is used to cancel the tree automatically after
-    \a timeout milliseconds have passed.
-
     Returns DoneWith::Success if the task tree finished successfully;
     otherwise returns DoneWith::Error.
 
@@ -3021,24 +3302,22 @@ DoneWith TaskTree::runBlocking(const QFuture<void> &future)
 
     \sa start()
 */
-DoneWith TaskTree::runBlocking(const Group &recipe, milliseconds timeout)
+DoneWith TaskTree::runBlocking(const Group &recipe)
 {
     QPromise<void> dummy;
     dummy.start();
-    return TaskTree::runBlocking(recipe, dummy.future(), timeout);
+    return TaskTree::runBlocking(recipe, dummy.future());
 }
 
 /*!
-    \overload runBlocking(const Group &recipe, milliseconds timeout)
+    \overload runBlocking(const Group &recipe)
 
     The passed \a future is used for listening to the cancel event.
     When the task tree is canceled, this method cancels the passed \a future.
 */
-DoneWith TaskTree::runBlocking(const Group &recipe, const QFuture<void> &future, milliseconds timeout)
+DoneWith TaskTree::runBlocking(const Group &recipe, const QFuture<void> &future)
 {
-    const Group root = timeout == milliseconds::max() ? recipe
-                                                      : Group { recipe.withTimeout(timeout) };
-    TaskTree taskTree(root);
+    TaskTree taskTree(recipe);
     return taskTree.runBlocking(future);
 }
 
@@ -3346,19 +3625,19 @@ TimeoutTaskAdapter::~TimeoutTaskAdapter()
 void TimeoutTaskAdapter::start()
 {
     m_timerId = scheduleTimeout(*task(), this, [this] {
-        m_timerId = {};
+        m_timerId.reset();
         emit done(DoneResult::Success);
     });
 }
 
 /*!
-    \typealias TaskTreeTask
+    \typealias Tasking::TaskTreeTask
 
     Type alias for the CustomTask, to be used inside recipes, associated with the TaskTree task.
 */
 
 /*!
-    \typealias TimeoutTask
+    \typealias Tasking::TimeoutTask
 
     Type alias for the CustomTask, to be used inside recipes, associated with the
     \c std::chrono::milliseconds type. \c std::chrono::milliseconds is used to set up the
@@ -3381,3 +3660,5 @@ void TimeoutTaskAdapter::start()
 */
 
 } // namespace Tasking
+
+QT_END_NAMESPACE

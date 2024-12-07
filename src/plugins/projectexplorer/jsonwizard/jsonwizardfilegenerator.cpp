@@ -79,7 +79,7 @@ bool JsonWizardFileGenerator::setup(const QVariant &data, QString *errorMessage)
         return false;
 
     for (const QVariant &d : list) {
-        if (d.type() != QVariant::Map) {
+        if (d.typeId() != QMetaType::QVariantMap) {
             *errorMessage = Tr::tr("Files data list entry is not an object.");
             return false;
         }
@@ -163,6 +163,8 @@ Core::GeneratedFile JsonWizardFileGenerator::generateFile(const File &file,
                 return Core::GeneratedFile();
             }
         }
+        if (!file.source.isResourceFile()) // resource files mess up permissions, stay with default
+            gf.setPermissions(file.source.permissions());
     }
 
     Core::GeneratedFile::Attributes attributes;
@@ -238,13 +240,17 @@ Core::GeneratedFiles JsonWizardFileGenerator::fileList(MacroExpander *expander,
     }
 
     const Core::GeneratedFiles result
-            = Utils::transform(fileList,
-                               [this, &expander, &errorMessage](const File &f) {
-                                   return generateFile(f, expander, errorMessage);
-                               });
+        = Utils::transform(fileList, [this, &expander, &errorMessage](const File &f) {
+              QString generateError;
+              const Core::GeneratedFile file = generateFile(f, expander, &generateError);
+              if (!generateError.isEmpty())
+                  *errorMessage = generateError;
+              return file;
+          });
 
-    if (Utils::contains(result,
-                        [](const Core::GeneratedFile &gf) { return gf.filePath().isEmpty(); }))
+    if (Utils::contains(result, [](const Core::GeneratedFile &gf) {
+            return gf.filePath().isEmpty();
+        }))
         return Core::GeneratedFiles();
 
     return result;
@@ -260,51 +266,9 @@ bool JsonWizardFileGenerator::writeFile(const JsonWizard *wizard, Core::Generate
     return true;
 }
 
-// Factory
-
-class FileGeneratorFactory final : public JsonWizardGeneratorFactory
-{
-public:
-    FileGeneratorFactory()
-    {
-        setTypeIdsSuffix(QLatin1String("File"));
-    }
-
-    JsonWizardGenerator *create(Id typeId, const QVariant &data,
-                                const QString &path, Id platform,
-                                const QVariantMap &variables) final
-    {
-        Q_UNUSED(path)
-        Q_UNUSED(platform)
-        Q_UNUSED(variables)
-
-        QTC_ASSERT(canCreate(typeId), return nullptr);
-
-        auto gen = new JsonWizardFileGenerator;
-        QString errorMessage;
-        gen->setup(data, &errorMessage);
-
-        if (!errorMessage.isEmpty()) {
-            qWarning() << "FileGeneratorFactory setup error:" << errorMessage;
-            delete gen;
-            return nullptr;
-        }
-
-        return gen;
-    }
-
-    bool validateData(Id typeId, const QVariant &data, QString *errorMessage) final
-    {
-        QTC_ASSERT(canCreate(typeId), return false);
-
-        QScopedPointer<JsonWizardFileGenerator> gen(new JsonWizardFileGenerator);
-        return gen->setup(data, errorMessage);
-    }
-};
-
 void setupJsonWizardFileGenerator()
 {
-    static FileGeneratorFactory theFileGeneratorFactory;
+    static JsonWizardGeneratorTypedFactory<JsonWizardFileGenerator> theFileGeneratorFactory("File");
 }
 
 } // ProjectExplorer

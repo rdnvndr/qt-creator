@@ -5,7 +5,8 @@
 #include "mcusupporttr.h"
 
 #include <cmakeprojectmanager/cmakekitaspect.h>
-
+#include <projectexplorer/kit.h>
+#include <projectexplorer/kitaspect.h>
 #include <utils/algorithm.h>
 #include <utils/filepath.h>
 #include <utils/qtcassert.h>
@@ -24,7 +25,7 @@ public:
 
     void makeReadOnly() override {}
     void refresh() override {}
-    void addToLayoutImpl(Layouting::LayoutItem &) override {}
+    void addToInnerLayout(Layouting::Layout &) override {}
 };
 
 Utils::Id McuDependenciesKitAspect::id()
@@ -78,7 +79,7 @@ public:
         const QVariant checkFormat = kit->value(McuDependenciesKitAspect::id());
         if (!checkFormat.isValid() || checkFormat.isNull())
             return result;
-        if (!checkFormat.canConvert(QVariant::List))
+        if (!checkFormat.canConvert(QMetaType(QMetaType::QVariantList)))
             return {BuildSystemTask(Task::Error, Tr::tr("The MCU dependencies setting value is invalid."))};
 
         // check paths defined in cmake variables for given dependencies exist
@@ -105,7 +106,7 @@ public:
         QTC_ASSERT(kit, return );
 
         const QVariant variant = kit->value(McuDependenciesKitAspect::id());
-        if (!variant.isNull() && !variant.canConvert(QVariant::List)) {
+        if (!variant.isNull() && !variant.canConvert(QMetaType(QMetaType::QVariantList))) {
             qWarning("Kit \"%s\" has a wrong mcu dependencies value set.",
                      qPrintable(kit->displayName()));
             McuDependenciesKitAspect::setDependencies(kit, Utils::EnvironmentItems());

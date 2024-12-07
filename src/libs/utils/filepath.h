@@ -5,9 +5,9 @@
 
 #include "utils_global.h"
 
-#include "expected.h"
 #include "filepathinfo.h"
 #include "osspecificaspects.h"
+#include "result.h"
 #include "utiltypes.h"
 
 #include <QDir>
@@ -17,6 +17,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <utility>
 #include <variant>
 
 QT_BEGIN_NAMESPACE
@@ -53,7 +54,47 @@ public:
     const QDirIterator::IteratorFlags iteratorFlags = QDirIterator::NoIteratorFlags;
 };
 
-using FilePaths = QList<class FilePath>;
+class FilePath;
+using FilePaths = QList<FilePath>;
+using FilePair = std::pair<FilePath, FilePath>;
+using FilePairs = QList<FilePair>;
+QTCREATOR_UTILS_EXPORT FilePaths firstPaths(const FilePairs &pairs);
+QTCREATOR_UTILS_EXPORT FilePaths secondPaths(const FilePairs &pairs);
+
+class QTCREATOR_UTILS_EXPORT FilePathWatcher : public QObject
+{
+    Q_OBJECT
+public:
+    using QObject::QObject;
+
+signals:
+    void pathChanged(const Utils::FilePath &path);
+};
+
+class TemporaryFilePathPrivate;
+
+class QTCREATOR_UTILS_EXPORT TemporaryFilePath
+{
+public:
+    TemporaryFilePath() = delete;
+    TemporaryFilePath(const TemporaryFilePath &other) = delete;
+
+    ~TemporaryFilePath();
+
+    static expected_str<std::unique_ptr<TemporaryFilePath>> create(const FilePath &templatePath);
+
+    void setAutoRemove(bool autoDelete);
+    bool autoRemove() const;
+
+    FilePath templatePath() const;
+    FilePath filePath() const;
+
+private:
+    TemporaryFilePath(const FilePath &templatePath, const FilePath &filePath);
+
+private:
+    std::unique_ptr<TemporaryFilePathPrivate> d;
+};
 
 class QTCREATOR_UTILS_EXPORT FilePath
 {
@@ -99,6 +140,7 @@ public:
     [[nodiscard]] FilePath pathAppended(const QString &str) const;
     [[nodiscard]] FilePath stringAppended(const QString &str) const;
     [[nodiscard]] std::optional<FilePath> tailRemoved(const QString &str) const;
+    [[nodiscard]] std::optional<FilePath> prefixRemoved(const QString &str) const;
     bool startsWith(const QString &s) const;
     bool endsWith(const QString &s) const;
     bool contains(const QString &s) const;
@@ -110,7 +152,7 @@ public:
 
     bool isWritableDir() const;
     bool isWritableFile() const;
-    expected_str<void> ensureWritableDir() const;
+    Result ensureWritableDir() const;
     bool ensureExistingFile() const;
     bool isExecutableFile() const;
     bool isReadableFile() const;
@@ -128,21 +170,22 @@ public:
     QFile::Permissions permissions() const;
     bool setPermissions(QFile::Permissions permissions) const;
     OsType osType() const;
-    bool removeFile() const;
+    Result removeFile() const;
     bool removeRecursively(QString *error = nullptr) const;
-    expected_str<void> copyRecursively(const FilePath &target) const;
-    expected_str<void> copyFile(const FilePath &target) const;
-    bool renameFile(const FilePath &target) const;
+    Result copyRecursively(const FilePath &target) const;
+    Result copyFile(const FilePath &target) const;
+    Result renameFile(const FilePath &target) const;
     qint64 fileSize() const;
     qint64 bytesAvailable() const;
     bool createDir() const;
     FilePaths dirEntries(const FileFilter &filter, QDir::SortFlags sort = QDir::NoSort) const;
     FilePaths dirEntries(QDir::Filters filters) const;
     expected_str<QByteArray> fileContents(qint64 maxSize = -1, qint64 offset = 0) const;
-    expected_str<qint64> writeFileContents(const QByteArray &data, qint64 offset = 0) const;
+    expected_str<qint64> writeFileContents(const QByteArray &data) const;
     FilePathInfo filePathInfo() const;
 
     [[nodiscard]] FilePath operator/(const QString &str) const;
+    FilePath &operator/=(const QString &str);
 
     Qt::CaseSensitivity caseSensitivity() const;
     QChar pathComponentSeparator() const;
@@ -268,6 +311,11 @@ public:
     // FIXME: Avoid. See toSettings, toVariant, toUserOutput, toFSPathString, path, nativePath.
     QString toString() const;
 
+    bool equalsCaseSensitive(const FilePath &other) const;
+
+    Utils::expected_str<std::unique_ptr<FilePathWatcher>> watch() const;
+    void openTerminal(const Environment &env) const;
+
 private:
     // These are needed.
     QTCREATOR_UTILS_EXPORT friend bool operator==(const FilePath &first, const FilePath &second);
@@ -281,6 +329,8 @@ private:
     QTCREATOR_UTILS_EXPORT friend size_t qHash(const FilePath &a);
 
     QTCREATOR_UTILS_EXPORT friend QDebug operator<<(QDebug dbg, const FilePath &c);
+
+    static bool equals(const FilePath &first, const FilePath &second, Qt::CaseSensitivity cs);
 
     // Implementation details. May change.
     friend class ::tst_fileutils;
@@ -300,8 +350,6 @@ private:
 class QTCREATOR_UTILS_EXPORT DeviceFileHooks
 {
 public:
-    static DeviceFileHooks &instance();
-
     std::function<expected_str<DeviceFileAccess *>(const FilePath &)> fileAccess;
     std::function<QString(const FilePath &)> deviceDisplayName;
     std::function<bool(const FilePath &, const FilePath &)> ensureReachable;
@@ -310,7 +358,11 @@ public:
     std::function<expected_str<FilePath>(const FilePath &)> localSource;
     std::function<void(const FilePath &, const Environment &)> openTerminal;
     std::function<OsType(const FilePath &)> osType;
+
+    // Only call once.
+    static void setupDeviceFileHooks(const DeviceFileHooks &hooks);
 };
+
 
 // For testing
 QTCREATOR_UTILS_EXPORT QString doCleanPath(const QString &input);

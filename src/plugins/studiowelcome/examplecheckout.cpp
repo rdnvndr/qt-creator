@@ -24,7 +24,7 @@
 #include <projectexplorer/projectexplorer.h>
 
 #include <qmldesigner/qmldesignerplugin.h>
-#include <qmldesigner/utils/fileextractor.h>
+#include <qmldesignerutils/fileextractor.h>
 
 #include <QDialog>
 #include <QFileDialog>
@@ -34,8 +34,6 @@
 #include <QNetworkRequest>
 #include <QQuickItem>
 #include <QQuickWidget>
-
-#include <algorithm>
 
 using namespace Tasking;
 using namespace Utils;

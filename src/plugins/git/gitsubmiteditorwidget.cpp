@@ -120,8 +120,7 @@ void GitSubmitEditorWidget::setPanelInfo(const GitSubmitEditorPanelInfo &info)
 {
     m_gitSubmitPanel->repositoryLabel->setText(info.repository.toUserOutput());
     if (info.branch.contains("(no branch)")) {
-        const QString errorColor =
-                Utils::creatorTheme()->color(Utils::Theme::TextColorError).name();
+        const QString errorColor = Utils::creatorColor(Utils::Theme::TextColorError).name();
         m_gitSubmitPanel->branchLabel->setText(QString::fromLatin1("<span style=\"color:%1\">%2</span>")
                                                 .arg(errorColor, Tr::tr("Detached HEAD")));
     } else {
@@ -129,7 +128,7 @@ void GitSubmitEditorWidget::setPanelInfo(const GitSubmitEditorPanelInfo &info)
     }
 }
 
-QString GitSubmitEditorWidget::amendSHA1() const
+QString GitSubmitEditorWidget::amendHash() const
 {
     return m_logChangeWidget ? m_logChangeWidget->commit() : QString();
 }

@@ -10,7 +10,6 @@
 #include "clangtoolsutils.h"
 #include "executableinfo.h"
 
-#include <cppeditor/cppcodemodelsettings.h>
 #include <cppeditor/cppeditorconstants.h>
 #include <cppeditor/cpptoolsreuse.h>
 
@@ -39,11 +38,10 @@
 #include <QSortFilterProxyModel>
 #include <QStackedWidget>
 #include <QStringListModel>
+#include <QTextEdit>
 #include <QTreeView>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
-#include <QUuid>
-
 
 using namespace CppEditor;
 using namespace Utils;
@@ -403,8 +401,7 @@ static void buildTree(ProjectExplorer::Tree *parent,
     current->name = node.name;
     current->isDir = node.children.size();
     if (parent) {
-        current->fullPath = Utils::FilePath::fromString(parent->fullPath.toString()
-                                                        + current->name);
+        current->fullPath = parent->fullPath.pathAppended(current->name);
         parent->childDirectories.push_back(current);
     } else {
         current->fullPath = Utils::FilePath::fromString(current->name);
@@ -415,9 +412,9 @@ static void buildTree(ProjectExplorer::Tree *parent,
 }
 
 static bool needsLink(ProjectExplorer::Tree *node) {
-    if (node->fullPath.toString() == "clang-analyzer-")
+    if (node->fullPath.path() == "clang-analyzer-")
         return true;
-    return !node->isDir && !node->fullPath.toString().startsWith("clang-analyzer-");
+    return !node->isDir && !node->fullPath.startsWith("clang-analyzer-");
 }
 
 class BaseChecksTreeModel : public ProjectExplorer::SelectableFilesModel // FIXME: This isn't about files.
@@ -593,7 +590,7 @@ public:
                 // 'clang-analyzer-' group
                 if (node->isDir)
                     return CppEditor::Constants::CLANG_STATIC_ANALYZER_DOCUMENTATION_URL;
-                return clangTidyDocUrl(node->fullPath.toString());
+                return clangTidyDocUrl(node->fullPath.path());
             }
 
             return BaseChecksTreeModel::data(fullIndex, role);
@@ -631,7 +628,7 @@ private:
                 return false;
 
             auto *node = static_cast<Tree *>(index.internalPointer());
-            const QString nodeName = node->fullPath.toString();
+            const QString nodeName = node->fullPath.path();
             if ((check.endsWith("*") && nodeName.startsWith(check.left(check.length() - 1)))
                     || (!node->isDir && nodeName == check)) {
                 result = index;
@@ -648,7 +645,7 @@ private:
         if (root->checked == Qt::Unchecked)
             return;
         if (root->checked == Qt::Checked) {
-            checks += "," + root->fullPath.toString();
+            checks += "," + root->fullPath.path();
             if (root->isDir)
                 checks += "*";
             return;
@@ -1008,10 +1005,10 @@ DiagnosticConfigsWidget::DiagnosticConfigsWidget(const ClangDiagnosticConfigs &c
     connect(m_clazyChecks->enableLowerLevelsCheckBox, &QCheckBox::stateChanged, this, [this] {
         const bool enable = m_clazyChecks->enableLowerLevelsCheckBox->isChecked();
         m_clazyTreeModel->setEnableLowerLevels(enable);
-        codeModelSettings()->setEnableLowerClazyLevels(enable);
+        ClangToolsSettings::instance()->enableLowerClazyLevels.setValue(enable);
     });
     const Qt::CheckState checkEnableLowerClazyLevels
-        = codeModelSettings()->enableLowerClazyLevels() ? Qt::Checked : Qt::Unchecked;
+        = ClangToolsSettings::instance()->enableLowerClazyLevels.value() ? Qt::Checked : Qt::Unchecked;
     m_clazyChecks->enableLowerLevelsCheckBox->setCheckState(checkEnableLowerClazyLevels);
 
     m_tidyChecks = new TidyChecksWidget;
@@ -1263,7 +1260,7 @@ QString removeClangTidyCheck(const QString &checks, const QString &check)
 
 QString removeClazyCheck(const QString &checks, const QString &check)
 {
-    const ClazyStandaloneInfo clazyInfo = ClazyStandaloneInfo::getInfo(toolExecutable(ClangToolType::Clazy));
+    const ClazyStandaloneInfo clazyInfo = ClazyStandaloneInfo(toolExecutable(ClangToolType::Clazy));
     ClazyChecksTreeModel model(clazyInfo.supportedChecks);
     model.enableChecks(checks.split(',', Qt::SkipEmptyParts));
     const QModelIndex index = model.indexForName(check.mid(QString("clazy-").length()));
@@ -1296,7 +1293,7 @@ void disableChecks(const QList<Diagnostic> &diagnostics)
         QTC_ASSERT(configs.isEmpty(), return);
         config = builtinConfig();
         config.setIsReadOnly(false);
-        config.setId(Utils::Id::fromString(QUuid::createUuid().toString()));
+        config.setId(Id::generate());
         config.setDisplayName(Tr::tr("Custom Configuration"));
         configs << config;
         RunSettings runSettings = settings->runSettings();
@@ -1314,7 +1311,7 @@ void disableChecks(const QList<Diagnostic> &diagnostics)
             if (config.clazyMode() == ClangDiagnosticConfig::ClazyMode::UseDefaultChecks) {
                 config.setClazyMode(ClangDiagnosticConfig::ClazyMode::UseCustomChecks);
                 const ClazyStandaloneInfo clazyInfo
-                        = ClazyStandaloneInfo::getInfo(toolExecutable(ClangToolType::Clazy));
+                        = ClazyStandaloneInfo(toolExecutable(ClangToolType::Clazy));
                 config.setChecks(ClangToolType::Clazy, clazyInfo.defaultChecks.join(','));
             }
             config.setChecks(ClangToolType::Clazy,

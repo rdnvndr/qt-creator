@@ -387,6 +387,18 @@ void DoxygenTest::testBasic_data()
         " *  \n"
         " */\n"
         "int a;\n") << int(CommandPrefix::Auto);
+
+    QTest::newRow("continuation_on_asterisk") << _(
+        "bool preventFolding;\n"
+        "/* leading comment\n"
+        " * cont|*/\n"
+        "int a;\n"
+        ) << _(
+        "bool preventFolding;\n"
+        "/* leading comment\n"
+        " * cont\n"
+        " */\n"
+        "int a;\n") << int(CommandPrefix::Auto);
 }
 
 void DoxygenTest::testBasic()
@@ -488,7 +500,7 @@ void DoxygenTest::runTest(const QByteArray &original,
     //    testDocument.m_editorWidget->unfoldAll();
     testDocument.m_editor->setCursorPosition(testDocument.m_cursorPosition);
 
-    TestCase::waitForRehighlightedSemanticDocument(testDocument.m_editorWidget);
+    QVERIFY(TestCase::waitForRehighlightedSemanticDocument(testDocument.m_editorWidget));
 
     // Send 'ENTER' key press
     QKeyEvent event(QEvent::KeyPress, Qt::Key_Enter, Qt::NoModifier);

@@ -21,7 +21,7 @@
 #include <utils/elidinglabel.h>
 #include <utils/fancylineedit.h>
 #include <utils/navigationtreeview.h>
-#include <utils/process.h>
+#include <utils/qtcprocess.h>
 #include <utils/qtcassert.h>
 #include <utils/stylehelper.h>
 #include <utils/utilsicons.h>
@@ -236,7 +236,7 @@ void BranchView::slotCustomContextMenu(const QPoint &point)
 
     SetInContext block(m_blockRefresh);
     QMenu contextMenu;
-    if (isLocal)
+    if (isLocal || hasActions)
         contextMenu.addAction(Tr::tr("&Add..."), this, &BranchView::add);
 
     const std::optional<QString> remote = m_model->remoteName(index);

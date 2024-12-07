@@ -5,9 +5,10 @@
 
 #include "remotelinuxtr.h"
 
+#include <projectexplorer/projectexplorersettings.h>
 #include <utils/commandline.h>
 #include <utils/fileutils.h>
-#include <utils/process.h>
+#include <utils/qtcprocess.h>
 #include <utils/qtcassert.h>
 
 using namespace ProjectExplorer;
@@ -37,6 +38,7 @@ void RemoteLinuxSignalOperation::run(const QString &command)
     m_process->start();
 }
 
+// TODO: check if used?
 static QString signalProcessGroupByNameCommandLine(const QString &filePath, int signal)
 {
     return QString::fromLatin1(
@@ -50,13 +52,10 @@ static QString signalProcessGroupByNameCommandLine(const QString &filePath, int 
 
 QString RemoteLinuxSignalOperation::killProcessByNameCommandLine(const QString &filePath) const
 {
-    return QString::fromLatin1("%1; %2").arg(signalProcessGroupByNameCommandLine(filePath, 15),
-                                             signalProcessGroupByNameCommandLine(filePath, 9));
-}
-
-QString RemoteLinuxSignalOperation::interruptProcessByNameCommandLine(const QString &filePath) const
-{
-    return signalProcessGroupByNameCommandLine(filePath, 2);
+    return QString::fromLatin1("%1; sleep %2; %3")
+        .arg(signalProcessGroupByNameCommandLine(filePath, 15))
+        .arg(projectExplorerSettings().reaperTimeoutInSeconds)
+        .arg(signalProcessGroupByNameCommandLine(filePath, 9));
 }
 
 void RemoteLinuxSignalOperation::killProcess(qint64 pid)
@@ -74,11 +73,6 @@ void RemoteLinuxSignalOperation::killProcess(const QString &filePath)
 void RemoteLinuxSignalOperation::interruptProcess(qint64 pid)
 {
     run(signalProcessGroupByPidCommandLine(pid, 2));
-}
-
-void RemoteLinuxSignalOperation::interruptProcess(const QString &filePath)
-{
-    run(interruptProcessByNameCommandLine(filePath));
 }
 
 void RemoteLinuxSignalOperation::runnerDone()

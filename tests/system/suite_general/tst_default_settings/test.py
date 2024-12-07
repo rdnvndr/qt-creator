@@ -16,10 +16,10 @@ def main():
     if not startedWithoutPluginError():
         return
     invokeMenuItem("Edit", "Preferences...")
-    __checkKits__()
+    qmakeFound = __checkKits__()
     clickButton(waitForObject(":Options.Cancel_QPushButton"))
     invokeMenuItem("File", "Exit")
-    __checkCreatedSettings__(emptySettings)
+    __checkCreatedSettings__(emptySettings, qmakeFound)
 
 def __createMinimumIni__(emptyParent):
     qtProjDir = os.path.join(emptyParent, "QtProject")
@@ -29,8 +29,11 @@ def __createMinimumIni__(emptyParent):
     iniFile.write("OverrideLanguage=C\n")
     iniFile.close()
 
+
+glblDefaultKits = 0
+
+
 def __checkKits__():
-    global genericDebuggers
     mouseClick(waitForObjectItem(":Options_QListView", "Kits"))
     # check compilers
     expectedCompilers = __getExpectedCompilers__()
@@ -61,6 +64,12 @@ def __checkKits__():
         test.log(str(genericDebuggers))
     # check Qt versions
     qmakePath = which("qmake")
+    if qmakePath and (not "Using Qt version" in
+                      getOutputFromCmdline([qmakePath, "--version"], acceptedError=1)):
+        # ignore dysfunctional qmake, e.g. incomplete qtchooser
+        qmakePath = None
+    if qmakePath:
+        qmakePath = os.path.dirname(qmakePath)
     foundQt = []
     clickOnTab(":Options.qt_tabwidget_tabbar_QTabBar", "Qt Versions")
     __iterateTree__(":qtdirList_QTreeView", __qtFunc__, foundQt, qmakePath)
@@ -71,6 +80,8 @@ def __checkKits__():
     # check kits
     clickOnTab(":Options.qt_tabwidget_tabbar_QTabBar", "Kits")
     __iterateTree__(":BuildAndRun_QTreeView", __kitFunc__, foundQt, foundCompilerNames)
+    test.compare(glblDefaultKits, 1, "Was exactly one default kit found?")
+    return qmakePath != None
 
 def __processSubItems__(treeObjStr, section, parModelIndexStr, doneItems,
                         additionalFunc, *additionalParameters):
@@ -108,7 +119,7 @@ def __iterateTree__(treeObjStr, additionalFunc, *additionalParameters):
 
 def __compFunc__(it, foundComp, foundCompNames):
     # skip sub section items (will continue on its children)
-    if str(it) == "C" or str(it) == "C++":
+    if str(it) == "C/C++":
         return
     try:
         waitFor("object.exists(':Path.Utils_BaseValidatingLineEdit')", 1000)
@@ -148,7 +159,7 @@ def __qtFunc__(it, foundQt, qmakePath):
                 "Verifying found Qt (%s) is executable." % qtPath)
     # Two Qt versions will be found when using qtchooser: QTCREATORBUG-14697
     # Only add qmake from "which" to list
-    if qtPath == qmakePath:
+    if qtPath.startswith(qmakePath):
         foundQt.append(it)
     try:
         errorLabel = findObject(":QtSupport__Internal__QtVersionManager.errorLabel.QLabel")
@@ -156,30 +167,37 @@ def __qtFunc__(it, foundQt, qmakePath):
     except:
         pass
 
+
+glblUsedKitNames = set()
+
+
 def __kitFunc__(it, foundQt, foundCompNames):
     global currentSelectedTreeItem, warningOrError
     if 'Python' in it: # skip Python kits
         return
 
-    qtVersionStr = str(waitForObjectExists(":Kits_QtVersion_QComboBox").currentText)
-    # The following may fail if Creator doesn't find a Qt version in PATH. It will then create one
-    # Qt-less kit for each available toolchain instead of just one default Desktop kit.
-    # Since Qt usually is in PATH on the test machines anyway, we consider this too much of a
-    # corner case to add error handling code or make Qt in PATH a hard requirement for the tests.
-    test.compare(it, "Desktop (default)", "Verifying whether default Desktop kit has been created.")
+    defaultKitSuffix = " (default)"
+    if it.endswith(defaultKitSuffix):
+        global glblDefaultKits
+        glblDefaultKits += 1
     if foundQt:
+        test.compare(it, "Desktop" + defaultKitSuffix,
+                     "Verifying whether default Desktop kit has been created.")
+        qtVersionStr = str(waitForObjectExists(":Kits_QtVersion_QComboBox").currentText)
         test.compare(qtVersionStr, foundQt, "Verifying if Qt versions match.")
-    cCompilerCombo = findObject(":CCompiler:_QComboBox")
-    test.compare(cCompilerCombo.enabled, cCompilerCombo.count > 1,
-                 "Verifying whether C compiler combo is enabled/disabled correctly.")
-    cppCompilerCombo = findObject(":CppCompiler:_QComboBox")
-    test.compare(cppCompilerCombo.enabled, cppCompilerCombo.count > 1,
-                 "Verifying whether C++ compiler combo is enabled/disabled correctly.")
+    else:
+        # Creator creates one kit for each compiler's ABI
+        global glblUsedKitNames
+        kitName = it.removesuffix(defaultKitSuffix)
+        test.verify(kitName not in glblUsedKitNames,
+                    "The kit name '%s' was not used before?" % kitName)
+        glblUsedKitNames.add(kitName)
+    compilerCombo = findObject(":Compiler:_QComboBox")
+    test.compare(compilerCombo.enabled, compilerCombo.count > 1,
+                 "Verifying whether compiler combo is enabled/disabled correctly.")
 
-    test.verify(str(cCompilerCombo.currentText) in foundCompNames,
-                "Verifying if one of the found C compilers had been set.")
-    test.verify(str(cppCompilerCombo.currentText) in foundCompNames,
-                "Verifying if one of the found C++ compilers had been set.")
+    test.verify(str(compilerCombo.currentText) in foundCompNames,
+                "Verifying if one of the found compilers had been set.")
     if currentSelectedTreeItem:
         foundWarningOrError = warningOrError.search(str(currentSelectedTreeItem.toolTip))
         if foundWarningOrError:
@@ -377,7 +395,7 @@ def __lowerStrs__(iterable):
         else:
             yield it
 
-def __checkCreatedSettings__(settingsFolder):
+def __checkCreatedSettings__(settingsFolder, qmakeFound):
     waitForCleanShutdown()
     qtProj = os.path.join(settingsFolder, "QtProject")
     creatorFolder = os.path.join(qtProj, "qtcreator")
@@ -390,8 +408,9 @@ def __checkCreatedSettings__(settingsFolder):
              os.path.join(creatorFolder, "devices.xml"):0,
              os.path.join(creatorFolder, "helpcollection.qhc"):0,
              os.path.join(creatorFolder, "profiles.xml"):0,
-             os.path.join(creatorFolder, "qtversion.xml"):0,
              os.path.join(creatorFolder, "toolchains.xml"):0}
+    if qmakeFound:
+        files[os.path.join(creatorFolder, "qtversion.xml")] = 0
     for f in folders:
         test.verify(os.path.isdir(f),
                     "Verifying whether folder '%s' has been created." % os.path.basename(f))

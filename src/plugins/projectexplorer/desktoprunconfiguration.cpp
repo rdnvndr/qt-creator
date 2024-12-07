@@ -32,9 +32,6 @@ protected:
 
         executable.setDeviceSelector(target, ExecutableAspect::RunDevice);
 
-        arguments.setMacroExpander(macroExpander());
-
-        workingDir.setMacroExpander(macroExpander());
         workingDir.setEnvironment(&environment);
 
         connect(&useLibraryPaths, &UseLibraryPathsAspect::changed,
@@ -55,8 +52,22 @@ protected:
 
         environment.addModifier([this](Environment &env) {
             BuildTargetInfo bti = buildTargetInfo();
-            if (bti.runEnvModifier)
+            if (bti.runEnvModifier) {
+                Environment old = env;
                 bti.runEnvModifier(env, useLibraryPaths());
+                const EnvironmentItems diff = old.diff(env, true);
+                for (const EnvironmentItem &i : diff) {
+                    switch (i.operation) {
+                    case EnvironmentItem::SetEnabled:
+                    case EnvironmentItem::Prepend:
+                    case EnvironmentItem::Append:
+                        env.addItem(std::make_tuple("_QTC_" + i.name, i.value));
+                        break;
+                    default:
+                        break;
+                    }
+                }
+            }
         });
 
         setUpdater([this] { updateTargetInformation(); });
@@ -70,6 +81,7 @@ private:
     FilePath executableToRun(const BuildTargetInfo &targetInfo) const;
 
     const Kind m_kind;
+    LauncherAspect launcher{this};
     EnvironmentAspect environment{this};
     ExecutableAspect executable{this};
     ArgumentsAspect arguments{this};
@@ -90,6 +102,8 @@ void DesktopRunConfiguration::updateTargetInformation()
     auto terminalAspect = aspect<TerminalAspect>();
     terminalAspect->setUseTerminalHint(bti.targetFilePath.needsDevice() ? false : bti.usesTerminal);
     terminalAspect->setEnabled(!bti.targetFilePath.needsDevice());
+    auto launcherAspect = aspect<LauncherAspect>();
+    launcherAspect->setVisible(false);
 
     if (m_kind == Qmake) {
 
@@ -121,6 +135,12 @@ void DesktopRunConfiguration::updateTargetInformation()
 
     } else if (m_kind == CMake) {
 
+        if (bti.launchers.size() > 0) {
+            launcherAspect->setVisible(true);
+            // Use start program by default, if defined (see toBuildTarget() for details)
+            launcherAspect->setDefaultLauncher(bti.launchers.last());
+            launcherAspect->updateLaunchers(bti.launchers);
+        }
         aspect<ExecutableAspect>()->setExecutable(bti.targetFilePath);
         aspect<WorkingDirectoryAspect>()->setDefaultWorkingDirectory(bti.workingDirectory);
         emit aspect<EnvironmentAspect>()->environmentChanged();

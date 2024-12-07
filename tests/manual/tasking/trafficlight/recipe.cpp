@@ -11,7 +11,7 @@
 using namespace Tasking;
 using namespace std::chrono;
 
-Group recipe(GlueInterface *iface)
+ExecutableItem recipe(GlueInterface *iface)
 {
     return Forever {
         finishAllAndSuccess,
@@ -21,7 +21,7 @@ Group recipe(GlueInterface *iface)
                 [iface](Barrier &barrier) {
                     QObject::connect(iface, &GlueInterface::smashed, &barrier, &Barrier::advance);
                 },
-                [] { return DoneResult::Error; }),
+                DoneResult::Error),
             Forever {
                 TimeoutTask( // "red" state
                     [iface](milliseconds &timeout) {
@@ -56,7 +56,7 @@ Group recipe(GlueInterface *iface)
                 [iface](Barrier &barrier) {
                     QObject::connect(iface, &GlueInterface::repaired, &barrier, &Barrier::advance);
                 },
-                [] { return DoneResult::Error; }),
+                DoneResult::Error),
             Forever {
                 TimeoutTask( // "blinking" state
                     [iface](milliseconds &timeout) {

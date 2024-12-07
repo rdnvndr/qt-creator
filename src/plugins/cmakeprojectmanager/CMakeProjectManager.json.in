@@ -1,9 +1,11 @@
 {
+    "Id" : "cmakeprojectmanager",
     "Name" : "CMakeProjectManager",
     "Version" : "${IDE_VERSION}",
     "CompatVersion" : "${IDE_VERSION_COMPAT}",
+    "VendorId" : "theqtcompany",
     "Vendor" : "The Qt Company Ltd",
-    "Copyright" : "(C) ${IDE_COPYRIGHT_YEAR} The Qt Company Ltd",
+    "Copyright" : "${IDE_COPYRIGHT}",
     "License" : [ "Commercial Usage",
                   "",
                   "Licensees holding valid Qt Commercial licenses may use this plugin in accordance with the Qt Commercial License Agreement provided with the Software or, alternatively, in accordance with the terms contained in a written agreement between you and The Qt Company.",
@@ -13,8 +15,15 @@
                   "Alternatively, this plugin may be used under the terms of the GNU General Public License version 3 as published by the Free Software Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT included in the packaging of this plugin. Please review the following information to ensure the GNU General Public License requirements will be met: https://www.gnu.org/licenses/gpl-3.0.html."
     ],
     "Category" : "Build Systems",
-    "Description" : "CMake support.",
-    "Url" : "http://www.qt.io",
+    "Description" : "Automate the configuration of build systems with CMake.",
+    "LongDescription" : [
+        "CMake controls the software compilation process by using simple configuration files, called CMakeLists.txt files.",
+        "You also need:",
+            "- CMake",
+        "Qt Online Installer installs a CMake version that you can use."
+    ],
+    "Url" : "https://www.qt.io",
+    "DocumentationUrl" : "https://doc.qt.io/qtcreator/creator-project-cmake.html",
     ${IDE_PLUGIN_DEPENDENCIES},
 
     "Mimetypes" : [
@@ -29,6 +38,7 @@
         "    <sub-class-of type='text/x-cmake'/>",
         "    <comment>CMake Project file</comment>",
         "    <glob pattern='CMakeLists.txt'/>",
+        "    <glob pattern='CMakeCache.txt'/>",
         "  </mime-type>",
         "</mime-info>"
     ]

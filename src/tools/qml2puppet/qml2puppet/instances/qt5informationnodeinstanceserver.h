@@ -89,10 +89,9 @@ private:
     void handleSelectionChangeTimeout();
     void handleDynamicAddObjectTimeout();
     void createEditView3D();
-    void create3DPreviewView();
     void setup3DEditView(const QList<ServerNodeInstance> &instanceList,
                          const CreateSceneCommand &command);
-    void createCameraAndLightGizmos(const QList<ServerNodeInstance> &instanceList) const;
+    void createGizmos(const QList<ServerNodeInstance> &instanceList) const;
     void add3DViewPorts(const QList<ServerNodeInstance> &instanceList);
     void add3DScenes(const QList<ServerNodeInstance> &instanceList);
     QObject *findView3DForInstance(const ServerNodeInstance &instance) const;
@@ -122,12 +121,14 @@ private:
     void updateLockedAndHiddenStates(const QSet<ServerNodeInstance> &instances);
     void handleInputEvents();
     void resolveImportSupport();
+    void updateActiveScenePreferredCamera();
     void updateMaterialPreviewData(const QVector<PropertyValueContainer> &valueChanges);
     void updateRotationBlocks(const QVector<PropertyValueContainer> &valueChanges);
-    void updateSnapSettings(const QVector<PropertyValueContainer> &valueChanges);
+    void updateSnapAndCameraSettings(const QVector<PropertyValueContainer> &valueChanges);
     void updateColorSettings(const QVector<PropertyValueContainer> &valueChanges);
     void removeRotationBlocks(const QVector<qint32> &instanceIds);
     void getNodeAtPos(const QPointF &pos);
+    void getNodeAtMainScenePos(const QPointF &pos, qint32 viewId);
 
     void createAuxiliaryQuickView(const QUrl &url, RenderViewData &viewData);
 #ifdef QUICK3D_PARTICLES_MODULE
@@ -136,7 +137,7 @@ private:
     void handleParticleSystemDeselected();
 #endif
     void setSceneEnvironmentData(qint32 instanceId);
-    QVariantList alignCameraList() const;
+    QVariantList alignCameraList(bool preferCurrentSceneCamera = false) const;
     void updateSceneEnvToHelper();
     bool isSceneEnvironmentBgProperty(const PropertyName &name) const;
 
@@ -150,7 +151,7 @@ private:
     QSet<QObject *> m_view3Ds;
     QMultiHash<QObject *, QObject *> m_3DSceneMap; // key: scene root, value: node
     QObject *m_active3DView = nullptr;
-    QList<QObject *> m_priorityView3DsToRender;
+    QObjectList m_priorityView3DsToRender;
     QObject *m_active3DScene = nullptr;
     QSet<ServerNodeInstance> m_parentChangedSet;
     QList<ServerNodeInstance> m_completedComponentList;

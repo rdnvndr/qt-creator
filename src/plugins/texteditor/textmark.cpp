@@ -177,7 +177,7 @@ TextMark::AnnotationRects TextMark::annotationRects(const QRectF &boundingRect,
                                                     const qreal fadeOutOffset) const
 {
     AnnotationRects rects;
-    rects.text = lineAnnotation();
+    rects.text = lineAnnotation().simplified();
     if (rects.text.isEmpty())
         return rects;
     rects.fadeInRect = boundingRect;
@@ -371,7 +371,7 @@ bool TextMark::addToolTipContent(QLayout *target) const
 QColor TextMark::annotationColor() const
 {
     if (m_color.has_value())
-        return Utils::creatorTheme()->color(*m_color).toHsl();
+        return Utils::creatorColor(*m_color).toHsl();
     return {};
 }
 
@@ -403,6 +403,12 @@ void TextMark::setColor(const Theme::Color &color)
     if (m_color.has_value() && *m_color == color)
         return;
     m_color = color;
+    updateMarker();
+}
+
+void TextMark::unsetColor()
+{
+    m_color.reset();
     updateMarker();
 }
 

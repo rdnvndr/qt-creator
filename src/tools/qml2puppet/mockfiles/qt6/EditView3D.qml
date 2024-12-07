@@ -25,6 +25,7 @@ Item {
 
     property bool showEditLight: false
     property bool showGrid: true
+    property bool showLookAt: true
     property bool showSelectionBox: true
     property bool showIconGizmo: true
     property bool showCameraFrustum: false
@@ -35,8 +36,11 @@ Item {
     property color backgroundGradientColorStart: "#222222"
     property color backgroundGradientColorEnd: "#999999"
     property color gridColor: "#cccccc"
-    property bool syncEnvBackground: false
+    property bool syncEnvBackground: true
     property bool splitView: false
+    property bool flyMode: false
+    property bool showCameraSpeed: false
+    property string cameraViewMode
 
     enum SelectionMode { Item, Group }
     enum TransformMode { Move, Rotate, Scale }
@@ -64,10 +68,12 @@ Item {
     onShowEditLightChanged:       _generalHelper.storeToolState(sceneId, "showEditLight", showEditLight)
     onGlobalOrientationChanged:   _generalHelper.storeToolState(sceneId, "globalOrientation", globalOrientation)
     onShowGridChanged:            _generalHelper.storeToolState(sceneId, "showGrid", showGrid);
+    onShowLookAtChanged:          _generalHelper.storeToolState(sceneId, "showLookAt", showLookAt);
     onSyncEnvBackgroundChanged:   _generalHelper.storeToolState(sceneId, "syncEnvBackground", syncEnvBackground);
     onShowSelectionBoxChanged:    _generalHelper.storeToolState(sceneId, "showSelectionBox", showSelectionBox);
     onShowIconGizmoChanged:       _generalHelper.storeToolState(sceneId, "showIconGizmo", showIconGizmo);
     onShowCameraFrustumChanged:   _generalHelper.storeToolState(sceneId, "showCameraFrustum", showCameraFrustum);
+    onCameraViewModeChanged:      _generalHelper.storeToolState(sceneId, "cameraViewMode", cameraViewMode)
     onShowParticleEmitterChanged: _generalHelper.storeToolState(sceneId, "showParticleEmitter", showParticleEmitter);
     onSelectionModeChanged:       _generalHelper.storeToolState(sceneId, "selectionMode", selectionMode);
     onTransformModeChanged:       _generalHelper.storeToolState(sceneId, "transformMode", transformMode);
@@ -104,11 +110,13 @@ Item {
                                                        "cameraLookAt": cameraControls[i]._lookAtPoint,
                                                        "z": 1,
                                                        "sceneEnv.debugSettings.materialOverride": materialOverrides[i],
-                                                       "sceneEnv.debugSettings.wireframeEnabled": showWireframes[i]});
+                                                       "sceneEnv.debugSettings.wireframeEnabled": showWireframes[i],
+                                                       "selectedNode": selectedNode});
                 editViews[i].usePerspective = Qt.binding(function() {return usePerspective;});
                 editViews[i].showSceneLight = Qt.binding(function() {return showEditLight;});
                 editViews[i].showGrid = Qt.binding(function() {return showGrid;});
                 editViews[i].gridColor = Qt.binding(function() {return gridColor;});
+                editViews[i].selectedNode = Qt.binding(function() {return selectedNode;});
             }
             editViews[0].cameraLookAt = Qt.binding(function() {return cameraControl0._lookAtPoint;});
             editViews[1].cameraLookAt = Qt.binding(function() {return cameraControl1._lookAtPoint;});
@@ -127,6 +135,7 @@ Item {
 
             selectionBoxCount = 0;
             editViewsChanged();
+            cameraControls[activeSplit].forceActiveFocus();
             return true;
         }
         return false;
@@ -161,7 +170,7 @@ Item {
                             break;
                         }
                     }
-                    showEditLight = !hasSceneLight;
+                    showEditLight = !hasSceneLight && !_generalHelper.sceneHasLightProbe(sceneId);
 
                     // Don't inherit camera angles from the previous scene
                     for (let i = 0; i < 4; ++i)
@@ -260,16 +269,22 @@ Item {
 
         for (var i = 0; i < 4; ++i) {
             if (syncEnvBackground) {
-                let bgMode = _generalHelper.sceneEnvironmentBgMode(sceneId);
-                if ((!_generalHelper.sceneEnvironmentLightProbe(sceneId) && bgMode === SceneEnvironment.SkyBox)
-                    || (!_generalHelper.sceneEnvironmentSkyBoxCubeMap(sceneId) && bgMode === SceneEnvironment.SkyBoxCubeMap)) {
-                    editViews[i].sceneEnv.backgroundMode = SceneEnvironment.Color;
-                } else {
-                    editViews[i].sceneEnv.backgroundMode = bgMode;
+                if (_generalHelper.hasSceneEnvironmentData(sceneId)) {
+                    let bgMode = _generalHelper.sceneEnvironmentBgMode(sceneId);
+                    if ((!_generalHelper.sceneEnvironmentLightProbe(sceneId) && bgMode === SceneEnvironment.SkyBox)
+                        || (!_generalHelper.sceneEnvironmentSkyBoxCubeMap(sceneId) && bgMode === SceneEnvironment.SkyBoxCubeMap)) {
+                        editViews[i].sceneEnv.backgroundMode = SceneEnvironment.Color;
+                    } else {
+                        editViews[i].sceneEnv.backgroundMode = bgMode;
+                    }
+                    editViews[i].sceneEnv.lightProbe = _generalHelper.sceneEnvironmentLightProbe(sceneId);
+                    editViews[i].sceneEnv.skyBoxCubeMap = _generalHelper.sceneEnvironmentSkyBoxCubeMap(sceneId);
+                    editViews[i].sceneEnv.clearColor = _generalHelper.sceneEnvironmentColor(sceneId);
+                } else if (activeScene) {
+                    _generalHelper.updateSceneEnvToLast(editViews[i].sceneEnv,
+                                                        editViews[i].defaultLightProbe,
+                                                        editViews[i].defaultCubeMap);
                 }
-                editViews[i].sceneEnv.lightProbe = _generalHelper.sceneEnvironmentLightProbe(sceneId);
-                editViews[i].sceneEnv.skyBoxCubeMap = _generalHelper.sceneEnvironmentSkyBoxCubeMap(sceneId);
-                editViews[i].sceneEnv.clearColor = _generalHelper.sceneEnvironmentColor(sceneId);
             } else {
                 editViews[i].sceneEnv.backgroundMode = SceneEnvironment.Transparent;
                 editViews[i].sceneEnv.lightProbe = null;
@@ -293,11 +308,16 @@ Item {
         else if (resetToDefault)
             showGrid = true;
 
+        if ("showLookAt" in toolStates)
+            showLookAt = toolStates.showLookAt;
+        else if (resetToDefault)
+            showLookAt = true;
+
         if ("syncEnvBackground" in toolStates) {
             syncEnvBackground = toolStates.syncEnvBackground;
             updateEnvBackground();
         } else if (resetToDefault) {
-            syncEnvBackground = false;
+            syncEnvBackground = true;
             updateEnvBackground();
         }
 
@@ -315,6 +335,11 @@ Item {
             showCameraFrustum = toolStates.showCameraFrustum;
         else if (resetToDefault)
             showCameraFrustum = false;
+
+        if ("cameraViewMode" in toolStates)
+            cameraViewMode = toolStates.cameraViewMode
+        else if (resetToDefault)
+            cameraViewMode = "CameraOff"
 
         if ("showParticleEmitter" in toolStates)
             showParticleEmitter = toolStates.showParticleEmitter;
@@ -349,6 +374,14 @@ Item {
                 cameraControls[i].restoreDefaultState();
         }
 
+        if ("flyMode" in toolStates) {
+            flyMode = toolStates.flyMode;
+            viewRoot.showCameraSpeed = false;
+        } else if (resetToDefault) {
+            flyMode = false;
+            viewRoot.showCameraSpeed = false;
+        }
+
         if ("splitView" in toolStates)
             splitView = toolStates.splitView;
         else if (resetToDefault)
@@ -374,10 +407,12 @@ Item {
     {
         _generalHelper.storeToolState(sceneId, "showEditLight", showEditLight)
         _generalHelper.storeToolState(sceneId, "showGrid", showGrid)
+        _generalHelper.storeToolState(sceneId, "showLookAt", showLookAt)
         _generalHelper.storeToolState(sceneId, "syncEnvBackground", syncEnvBackground)
         _generalHelper.storeToolState(sceneId, "showSelectionBox", showSelectionBox)
         _generalHelper.storeToolState(sceneId, "showIconGizmo", showIconGizmo)
         _generalHelper.storeToolState(sceneId, "showCameraFrustum", showCameraFrustum)
+        _generalHelper.storeToolState(sceneId, "cameraViewMode", cameraViewMode)
         _generalHelper.storeToolState(sceneId, "showParticleEmitter", showParticleEmitter)
         _generalHelper.storeToolState(sceneId, "usePerspective", usePerspective)
         _generalHelper.storeToolState(sceneId, "globalOrientation", globalOrientation)
@@ -510,6 +545,12 @@ Item {
             overlayViews[i].addParticleEmitterGizmo(scene, obj);
     }
 
+    function addReflectionProbeGizmo(scene, obj)
+    {
+        for (var i = 0; i < 4; ++i)
+            overlayViews[i].addReflectionProbeGizmo(scene, obj);
+    }
+
     function releaseLightGizmo(obj)
     {
         for (var i = 0; i < 4; ++i)
@@ -534,6 +575,12 @@ Item {
             overlayViews[i].releaseParticleEmitterGizmo(obj);
     }
 
+    function releaseReflectionProbeGizmo(obj)
+    {
+        for (var i = 0; i < 4; ++i)
+            overlayViews[i].releaseReflectionProbeGizmo(obj);
+    }
+
     function updateLightGizmoScene(scene, obj)
     {
         for (var i = 0; i < 4; ++i)
@@ -556,6 +603,12 @@ Item {
     {
         for (var i = 0; i < 4; ++i)
             overlayViews[i].updateParticleEmitterGizmoScene(scene, obj);
+    }
+
+    function updateReflectionProbeGizmoScene(scene, obj)
+    {
+        for (var i = 0; i < 4; ++i)
+            overlayViews[i].updateReflectionProbeGizmoScene(scene, obj);
     }
 
     function resolveSplitPoint(x, y)
@@ -596,6 +649,16 @@ Item {
         return activeOverlayView.gizmoAt(splitPoint.x, splitPoint.y);
     }
 
+    function rotateEditCamera(angles)
+    {
+        cameraControls[activeSplit].rotateCamera(angles);
+    }
+
+    function moveEditCamera(amounts)
+    {
+        cameraControls[activeSplit].moveCamera(amounts);
+    }
+
     Component.onCompleted: {
         createEditViews();
         selectObjects([]);
@@ -619,7 +682,6 @@ Item {
         {
             for (var i = 0; i < 4; ++i)
                 overlayViews[i].handleHiddenStateChange(node);
-
         }
 
         function onUpdateDragTooltip()
@@ -631,6 +693,18 @@ Item {
         function onSceneEnvDataChanged()
         {
             updateEnvBackground();
+        }
+
+        function onCameraSpeedChanged() {
+            _generalHelper.requestTimerEvent("hideSpeed", 1000);
+            viewRoot.showCameraSpeed = true
+        }
+
+        function onRequestedTimerEvent(timerId) {
+            if (timerId === "hideSpeed") {
+                viewRoot.showCameraSpeed = false;
+                _generalHelper.requestRender();
+            }
         }
     }
 
@@ -820,6 +894,9 @@ Item {
                 property bool initialMoveBlock: false
 
                 onPressed: (mouse) => {
+                    if (viewRoot.flyMode)
+                        return;
+
                     viewRoot.updateActiveSplit(mouse.x, mouse.y);
 
                     let splitPoint = viewRoot.resolveSplitPoint(mouse.x, mouse.y);
@@ -1014,6 +1091,35 @@ Item {
                     anchors.centerIn: parent
                 }
             }
+
+            CameraView {
+                id: cameraView
+
+                showCameraView: viewRoot.cameraViewMode === "ShowSelectedCamera"
+                alwaysOn: viewRoot.cameraViewMode === "AlwaysShowCamera"
+                targetNode: viewRoot.selectedNode
+                activeScene: viewRoot.activeScene
+                activeSceneEnvironment: viewRoot.activeEditView.sceneEnv
+                preferredCamera: _generalHelper.activeScenePreferredCamera
+                preferredSize: Qt.size(viewRoot.width * 0.3, viewRoot.height * 0.3)
+                viewPortSize: Qt.size(viewRoot.viewPortRect.width, viewRoot.viewPortRect.height)
+
+                function updateSnapping() {
+                    if (!viewRoot.splitView)
+                        cameraView.snapLeft = true
+                    else if (viewRoot.activeSplit === 2)
+                        cameraView.snapLeft = false
+                    else if (viewRoot.activeSplit === 3)
+                        cameraView.snapLeft = true
+                }
+
+                Connections {
+                    target: viewRoot
+
+                    onSplitViewChanged: cameraView.updateSnapping()
+                    onActiveSplitChanged: cameraView.updateSnapping()
+                }
+            }
         }
 
         Text {
@@ -1035,6 +1141,38 @@ Item {
             font.pixelSize: 12
             color: "white"
             visible: viewRoot.fps > 0
+        }
+
+        Rectangle {
+            id: cameraSpeedLabel
+            width: 120
+            height: 65
+            anchors.centerIn: parent
+            opacity: 0.6
+            radius: 10
+            color: "white"
+            visible: flyMode && viewRoot.showCameraSpeed
+            enabled: false
+
+            Column {
+                anchors.fill: parent
+                anchors.margins: 8
+                spacing: 2
+                Text {
+                    width: parent.width
+                    horizontalAlignment: Text.AlignHCenter
+                    text: "Camera Speed"
+                    font.pixelSize: 16
+                }
+                Text {
+                    width: parent.width
+                    height: 20
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    font.pixelSize: 20
+                    text: _generalHelper.cameraSpeed.toLocaleString(Qt.locale(), 'f', 1)
+                }
+            }
         }
     }
 

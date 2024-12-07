@@ -72,7 +72,7 @@
 */
 
 /*!
-    \enum IDocument::OpenResult
+    \enum Core::IDocument::OpenResult
 
     The OpenResult enum describes whether a file was successfully opened.
 
@@ -87,13 +87,13 @@
 */
 
 /*!
-    \enum IDocument::ReloadSetting
+    \enum Core::IDocument::ReloadSetting
 
     \internal
 */
 
 /*!
-    \enum IDocument::ChangeTrigger
+    \enum Core::IDocument::ChangeTrigger
 
     The ChangeTrigger enum describes whether a file was changed from \QC
     internally or from the outside.
@@ -107,7 +107,7 @@
 */
 
 /*!
-    \enum IDocument::ChangeType
+    \enum Core::IDocument::ChangeType
 
     The ChangeType enum describes the way in which the file changed.
 
@@ -121,7 +121,7 @@
 */
 
 /*!
-    \enum IDocument::ReloadFlag
+    \enum Core::IDocument::ReloadFlag
 
     The ReloadFlag enum describes if a file should be reloaded from disk.
 
@@ -343,14 +343,14 @@ IDocument::OpenResult IDocument::open(QString *errorString, const Utils::FilePat
     \sa saved()
     \sa filePath()
 */
-bool IDocument::save(QString *errorString, const Utils::FilePath &filePath, bool autoSave)
+Result IDocument::save(const FilePath &filePath, bool autoSave)
 {
-    const Utils::FilePath savePath = filePath.isEmpty() ? this->filePath() : filePath;
+    const FilePath savePath = filePath.isEmpty() ? this->filePath() : filePath;
     emit aboutToSave(savePath, autoSave);
-    const bool success = saveImpl(errorString, savePath, autoSave);
-    if (success)
+    const Result res = saveImpl(savePath, autoSave);
+    if (res)
         emit saved(savePath, autoSave);
-    return success;
+    return res;
 }
 
 /*!
@@ -360,18 +360,15 @@ bool IDocument::save(QString *errorString, const Utils::FilePath &filePath, bool
     document should avoid cleanups or other operations that it does for
     user-requested saves.
 
-    Use \a errorString to return an error message if saving failed.
-
-    Returns whether saving was successful.
+    Returns whether saving was successful, including an error message when it was not.
 
     The default implementation does nothing and returns \c false.
 */
-bool IDocument::saveImpl(QString *errorString, const Utils::FilePath &filePath, bool autoSave)
+Result IDocument::saveImpl(const FilePath &filePath, bool autoSave)
 {
-    Q_UNUSED(errorString)
     Q_UNUSED(filePath)
     Q_UNUSED(autoSave)
-    return false;
+    return Result::Error(Tr::tr("Not implemented"));
 }
 
 /*!
@@ -470,12 +467,11 @@ IDocument::ReloadBehavior IDocument::reloadBehavior(ChangeTrigger trigger, Chang
     \sa reloadFinished()
     \sa changed()
 */
-bool IDocument::reload(QString *errorString, ReloadFlag flag, ChangeType type)
+Result IDocument::reload(ReloadFlag flag, ChangeType type)
 {
-    Q_UNUSED(errorString)
     Q_UNUSED(flag)
     Q_UNUSED(type)
-    return true;
+    return Result::Ok;
 }
 
 /*!
@@ -651,12 +647,13 @@ void IDocument::setMimeType(const QString &mimeType)
 /*!
     \internal
 */
-bool IDocument::autoSave(QString *errorString, const FilePath &filePath)
+Result IDocument::autoSave(const FilePath &filePath)
 {
-    if (!save(errorString, filePath, true))
-        return false;
+    if (const Result res = save(filePath, true); !res)
+        return res;
+
     d->autoSavePath = filePath;
-    return true;
+    return Result::Ok;
 }
 
 static const char kRestoredAutoSave[] = "RestoredAutoSave";

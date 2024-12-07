@@ -546,19 +546,33 @@ private:
     uint _block = 0;
 };
 
-class IdsThatShouldNotBeUsedInDesigner  : public QStringList
+class IdsThatShouldNotBeUsedInDesigner : public QStringList
 {
 public:
     IdsThatShouldNotBeUsedInDesigner()
-        : QStringList({"top",   "bottom", "left",    "right",   "width",  "height",
-                       "x",     "y",      "opacity", "parent",  "item",   "flow",
-                       "color", "margin", "padding", "print",   "border", "font",
-                       "text",  "source", "state",   "visible", "focus",  "data",
-                      "clip",  "layer",  "scale",   "enabled", "anchors",
-                      "texture", "shaderInfo", "sprite", "spriteSequence", "baseState"
-                      "vector", "string", "url", "var", "point", "date", "size", "list",
-                      "enumeration"})
+        : QStringList({
+            "action",    "alias",      "anchors", "as",       "baseState", "bool",
+            "border",    "bottom",     "break",   "case",     "catch",     "clip",
+            "color",     "continue",   "data",    "date",     "debugger",  "default",
+            "delete",    "do",         "double",  "else",     "enabled",   "enumeration",
+            "finally",   "flow",       "focus",   "font",     "for",       "function",
+            "height",    "id",         "if",      "import",   "in",        "instanceof",
+            "int",       "item",       "layer",   "left",     "list",      "margin",
+            "matrix4x4", "new",        "opacity", "padding",  "parent",    "point",
+            "print",     "quaternion", "real",    "rect",     "return",    "right",
+            "scale",     "shaderInfo", "size",    "source",   "sprite",    "spriteSequence",
+            "state",     "string",     "switch",  "text",     "texture",   "this",
+            "throw",     "time",       "top",     "try",      "typeof",    "url",
+            "var",       "variant",    "vector",  "vector2d", "vector3d",  "vector4d",
+            "visible",   "void",       "while",   "width",    "with",      "x",
+            "y",         "z",
+        })
     {}
+
+    bool containsId(const QString &id) const
+    {
+        return std::binary_search(constBegin(), constEnd(), id);
+    }
 };
 
 class VisualAspectsPropertyBlackList : public QStringList
@@ -614,12 +628,8 @@ class UnsupportedRootObjectTypesByVisualDesigner : public QStringList
 {
 public:
     UnsupportedRootObjectTypesByVisualDesigner()
-        : QStringList({"QtObject"
-                       "ListModel"
-                       "Component"
-                       "Timer"
-                       "Package",
-                       "ApplicationWindow"})
+        : QStringList(
+            {"QtObject", "ListModel", "Component", "Timer", "Package", "ApplicationWindow"})
     {}
 };
 
@@ -682,7 +692,7 @@ QList<StaticAnalysis::Type> Check::defaultDisabledMessagesForNonQuickUi()
 
 bool Check::incompatibleDesignerQmlId(const QString &id)
 {
-    return idsThatShouldNotBeUsedInDesigner->contains(id);
+    return idsThatShouldNotBeUsedInDesigner->containsId(id);
 }
 
 Check::Check(Document::Ptr doc, const ContextPtr &context, Utils::QtcSettings *qtcSettings)
@@ -846,6 +856,32 @@ bool Check::visit(UiObjectInitializer *)
     return true;
 }
 
+bool Check::visit(AST::UiEnumDeclaration *ast)
+{
+    const Value *localLookup = _scopeChain.lookup(ast->name.toString());
+    Utils::FilePath fp;
+    int line, column;
+    if (localLookup->getSourceLocation(&fp, &line, &column)) {
+        // if it's not "us" we get shadowed by another enum declaration
+        if (int(ast->identifierToken.startLine) != line || int(ast->identifierToken.startColumn) != column)
+            addMessage(ErrDuplicateId, SourceLocation(0, 0, line, column));
+    }
+    return true;
+}
+
+bool Check::visit(AST::UiEnumMemberList *ast)
+{
+    QStringList names;
+    for (auto it = ast; it; it = it->next) {
+        if (!it->member.first().isUpper())
+            addMessage(ErrInvalidEnumValue, it->memberToken); // better a different message?
+        if (names.contains(it->member)) // duplicate enum value
+            addMessage(ErrInvalidEnumValue, it->memberToken); // better a different message?
+        names.append(it->member.toString());
+    }
+    return true;
+}
+
 bool Check::visit(AST::TemplateLiteral *ast)
 {
     Node::accept(ast->expression, this);
@@ -910,7 +946,14 @@ bool Check::visit(UiObjectBinding *ast)
     if (!ast->hasOnToken) {
         checkProperty(ast->qualifiedId);
     } else {
-        addMessage(ErrBehavioursNotSupportedInQmlUi, locationFromRange(ast->firstSourceLocation(), ast->lastSourceLocation()));
+        //addMessage(ErrBehavioursNotSupportedInQmlUi, locationFromRange(ast->firstSourceLocation(), ast->lastSourceLocation()));
+    }
+
+    if (!m_typeStack.isEmpty() && m_typeStack.last() == "State"
+        && toString(ast->qualifiedId) == "when") {
+        addMessage(
+            ErrWhenConditionCannotBeObject,
+            locationFromRange(ast->firstSourceLocation(), ast->lastSourceLocation()));
     }
 
     visitQmlObject(ast, ast->qualifiedTypeNameId, ast->initializer);
@@ -1002,8 +1045,19 @@ void Check::visitQmlObject(Node *ast, UiQualifiedId *typeId,
     if (checkTypeForDesignerSupport(typeId))
         addMessage(WarnUnsupportedTypeInVisualDesigner, typeErrorLocation, typeName);
 
-    if (typeId->next == nullptr && _doc->fileName().baseName() == typeName)
-        addMessage(ErrTypeIsInstantiatedRecursively, typeErrorLocation, typeName);
+    if (!typeId->next && _doc->fileName().baseName() == typeName) {
+        int foundTypes = 0;
+        const QList<Import> imports = _imports->all();
+        for (const Import &import : imports) {
+            if (import.object->lookupMember(typeName, nullptr))
+                ++foundTypes;
+
+            if (foundTypes == 2)
+                break;
+        }
+        if (foundTypes < 2)
+            addMessage(ErrTypeIsInstantiatedRecursively, typeErrorLocation, typeName);
+    }
 
     if (checkTypeForQmlUiSupport(typeId))
         addMessage(ErrUnsupportedTypeInQmlUi, typeErrorLocation, typeName);
@@ -1813,9 +1867,16 @@ bool Check::visit(CallExpression *ast)
     const QString namespaceName = functionNamespace(ast->base);
 
     // We have to allow the translation functions
-
-    static const QStringList translationFunctions = {"qsTr", "qsTrId", "qsTranslate",
-                                                     "qsTrNoOp", "qsTrIdNoOp", "qsTranslateNoOp"};
+    static const QStringList translationFunctions
+        = {"qsTr",
+           "qsTrId",
+           "qsTranslate",
+           "qsTrNoOp",
+           "qsTrIdNoOp",
+           "qsTranslateNoOp",
+           "QT_TR_NOOP",
+           " QT_TRANSLATE_NOOP",
+           "QT_TRID_NOOP"};
 
     static const QStringList whiteListedFunctions = {
         "toString",    "toFixed",           "toExponential", "toPrecision",    "isFinite",

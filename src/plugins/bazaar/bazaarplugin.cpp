@@ -25,6 +25,7 @@
 #include <utils/action.h>
 #include <utils/commandline.h>
 #include <utils/environment.h>
+#include <utils/fileutils.h>
 #include <utils/layoutbuilder.h>
 #include <utils/qtcassert.h>
 #include <utils/stringutils.h>
@@ -127,7 +128,7 @@ class BazaarPluginPrivate final : public VersionControlBase
 public:
     BazaarPluginPrivate();
 
-    QString displayName() const final;
+    QString displayName() const final { return "Bazaar"; }
     Utils::Id id() const final;
 
     bool isVcsFileOrDirectory(const Utils::FilePath &filePath) const final;
@@ -142,6 +143,10 @@ public:
     bool vcsMove(const Utils::FilePath &from, const Utils::FilePath &to) final;
     bool vcsCreateRepository(const Utils::FilePath &directory) final;
     void vcsAnnotate(const Utils::FilePath &file, int line) final;
+    void vcsLog(const Utils::FilePath &topLevel, const Utils::FilePath &relativeDirectory) final {
+        const QStringList options = {"--limit=" + QString::number(settings().logCount())};
+        m_client.log(topLevel, {relativeDirectory.path()}, options);
+    }
     void vcsDescribe(const Utils::FilePath &source, const QString &id) final { m_client.view(source, id); }
 
     VcsCommand *createInitialCheckoutCommand(const QString &url,
@@ -827,7 +832,7 @@ bool BazaarPluginPrivate::activateCommit()
         // Whether local commit or not
         if (commitWidget->isLocalOptionEnabled())
             extraOptions += QLatin1String("--local");
-        m_client.commit(m_submitRepository, files, editorDocument->filePath().toString(), extraOptions);
+        m_client.commit(m_submitRepository, files, editorDocument->filePath().path(), extraOptions);
     }
     return true;
 }
@@ -852,11 +857,6 @@ void BazaarPluginPrivate::updateActions(VersionControlBase::ActionState as)
 
     for (QAction *repoAction : std::as_const(m_repositoryActionList))
         repoAction->setEnabled(repoEnabled);
-}
-
-QString BazaarPluginPrivate::displayName() const
-{
-    return Tr::tr("Bazaar");
 }
 
 Utils::Id BazaarPluginPrivate::id() const
@@ -884,7 +884,7 @@ bool BazaarPluginPrivate::managesFile(const FilePath &workingDirectory, const QS
 
 bool BazaarPluginPrivate::isConfigured() const
 {
-    const FilePath binary = settings().binaryPath();
+    const FilePath binary = settings().binaryPath.effectiveBinary();
     return !binary.isEmpty() && binary.isExecutableFile();
 }
 
@@ -947,24 +947,21 @@ VcsCommand *BazaarPluginPrivate::createInitialCheckoutCommand(const QString &url
                                                               const QString &localName,
                                                               const QStringList &extraArgs)
 {
-    QStringList args;
-    args << m_client.vcsCommandString(BazaarClient::CloneCommand)
-         << extraArgs << url << localName;
-
     Environment env = m_client.processEnvironment(baseDirectory);
     env.set("BZR_PROGRESS_BAR", "text");
-    auto command = VcsBaseClient::createVcsCommand(this, baseDirectory, env);
-    command->addJob({m_client.vcsBinary(baseDirectory), args}, -1);
+    auto command = VcsBaseClient::createVcsCommand(baseDirectory, env);
+    command->addJob({m_client.vcsBinary(baseDirectory),
+        {m_client.vcsCommandString(BazaarClient::CloneCommand), extraArgs, url, localName}}, -1);
     return command;
 }
 
 void BazaarPluginPrivate::changed(const QVariant &v)
 {
-    switch (v.type()) {
-    case QVariant::String:
+    switch (v.typeId()) {
+    case QMetaType::QString:
         emit repositoryChanged(FilePath::fromVariant(v));
         break;
-    case QVariant::StringList:
+    case QMetaType::QStringList:
         emit filesChanged(v.toStringList());
         break;
     default:

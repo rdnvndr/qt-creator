@@ -3,31 +3,40 @@
 
 #include "avddialog.h"
 #include "androidtr.h"
-#include "androidavdmanager.h"
-#include "androidconstants.h"
+#include "androidconfigurations.h"
 #include "androiddevice.h"
 #include "androidsdkmanager.h"
 
+#include <coreplugin/icore.h>
+
 #include <projectexplorer/projectexplorerconstants.h>
+
+#include <solutions/spinner/spinner.h>
 
 #include <utils/algorithm.h>
 #include <utils/infolabel.h>
 #include <utils/layoutbuilder.h>
 #include <utils/qtcassert.h>
+#include <utils/qtcprocess.h>
 #include <utils/tooltip/tooltip.h>
 #include <utils/utilsicons.h>
 
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
-#include <QFutureWatcher>
 #include <QKeyEvent>
 #include <QLineEdit>
 #include <QLoggingCategory>
+#include <QMessageBox>
+#include <QProgressDialog>
 #include <QPushButton>
 #include <QSpinBox>
 #include <QToolTip>
+#include <QSysInfo>
 
+using namespace ProjectExplorer;
+using namespace SpinnerSolution;
+using namespace Tasking;
 using namespace Utils;
 
 namespace Android::Internal {
@@ -35,19 +44,31 @@ namespace Android::Internal {
 static Q_LOGGING_CATEGORY(avdDialogLog, "qtc.android.avdDialog", QtWarningMsg)
 
 AvdDialog::AvdDialog(QWidget *parent)
-    : QDialog(parent),
-      m_allowedNameChars(QLatin1String("[a-z|A-Z|0-9|._-]*"))
+    : QDialog(parent)
+    , m_allowedNameChars(QLatin1String("[a-z|A-Z|0-9|._-]*"))
 {
     resize(800, 0);
     setWindowTitle(Tr::tr("Create new AVD"));
 
     m_abiComboBox = new QComboBox;
-    m_abiComboBox->addItems({
-        ProjectExplorer::Constants::ANDROID_ABI_X86,
-        ProjectExplorer::Constants::ANDROID_ABI_X86_64,
+    // Put the host architectures on top prioritizing 64 bit
+    const QStringList armAbis = {
+        ProjectExplorer::Constants::ANDROID_ABI_ARM64_V8A,
         ProjectExplorer::Constants::ANDROID_ABI_ARMEABI_V7A,
-        ProjectExplorer::Constants::ANDROID_ABI_ARM64_V8A
-    });
+    };
+
+    const QStringList x86Abis = {
+        ProjectExplorer::Constants::ANDROID_ABI_X86_64,
+        ProjectExplorer::Constants::ANDROID_ABI_X86
+    };
+
+    QStringList items;
+    if (QSysInfo::currentCpuArchitecture().startsWith("arm"))
+        items << armAbis << x86Abis;
+    else
+        items << x86Abis << armAbis;
+
+    m_abiComboBox->addItems(items);
 
     m_sdcardSizeSpinBox = new QSpinBox;
     m_sdcardSizeSpinBox->setSuffix(Tr::tr(" MiB"));
@@ -65,7 +86,7 @@ AvdDialog::AvdDialog(QWidget *parent)
 
     m_warningText = new InfoLabel;
     m_warningText->setType(InfoLabel::Warning);
-    m_warningText->setElideMode(Qt::ElideNone);
+    m_warningText->setElideMode(Qt::ElideRight);
 
     m_deviceDefinitionTypeComboBox = new QComboBox;
 
@@ -78,17 +99,20 @@ AvdDialog::AvdDialog(QWidget *parent)
 
     using namespace Layouting;
 
+    m_gui = new QWidget;
+
     Column {
-        Form {
+        m_gui = Form {
             Tr::tr("Name:"), m_nameLineEdit, br,
-            Tr::tr("Device definition:"),
-                Row { m_deviceDefinitionTypeComboBox, m_deviceDefinitionComboBox }, br,
-            Tr::tr("Architecture (ABI):"), m_abiComboBox, br,
-            Tr::tr("Target API:"), m_targetApiComboBox, br,
+            Tr::tr("Target ABI / API:"),
+                Row { m_abiComboBox, m_targetApiComboBox }, br,
             QString(), m_warningText, br,
+            Tr::tr("Skin definition:"),
+                Row { m_deviceDefinitionTypeComboBox, m_deviceDefinitionComboBox }, br,
             Tr::tr("SD card size:"), m_sdcardSizeSpinBox, br,
             QString(), m_overwriteCheckBox,
-        },
+            noMargin
+        }.emerge(),
         st,
         m_buttonBox
     }.attachTo(this);
@@ -98,7 +122,7 @@ AvdDialog::AvdDialog(QWidget *parent)
             this, &AvdDialog::updateDeviceDefinitionComboBox);
     connect(m_abiComboBox, &QComboBox::currentIndexChanged,
             this, &AvdDialog::updateApiLevelComboBox);
-    connect(m_buttonBox, &QDialogButtonBox::accepted, this, &QDialog::accept);
+    connect(m_buttonBox, &QDialogButtonBox::accepted, this, &AvdDialog::createAvd);
     connect(m_buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
 
     m_deviceTypeToStringMap.insert(AvdDialog::Phone, "Phone");
@@ -106,45 +130,9 @@ AvdDialog::AvdDialog(QWidget *parent)
     m_deviceTypeToStringMap.insert(AvdDialog::Automotive, "Automotive");
     m_deviceTypeToStringMap.insert(AvdDialog::TV, "TV");
     m_deviceTypeToStringMap.insert(AvdDialog::Wear, "Wear");
+    m_deviceTypeToStringMap.insert(AvdDialog::Desktop, "Desktop");
 
-    parseDeviceDefinitionsList();
-    for (const QString &type : m_deviceTypeToStringMap)
-        m_deviceDefinitionTypeComboBox->addItem(type);
-
-    updateApiLevelComboBox();
-}
-
-int AvdDialog::exec()
-{
-    const int execResult = QDialog::exec();
-    if (execResult == QDialog::Accepted) {
-        CreateAvdInfo result;
-        result.systemImage = systemImage();
-        result.name = name();
-        result.abi = abi();
-        result.deviceDefinition = deviceDefinition();
-        result.sdcardSize = sdcardSize();
-        result.overwrite = m_overwriteCheckBox->isChecked();
-
-        const AndroidAvdManager avdManager;
-        QFutureWatcher<CreateAvdInfo> createAvdFutureWatcher;
-
-        QEventLoop loop;
-        QObject::connect(&createAvdFutureWatcher, &QFutureWatcher<CreateAvdInfo>::finished,
-                         &loop, &QEventLoop::quit);
-        QObject::connect(&createAvdFutureWatcher, &QFutureWatcher<CreateAvdInfo>::canceled,
-                         &loop, &QEventLoop::quit);
-        createAvdFutureWatcher.setFuture(avdManager.createAvd(result));
-        loop.exec(QEventLoop::ExcludeUserInputEvents);
-
-        const QFuture<CreateAvdInfo> future = createAvdFutureWatcher.future();
-        if (future.isResultReadyAt(0)) {
-            m_createdAvdInfo = future.result();
-            AndroidDeviceManager::instance()->updateAvdsList();
-        }
-    }
-
-    return execResult;
+    collectInitialData();
 }
 
 bool AvdDialog::isValid() const
@@ -152,23 +140,9 @@ bool AvdDialog::isValid() const
     return !name().isEmpty() && systemImage() && systemImage()->isValid() && !abi().isEmpty();
 }
 
-ProjectExplorer::IDevice::Ptr AvdDialog::device() const
+CreateAvdInfo AvdDialog::avdInfo() const
 {
-    if (!m_createdAvdInfo.systemImage) {
-        qCWarning(avdDialogLog) << "System image of the created AVD is nullptr";
-        return IDevice::Ptr();
-    }
-    AndroidDevice *dev = new AndroidDevice();
-    const Utils::Id deviceId = AndroidDevice::idFromAvdInfo(m_createdAvdInfo);
-    using namespace ProjectExplorer;
-    dev->setupId(IDevice::AutoDetected, deviceId);
-    dev->setMachineType(IDevice::Emulator);
-    dev->settings()->displayName.setValue(m_createdAvdInfo.name);
-    dev->setDeviceState(IDevice::DeviceConnected);
-    dev->setExtraData(Constants::AndroidAvdName, m_createdAvdInfo.name);
-    dev->setExtraData(Constants::AndroidCpuAbi, {m_createdAvdInfo.abi});
-    dev->setExtraData(Constants::AndroidSdk, m_createdAvdInfo.systemImage->apiLevel());
-    return IDevice::Ptr(dev);
+    return m_createdAvdInfo;
 }
 
 AvdDialog::DeviceType AvdDialog::tagToDeviceType(const QString &type_tag)
@@ -179,50 +153,166 @@ AvdDialog::DeviceType AvdDialog::tagToDeviceType(const QString &type_tag)
         return AvdDialog::TV;
     else if (type_tag.contains("android-automotive"))
         return AvdDialog::Automotive;
-    else
-        return AvdDialog::PhoneOrTablet;
+    else if (type_tag.contains("android-desktop"))
+        return AvdDialog::Desktop;
+    return AvdDialog::PhoneOrTablet;
 }
 
-void AvdDialog::parseDeviceDefinitionsList()
+void AvdDialog::collectInitialData()
 {
-    QString output;
+    const auto onProcessSetup = [this](Process &process) {
+        m_gui->setEnabled(false);
+        m_buttonBox->button(QDialogButtonBox::Ok)->setEnabled(false);
+        const CommandLine cmd(AndroidConfig::avdManagerToolPath(), {"list", "device"});
+        qCDebug(avdDialogLog).noquote() << "Running AVD Manager command:" << cmd.toUserOutput();
+        process.setEnvironment(AndroidConfig::toolsEnvironment());
+        process.setCommand(cmd);
+    };
+    const auto onProcessDone = [this](const Process &process, DoneWith result) {
+        const QString output = process.allOutput();
+        if (result == DoneWith::Error) {
+            QMessageBox::warning(Core::ICore::dialogParent(), Tr::tr("Create new AVD"),
+                                 Tr::tr("Avd list command failed. %1 %2")
+                                     .arg(output).arg(AndroidConfig::sdkToolsVersion().toString()));
+            reject();
+            return;
+        }
 
-    if (!AndroidAvdManager::avdManagerCommand({"list", "device"}, &output)) {
-        qCDebug(avdDialogLog) << "Avd list command failed" << output
-                              << androidConfig().sdkToolsVersion();
+/* Example output:
+
+Available devices definitions:
+id: 0 or "automotive_1024p_landscape"
+    Name: Automotive (1024p landscape)
+    OEM : Google
+    Tag : android-automotive-playstore
+---------
+id: 1 or "automotive_1080p_landscape"
+    Name: Automotive (1080p landscape)
+    OEM : Google
+    Tag : android-automotive
+---------
+id: 2 or "Galaxy Nexus"
+    Name: Galaxy Nexus
+    OEM : Google
+---------
+id: 3 or "desktop_large"
+    Name: Large Desktop
+    OEM : Google
+    Tag : android-desktop
+...
+*/
+        QStringList avdDeviceInfo;
+
+        const auto lines = output.split('\n');
+        for (const QString &line : lines) {
+            if (line.startsWith("---------") || line.isEmpty()) {
+                DeviceDefinitionStruct deviceDefinition;
+                for (const QString &line : avdDeviceInfo) {
+                    if (line.contains("id:")) {
+                        deviceDefinition.name_id = line.split("or").at(1);
+                        deviceDefinition.name_id = deviceDefinition.name_id.remove(0, 1).remove('"');
+                    } else if (line.contains("Tag :")) {
+                        deviceDefinition.type_str = line.split(':').at(1);
+                        deviceDefinition.type_str = deviceDefinition.type_str.remove(0, 1);
+                    }
+                }
+
+                DeviceType deviceType = tagToDeviceType(deviceDefinition.type_str);
+                if (deviceType == PhoneOrTablet) {
+                    if (deviceDefinition.name_id.contains("Tablet"))
+                        deviceType = Tablet;
+                    else
+                        deviceType = Phone;
+                }
+                deviceDefinition.deviceType = deviceType;
+                m_deviceDefinitionsList.append(deviceDefinition);
+                avdDeviceInfo.clear();
+            } else {
+                avdDeviceInfo << line;
+            }
+        }
+        for (const QString &type : m_deviceTypeToStringMap)
+            m_deviceDefinitionTypeComboBox->addItem(type);
+
+        updateApiLevelComboBox();
+        m_gui->setEnabled(true);
+    };
+
+    struct SpinnerStruct {
+        std::unique_ptr<Spinner> spinner;
+    };
+
+    const Storage<SpinnerStruct> storage;
+
+    const auto onSetup = [this, storage] {
+        storage->spinner.reset(new Spinner(SpinnerSize::Medium, m_gui));
+        storage->spinner->show();
+    };
+
+    const Group recipe {
+        storage,
+        onGroupSetup(onSetup),
+        ProcessTask(onProcessSetup, onProcessDone)
+    };
+
+    m_taskTreeRunner.start(recipe);
+}
+
+void AvdDialog::createAvd()
+{
+    const SystemImage *si = systemImage();
+    if (!si || !si->isValid() || name().isEmpty()) {
+        QMessageBox::warning(Core::ICore::dialogParent(),
+                             Tr::tr("Create new AVD"), Tr::tr("Cannot create AVD. Invalid input."));
         return;
     }
+    const CreateAvdInfo avdInfo{si->sdkStylePath(), si->apiLevel(), name(), abi(),
+                                deviceDefinition(), sdcardSize()};
 
-    QStringList avdDeviceInfo;
-
-    const auto lines = output.split('\n');
-    for (const QString &line : lines) {
-        if (line.startsWith("---------") || line.isEmpty()) {
-            DeviceDefinitionStruct deviceDefinition;
-            for (const QString &line : avdDeviceInfo) {
-                if (line.contains("id:")) {
-                    deviceDefinition.name_id = line.split("or").at(1);
-                    deviceDefinition.name_id = deviceDefinition.name_id.remove(0, 1).remove('"');
-                } else if (line.contains("Tag :")) {
-                    deviceDefinition.type_str = line.split(':').at(1);
-                    deviceDefinition.type_str = deviceDefinition.type_str.remove(0, 1);
-                }
-            }
-
-            DeviceType deviceType = tagToDeviceType(deviceDefinition.type_str);
-            if (deviceType == PhoneOrTablet) {
-                if (deviceDefinition.name_id.contains("Tablet"))
-                    deviceType = Tablet;
-                else
-                    deviceType = Phone;
-            }
-            deviceDefinition.deviceType = deviceType;
-            m_deviceDefinitionsList.append(deviceDefinition);
-            avdDeviceInfo.clear();
-        } else {
-            avdDeviceInfo << line;
+    struct Progress {
+        Progress() {
+            progressDialog.reset(new QProgressDialog(Core::ICore::dialogParent()));
+            progressDialog->setRange(0, 0);
+            progressDialog->setWindowModality(Qt::ApplicationModal);
+            progressDialog->setWindowTitle("Create new AVD");
+            progressDialog->setLabelText(Tr::tr("Creating new AVD device..."));
+            progressDialog->setFixedSize(progressDialog->sizeHint());
+            progressDialog->setAutoClose(false);
+            progressDialog->show(); // TODO: Should not be needed. Investigate possible QT_BUG
         }
-    }
+        std::unique_ptr<QProgressDialog> progressDialog;
+    };
+
+    const Storage<Progress> progressStorage;
+
+    const auto onCancelSetup = [progressStorage] {
+        return std::make_pair(progressStorage->progressDialog.get(), &QProgressDialog::canceled);
+    };
+
+    const Storage<std::optional<QString>> errorStorage;
+
+    const auto onDone = [errorStorage] {
+        if (errorStorage->has_value()) {
+            QMessageBox::warning(Core::ICore::dialogParent(), Tr::tr("Create new AVD"),
+                                 errorStorage->value());
+        }
+    };
+
+    const Group recipe {
+        progressStorage,
+        errorStorage,
+        createAvdRecipe(errorStorage, avdInfo, m_overwriteCheckBox->isChecked())
+            .withCancel(onCancelSetup),
+        onGroupDone(onDone, CallDoneIf::Error)
+    };
+
+    m_taskTreeRunner.start(recipe, {}, [this, avdInfo](DoneWith result) {
+        if (result == DoneWith::Error)
+            return;
+        m_createdAvdInfo = avdInfo;
+        updateAvdList();
+        accept();
+    });
 }
 
 void AvdDialog::updateDeviceDefinitionComboBox()
@@ -267,7 +357,8 @@ int AvdDialog::sdcardSize() const
 
 void AvdDialog::updateApiLevelComboBox()
 {
-    SystemImageList installedSystemImages = m_sdkManager.installedSystemImages();
+    const SystemImageList installedSystemImages
+        = AndroidConfigurations::sdkManager()->installedSystemImages();
     DeviceType curDeviceType = m_deviceTypeToStringMap.key(
         m_deviceDefinitionTypeComboBox->currentText());
 
@@ -297,19 +388,19 @@ void AvdDialog::updateApiLevelComboBox()
                                                        Qt::ToolTipRole);
     }
 
+    const QString installRecommendationMsg = Tr::tr(
+        "Install a system image from the SDK Manager first.");
+
     if (installedSystemImages.isEmpty()) {
         m_targetApiComboBox->setEnabled(false);
         m_warningText->setVisible(true);
-        m_warningText->setText(
-            Tr::tr("Cannot create a new AVD. No suitable Android system image is installed.<br/>"
-                   "Install a system image for the intended Android version from the SDK Manager."));
+        m_warningText->setText(Tr::tr("No system images found.") + " " + installRecommendationMsg);
         m_buttonBox->button(QDialogButtonBox::Ok)->setEnabled(false);
     } else if (filteredList.isEmpty()) {
         m_targetApiComboBox->setEnabled(false);
         m_warningText->setVisible(true);
-        m_warningText->setText(Tr::tr("Cannot create an AVD for ABI %1.<br/>Install a system "
-                                            "image for it from the SDK Manager tab first.")
-                                             .arg(abi()));
+        m_warningText->setText(Tr::tr("No system images found for %1.").arg(abi()) + " " +
+                               installRecommendationMsg);
         m_buttonBox->button(QDialogButtonBox::Ok)->setEnabled(false);
     } else {
         m_warningText->setVisible(false);

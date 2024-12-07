@@ -508,10 +508,11 @@ void ConfigModel::generateTree()
     auto root = new Utils::TreeItem;
     for (InternalDataItem &di : m_configuration) {
         auto it = initialHash.find(di.key);
+        Utils::MacroExpander *expander = macroExpander();
         if (it != initialHash.end())
-            di.initialValue = it->expandedValue(macroExpander());
+            di.initialValue = it->expandedValue(expander);
 
-        root->appendChild(new Internal::ConfigModelTreeItem(&di));
+        root->appendChild(new Internal::ConfigModelTreeItem(&di, expander));
     }
     setRootItem(root);
 }
@@ -570,8 +571,8 @@ QVariant ConfigModelTreeItem::data(int column, int role) const
             mismatch = !dataItem->kitValue.isEmpty() && dataItem->kitValue != value;
         else
             mismatch = !dataItem->initialValue.isEmpty() && dataItem->initialValue != value;
-        return Utils::creatorTheme()->color(mismatch ? Utils::Theme::TextColorError
-                                                     : Utils::Theme::TextColorNormal);
+        return Utils::creatorColor(mismatch ? Utils::Theme::TextColorError
+                                            : Utils::Theme::TextColorNormal);
     };
 
     const QString value = currentValue();
@@ -673,11 +674,17 @@ QString ConfigModelTreeItem::toolTip() const
         tooltip << dataItem->description;
 
     const QString pattern = "<dt style=\"font-weight:bold\">%1</dt><dd>%2</dd>";
+    const QString value = dataItem->currentValue();
     if (dataItem->isInitial) {
         if (!dataItem->kitValue.isEmpty())
             tooltip << pattern.arg(Tr::tr("Kit:")).arg(dataItem->kitValue);
 
-        tooltip << pattern.arg(Tr::tr("Initial Configuration:")).arg(dataItem->currentValue());
+        tooltip << pattern.arg(Tr::tr("Initial Configuration:")).arg(value);
+
+        const QString expandedValue = dataItem->expandedValue(m_macroExpander);
+        const bool showExpanded = expandedValue != value;
+        if (showExpanded)
+            tooltip << pattern.arg(Tr::tr("Expands to:")).arg(expandedValue);
     } else {
         if (!dataItem->initialValue.isEmpty()) {
             tooltip << pattern.arg(Tr::tr("Initial Configuration:"))
@@ -685,7 +692,7 @@ QString ConfigModelTreeItem::toolTip() const
         }
 
         if (dataItem->inCMakeCache) {
-            tooltip << pattern.arg(Tr::tr("Current Configuration:")).arg(dataItem->currentValue());
+            tooltip << pattern.arg(Tr::tr("Current Configuration:")).arg(value);
         } else {
             tooltip << pattern.arg(Tr::tr("Not in CMakeCache.txt")).arg(QString());
         }

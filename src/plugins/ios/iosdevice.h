@@ -37,6 +37,7 @@ public:
     QString uniqueDeviceID() const;
     QString uniqueInternalDeviceId() const;
     QString osVersion() const;
+    QString productType() const;
     QString cpuArchitecture() const;
     Utils::Port nextPort() const;
     Handler handler() const;
@@ -45,7 +46,7 @@ public:
 
 protected:
     void fromMap(const Utils::Store &map) final;
-    Utils::Store toMap() const final;
+    void toMap(Utils::Store &map) const final;
 
     friend class IosDeviceFactory;
     friend class Ios::Internal::IosDeviceManager;

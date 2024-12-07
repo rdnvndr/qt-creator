@@ -72,19 +72,18 @@ public:
 
     constexpr_string operator std::string() const { return std::string(data(), size()); }
 
-    explicit operator QString() const
-    {
-        return QString::fromUtf8(data(), int(size()));
-    }
+    explicit operator QString() const { return QString::fromUtf8(data(), int(size())); }
 
-    explicit operator QByteArray() const { return QByteArray(data(), int(size())); }
+    operator QByteArrayView() const { return QByteArrayView(data(), Utils::ssize(*this)); }
 
-#if QT_VERSION >= QT_VERSION_CHECK(6, 4, 0)
+    explicit operator QByteArray() const { return QByteArrayView{*this}.toByteArray(); }
+
+    QByteArray toByteArray() const { return QByteArrayView{*this}.toByteArray(); }
+
     explicit operator QLatin1StringView() const noexcept
     {
         return QLatin1StringView(data(), Utils::ssize(*this));
     }
-#endif
 
     operator QUtf8StringView() const noexcept
     {

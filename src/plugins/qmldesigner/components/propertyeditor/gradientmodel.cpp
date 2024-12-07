@@ -216,9 +216,7 @@ template<typename GradientArrayType>
 const ShapeGradientPropertyData *findGradientInArray(const GradientArrayType &array,
                                                      const QmlDesigner::PropertyNameView propName)
 {
-    const auto found = std::find_if(std::begin(array), std::end(array), [&](const auto &entry) {
-        return entry.name == propName;
-    });
+    const auto found = std::ranges::find(array, propName, &std::iter_value_t<GradientArrayType>::name);
     if (found != std::end(array))
         return std::addressof(*found);
 
@@ -695,6 +693,10 @@ void GradientModel::resetPuppet()
 
 QmlDesigner::ModelNode GradientModel::createGradientNode()
 {
+#ifdef QDS_USE_PROJECTSTORAGE
+    QmlDesigner::TypeName typeName = m_gradientTypeName.toUtf8();
+    auto gradientNode = view()->createModelNode(typeName);
+#else
     QmlDesigner::TypeName fullTypeName = m_gradientTypeName.toUtf8();
 
     if (m_gradientTypeName == "Gradient") {
@@ -709,7 +711,7 @@ QmlDesigner::ModelNode GradientModel::createGradientNode()
     int majorVersion = metaInfo.majorVersion();
 
     auto gradientNode = view()->createModelNode(fullTypeName, majorVersion, minorVersion);
-
+#endif
     setupGradientProperties(gradientNode);
 
     return gradientNode;
@@ -717,6 +719,9 @@ QmlDesigner::ModelNode GradientModel::createGradientNode()
 
 QmlDesigner::ModelNode GradientModel::createGradientStopNode()
 {
+#ifdef QDS_USE_PROJECTSTORAGE
+    return view()->createModelNode("GradientStop");
+#else
     QByteArray fullTypeName = "QtQuick.GradientStop";
     auto metaInfo = model()->metaInfo(fullTypeName);
 
@@ -724,6 +729,7 @@ QmlDesigner::ModelNode GradientModel::createGradientStopNode()
     int majorVersion = metaInfo.majorVersion();
 
     return view()->createModelNode(fullTypeName, majorVersion, minorVersion);
+#endif
 }
 
 void GradientModel::deleteGradientNode(bool saveTransaction)

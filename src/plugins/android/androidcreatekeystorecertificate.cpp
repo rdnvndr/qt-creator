@@ -5,9 +5,10 @@
 #include "androidcreatekeystorecertificate.h"
 #include "androidtr.h"
 
+#include <utils/fileutils.h>
 #include <utils/infolabel.h>
 #include <utils/layoutbuilder.h>
-#include <utils/process.h>
+#include <utils/qtcprocess.h>
 
 #include <QCheckBox>
 #include <QDialog>
@@ -262,20 +263,22 @@ void AndroidCreateKeystoreCertificate::buttonBoxAccepted()
     if (!m_stateNameLineEdit->text().isEmpty())
         distinguishedNames += QLatin1String(", S=") + m_stateNameLineEdit->text().replace(',', QLatin1String("\\,"));
 
-    const CommandLine command(androidConfig().keytoolPath(),
-                            { "-genkey", "-keyalg", "RSA",
-                              "-keystore",  m_keystoreFilePath.toString(),
+    // clang-format off
+    const CommandLine command(AndroidConfig::keytoolPath(),
+                             {"-genkey", "-keyalg", "RSA",
+                              "-keystore",  m_keystoreFilePath.path(),
                               "-storepass", keystorePassword(),
                               "-alias", certificateAlias(),
                               "-keysize", m_keySizeSpinBox->text(),
                               "-validity", m_validitySpinBox->text(),
                               "-keypass", certificatePassword(),
                               "-dname", distinguishedNames});
+    // clang-format off
 
     Process genKeyCertProc;
     genKeyCertProc.setCommand(command);
     using namespace std::chrono_literals;
-    genKeyCertProc.runBlocking(15s, EventLoopMode::On);
+    genKeyCertProc.runBlocking(15s);
 
     if (genKeyCertProc.result() != ProcessResult::FinishedWithSuccess) {
         QMessageBox::critical(this, Tr::tr("Error"),

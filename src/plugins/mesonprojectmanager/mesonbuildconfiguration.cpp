@@ -7,7 +7,6 @@
 #include "mesonbuildsystem.h"
 #include "mesonpluginconstants.h"
 #include "mesonprojectmanagertr.h"
-#include "mesonwrapper.h"
 #include "ninjabuildstep.h"
 
 #include <coreplugin/find/itemviewfind.h>
@@ -28,7 +27,7 @@
 #include <utils/headerviewstretcher.h>
 #include <utils/itemviews.h>
 #include <utils/layoutbuilder.h>
-#include <utils/process.h>
+#include <utils/qtcprocess.h>
 #include <utils/progressindicator.h>
 #include <utils/utilsicons.h>
 
@@ -64,7 +63,7 @@ static FilePath shadowBuildDirectory(const FilePath &projectFilePath,
 
     const QString projectName = projectFilePath.parentDir().fileName();
     return MesonBuildConfiguration::buildDirectoryFromTemplate(
-        Project::projectDirectory(projectFilePath), projectFilePath,
+        projectFilePath.absolutePath(), projectFilePath,
         projectName, k, bcName, buildType, "meson");
 }
 
@@ -191,7 +190,7 @@ public:
         Column {
             noMargin,
             Form {
-                 Tr::tr("Parameters:"), parametersLineEdit, br,
+                Tr::tr("Parameters:"), parametersLineEdit, br,
                 buildCfg->buildDirectoryAspect(), br
             },
             optionsFilterLineEdit,

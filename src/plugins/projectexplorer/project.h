@@ -68,9 +68,8 @@ public:
 
     BuildSystem *createBuildSystem(Target *target) const;
 
-    Utils::FilePath projectFilePath() const;
-    Utils::FilePath projectDirectory() const;
-    static Utils::FilePath projectDirectory(const Utils::FilePath &top);
+    virtual Utils::FilePath projectFilePath() const;
+    virtual Utils::FilePath projectDirectory() const;
 
     // This does not affect nodes, only the root path.
     void changeRootProjectDirectory();
@@ -113,6 +112,8 @@ public:
     bool isKnownFile(const Utils::FilePath &filename) const;
     const Node *nodeForFilePath(const Utils::FilePath &filePath,
                                 const NodeMatcher &extraMatcher = {}) const;
+    ProjectNode *productNodeForFilePath(
+        const Utils::FilePath &filePath, const NodeMatcher &extraMatcher = {}) const;
     Utils::FilePaths binariesForSourceFile(const Utils::FilePath &sourceFile) const;
 
     virtual void toMap(Utils::Store &map) const;
@@ -231,7 +232,10 @@ protected:
 
     static ProjectExplorer::Task createProjectTask(ProjectExplorer::Task::TaskType type,
                                                    const QString &description);
-
+    template <typename BuildSystemImpl>
+    void setBuildSystemCreator() {
+        setBuildSystemCreator([](Target *t) { return new BuildSystemImpl(t); });
+    }
     void setBuildSystemCreator(const std::function<BuildSystem *(Target *)> &creator);
 
 private:

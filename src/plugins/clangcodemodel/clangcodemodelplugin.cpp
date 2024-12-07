@@ -44,6 +44,7 @@
 #include <QFutureWatcher>
 
 using namespace Core;
+using namespace CppEditor;
 using namespace ProjectExplorer;
 using namespace Utils;
 
@@ -68,6 +69,7 @@ private:
 
 ClangCodeModelPlugin::~ClangCodeModelPlugin()
 {
+    m_generatorWatcher.cancel();
     m_generatorWatcher.waitForFinished();
 }
 
@@ -76,7 +78,7 @@ void ClangCodeModelPlugin::initialize()
     TaskHub::addCategory({Constants::TASK_CATEGORY_DIAGNOSTICS,
                           Tr::tr("Clang Code Model"),
                           Tr::tr("C++ code issues that Clangd found in the current document.")});
-    CppEditor::CppModelManager::activateClangCodeModel(std::make_unique<ClangModelManagerSupport>());
+    CppModelManager::activateClangCodeModel(std::make_unique<ClangModelManagerSupport>());
     createCompilationDBAction();
 
     ActionBuilder updateStaleIndexEntries(this, "ClangCodeModel.UpdateStaleIndexEntries");
@@ -101,8 +103,6 @@ void ClangCodeModelPlugin::initialize()
 
 void ClangCodeModelPlugin::generateCompilationDB()
 {
-    using namespace CppEditor;
-
     Target *target = ProjectManager::startupTarget();
     if (!target)
         return;
@@ -140,13 +140,18 @@ void ClangCodeModelPlugin::createCompilationDBAction()
 
     connect(&m_generatorWatcher, &QFutureWatcher<GenerateCompilationDbResult>::finished,
             this, [this] {
-        const GenerateCompilationDbResult result = m_generatorWatcher.result();
         QString message;
-        if (result.error.isEmpty()) {
-            message = Tr::tr("Clang compilation database generated at \"%1\".")
-                    .arg(QDir::toNativeSeparators(result.filePath));
+        if (m_generatorWatcher.future().resultCount()) {
+            const GenerateCompilationDbResult result = m_generatorWatcher.result();
+            if (result) {
+                message = Tr::tr("Clang compilation database generated at \"%1\".")
+                              .arg(result->toUserOutput());
+            } else {
+                message
+                    = Tr::tr("Generating Clang compilation database failed: %1").arg(result.error());
+            }
         } else {
-            message = Tr::tr("Generating Clang compilation database failed: %1").arg(result.error);
+            message = Tr::tr("Generating Clang compilation database canceled.");
         }
         MessageManager::writeFlashing(message);
         m_generateCompilationDBAction->setEnabled(true);
@@ -163,8 +168,7 @@ void ClangCodeModelPlugin::createCompilationDBAction()
                                             "No active project.");
             return;
         }
-        const CppEditor::ProjectInfo::ConstPtr projectInfo =
-            CppEditor::CppModelManager::projectInfo(project);
+        const ProjectInfo::ConstPtr projectInfo = CppModelManager::projectInfo(project);
         if (!projectInfo || projectInfo->projectParts().isEmpty()) {
             MessageManager::writeDisrupting("Cannot generate compilation database: "
                                             "Project has no C/C++ project parts.");
@@ -173,7 +177,7 @@ void ClangCodeModelPlugin::createCompilationDBAction()
         m_generateCompilationDBAction->setEnabled(false);
         generateCompilationDB();
     });
-    connect(CppEditor::CppModelManager::instance(), &CppEditor::CppModelManager::projectPartsUpdated,
+    connect(CppModelManager::instance(), &CppModelManager::projectPartsUpdated,
             this, [this](Project *project) {
         if (project != ProjectManager::startupProject())
             return;

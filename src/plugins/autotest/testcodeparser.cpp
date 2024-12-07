@@ -4,7 +4,9 @@
 #include "testcodeparser.h"
 
 #include "autotestconstants.h"
+#include "autotestplugin.h"
 #include "autotesttr.h"
+#include "testprojectsettings.h"
 #include "testsettings.h"
 #include "testtreemodel.h"
 
@@ -336,6 +338,38 @@ void TestCodeParser::scanForTests(const QSet<FilePath> &filePaths,
         emit requestRemoval(files);
     }
 
+    const TestProjectSettings *settings = projectSettings(project);
+    if (settings->limitToFilters()) {
+        qCDebug(LOG) << "Applying project path filters - currently" << files.size() << "files";
+        const QStringList filters = settings->pathFilters();
+        if (!filters.isEmpty()) {
+            // we cannot rely on QRegularExpression::fromWildcard() as we want handle paths
+            const QList<QRegularExpression> regexes
+                    = Utils::transform(filters, [] (const QString &filter) {
+                return QRegularExpression(wildcardPatternFromString(filter));
+            });
+
+            files = Utils::filtered(files, [&regexes](const FilePath &fn) {
+                for (const QRegularExpression &regex : regexes) {
+                    if (!regex.isValid()) {
+                        qCDebug(LOG) << "Skipping invalid pattern? Pattern:" << regex.pattern();
+                        continue;
+                    }
+                    if (regex.match(fn.path()).hasMatch())
+                        return true;
+                }
+                return false;
+            });
+        }
+        qCDebug(LOG) << "After applying filters" << files.size() << "files";
+
+        if (files.isEmpty()) {
+            qCDebug(LOG) << "No filter matched a file - canceling scan immediately";
+            onFinished(true);
+            return;
+        }
+    }
+
     QTC_ASSERT(!(isFullParse && files.isEmpty()), onFinished(true); return);
 
     // use only a single parser or all current active?
@@ -383,14 +417,13 @@ void TestCodeParser::scanForTests(const QSet<FilePath> &filePaths,
         if (!results.isEmpty())
             emit testParseResultsReady(results);
     };
-    const Group root {
+    const Group recipe = For (LoopRepeat(filteredFiles.size())) >> Do {
         parallelLimit(limit),
         storage,
         onGroupSetup([storage, filteredFiles] { *storage = filteredFiles.cbegin(); }),
-        LoopRepeat(filteredFiles.size()),
         AsyncTask<TestParseResultPtr>(onSetup, onDone, CallDoneIf::Success)
     };
-    m_taskTreeRunner.start(root);
+    m_taskTreeRunner.start(recipe);
 }
 
 void TestCodeParser::onTaskStarted(Id type)

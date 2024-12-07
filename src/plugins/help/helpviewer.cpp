@@ -15,9 +15,10 @@
 #include <QFileInfo>
 #include <QUrl>
 
-#include <QGuiApplication>
 #include <QDesktopServices>
+#include <QGuiApplication>
 #include <QMouseEvent>
+#include <QNativeGestureEvent>
 
 #include <QHelpEngine>
 
@@ -136,6 +137,9 @@ bool HelpViewer::launchWithExternalApp(const QUrl &url)
         // QHelpEngineCore::findFile returns a valid url even though the file does not exist
         if (resolvedUrl.scheme() == "about" && resolvedUrl.path() == "blank")
             return false;
+        // fake items have no associated file - they are kind of virtual folders
+        if (resolvedUrl.fileName().isEmpty())
+            return false;
 
         const QString& path = resolvedUrl.path();
         if (!canOpenPage(path)) {
@@ -184,6 +188,23 @@ void HelpViewer::wheelEvent(QWheelEvent *event)
         return;
     }
     QWidget::wheelEvent(event);
+}
+
+bool HelpViewer::event(QEvent *e)
+{
+    if (e->type() == QEvent::NativeGesture) {
+        auto ev = static_cast<QNativeGestureEvent *>(e);
+        if (ev->gestureType() == Qt::SwipeNativeGesture) {
+            if (ev->value() > 0 && isBackwardAvailable()) { // swipe from right to left == go back
+                backward();
+                return true;
+            } else if (ev->value() <= 0 && isForwardAvailable()) {
+                forward();
+                return true;
+            }
+        }
+    }
+    return QWidget::event(e);
 }
 
 void HelpViewer::incrementZoom(int steps)

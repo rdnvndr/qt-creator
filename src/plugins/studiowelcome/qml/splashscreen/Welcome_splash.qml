@@ -203,7 +203,6 @@ Rectangle {
             fontpixelSize: 14
             onClicked: {
                 usageStatisticModel.setTelemetryEnabled(false)
-                usageStatisticModel.setCrashReporterEnabled(false)
                 welcome_splash.closeClicked()
             }
         }
@@ -214,7 +213,6 @@ Rectangle {
             fontpixelSize: 14
             onClicked: {
                 usageStatisticModel.setTelemetryEnabled(true)
-                usageStatisticModel.setCrashReporterEnabled(true)
                 welcome_splash.closeClicked()
             }
         }

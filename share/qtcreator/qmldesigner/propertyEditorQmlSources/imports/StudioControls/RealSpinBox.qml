@@ -3,7 +3,8 @@
 
 import QtQuick
 import QtQuick.Templates as T
-import StudioTheme 1.0 as StudioTheme
+import StudioTheme as StudioTheme
+import StudioQuickUtils
 
 T.SpinBox {
     id: control
@@ -71,6 +72,8 @@ T.SpinBox {
     signal dragging
     signal indicatorPressed
 
+    locale: Utils.locale
+
     // Use custom wheel handling due to bugs
     property bool __wheelEnabled: false
     wheelEnabled: false
@@ -90,14 +93,28 @@ T.SpinBox {
     value: 0
     to: 99
 
-    validator: DoubleValidator {
+    function checkAndClearFocus() {
+        if (!spinBoxIndicatorUp.activeFocus && !spinBoxIndicatorDown.activeFocus && !spinBoxInput.activeFocus)
+            control.focus = false
+    }
+
+    DoubleValidator {
         id: doubleValidator
-        locale: control.locale.name
+        locale: control.locale
         notation: DoubleValidator.StandardNotation
         decimals: control.decimals
         bottom: Math.min(control.realFrom, control.realTo)
         top: Math.max(control.realFrom, control.realTo)
     }
+
+    IntValidator {
+        id: intValidator
+        locale: control.locale
+        bottom: Math.round(Math.min(control.realFrom, control.realTo))
+        top: Math.round(Math.max(control.realFrom, control.realTo))
+    }
+
+    validator: control.decimals === 0 ? intValidator : doubleValidator
 
     ActionIndicator {
         id: actionIndicator
@@ -148,10 +165,10 @@ T.SpinBox {
         id: spinBoxInput
         style: control.style
         __parentControl: control
-        validator: doubleValidator
+        validator: control.validator
 
         function handleEditingFinished() {
-            control.focus = false
+            control.checkAndClearFocus()
 
             // Keep the dirty state before calling setValueFromInput(),
             // it will be set to false (cleared) internally
@@ -165,7 +182,11 @@ T.SpinBox {
                 control.compressedRealValueModified()
         }
 
-        onEditingFinished: spinBoxInput.handleEditingFinished()
+        onEditingFinished: {
+            spinBoxInput.focus = false
+            spinBoxInput.handleEditingFinished()
+        }
+
         onTextEdited: control.dirty = true
     }
 

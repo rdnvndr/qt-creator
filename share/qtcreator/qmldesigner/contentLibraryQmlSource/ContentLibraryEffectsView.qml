@@ -91,11 +91,12 @@ HelperWidgets.ScrollView {
                         id: repeater
                         model: bundleCategoryItems
 
-                        delegate: ContentLibraryEffect {
+                        delegate: ContentLibraryItem {
                             width: root.cellWidth
                             height: root.cellHeight
 
                             onShowContextMenu: ctxMenu.popupMenu(modelData)
+                            onAddToProject: ContentLibraryBackend.effectsModel.addInstance(modelData)
                         }
 
                         onCountChanged: root.assignMaxCount()
@@ -107,9 +108,7 @@ HelperWidgets.ScrollView {
         Text {
             id: infoText
             text: {
-                if (!ContentLibraryBackend.effectsModel.bundleExists)
-                    qsTr("No effects available.")
-                else if (!ContentLibraryBackend.rootView.isQt6Project)
+                if (!ContentLibraryBackend.rootView.isQt6Project)
                     qsTr("<b>Content Library</b> effects are not supported in Qt5 projects.")
                 else if (!ContentLibraryBackend.rootView.hasQuick3DImport)
                     qsTr("To use <b>Content Library</b>, first add the QtQuick3D module in the <b>Components</b> view.")
@@ -117,6 +116,8 @@ HelperWidgets.ScrollView {
                     qsTr("To use <b>Content Library</b>, version 6.4 or later of the QtQuick3D module is required.")
                 else if (!ContentLibraryBackend.rootView.hasMaterialLibrary)
                     qsTr("<b>Content Library</b> is disabled inside a non-visual component.")
+                else if (!ContentLibraryBackend.effectsModel.bundleExists)
+                    qsTr("No effects available.")
                 else if (!searchBox.isEmpty())
                     qsTr("No match found.")
                 else

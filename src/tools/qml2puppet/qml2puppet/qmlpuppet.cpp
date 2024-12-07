@@ -10,7 +10,6 @@
 
 #include <app/app_version.h>
 #include <qml2puppet/import3d/import3d.h>
-
 #include <qt5nodeinstanceclientproxy.h>
 
 #include <QFileInfo>
@@ -85,12 +84,8 @@ QString crashReportsPath()
         QLatin1String(Core::Constants::IDE_SETTINGSVARIANT_STR),
         QLatin1String(Core::Constants::IDE_CASED_ID));
 
-#if defined(Q_OS_MACOS)
-        return QFileInfo(settings.fileName()).path() + "/crashpad_reports";
-#else
-        return QCoreApplication::applicationDirPath()
-                + '/' + RELATIVE_LIBEXEC_PATH + "crashpad_reports";
-#endif
+    return QFileInfo(settings.fileName()).path() + "/" + Core::Constants::IDE_ID
+           + "/crashpad_reports";
 }
 
 void QmlPuppet::initQmlRunner()
@@ -125,12 +120,12 @@ void QmlPuppet::initQmlRunner()
         QString options = m_coreApp->arguments().at(4);
 
         Import3D::import3D(sourceAsset, outDir, options);
+    } else {
+        startCrashpad(QCoreApplication::applicationDirPath()
+                          + '/' + RELATIVE_LIBEXEC_PATH, crashReportsPath());
+
+        new QmlDesigner::Qt5NodeInstanceClientProxy(m_coreApp.get());
     }
-
-    startCrashpad(QCoreApplication::applicationDirPath()
-                  + '/' + RELATIVE_LIBEXEC_PATH, crashReportsPath());
-
-    new QmlDesigner::Qt5NodeInstanceClientProxy(m_coreApp.get());
 
 #if defined(Q_OS_WIN) && defined(QT_NO_DEBUG)
     SetErrorMode(SEM_NOGPFAULTERRORBOX); //We do not want to see any message boxes

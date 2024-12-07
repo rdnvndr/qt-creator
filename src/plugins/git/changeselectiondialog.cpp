@@ -9,10 +9,11 @@
 
 #include <coreplugin/vcsmanager.h>
 
+#include <utils/ansiescapecodehandler.h>
 #include <utils/completinglineedit.h>
 #include <utils/layoutbuilder.h>
 #include <utils/pathchooser.h>
-#include <utils/process.h>
+#include <utils/qtcprocess.h>
 #include <utils/theme/theme.h>
 
 #include <QCompleter>
@@ -172,18 +173,17 @@ void ChangeSelectionDialog::acceptCommand(ChangeCommand command)
 //! Set commit message in details
 void ChangeSelectionDialog::setDetails()
 {
-    Theme *theme = creatorTheme();
-
     QPalette palette;
     if (m_process->result() == ProcessResult::FinishedWithSuccess) {
-        m_detailsText->setPlainText(m_process->cleanedStdOut());
-        palette.setColor(QPalette::Text, theme->color(Theme::TextColorNormal));
+        const QString text = m_process->cleanedStdOut();
+        AnsiEscapeCodeHandler::setTextInEditor(m_detailsText, text);
+        palette.setColor(QPalette::Text, creatorColor(Theme::TextColorNormal));
         m_changeNumberEdit->setPalette(palette);
     } else if (m_process->result() == ProcessResult::StartFailed) {
         m_detailsText->setPlainText(Tr::tr("Error: Could not start Git."));
     } else {
         m_detailsText->setPlainText(Tr::tr("Error: Unknown reference"));
-        palette.setColor(QPalette::Text, theme->color(Theme::TextColorError));
+        palette.setColor(QPalette::Text, creatorColor(Theme::TextColorError));
         m_changeNumberEdit->setPalette(palette);
         enableButtons(false);
     }
@@ -242,7 +242,19 @@ void ChangeSelectionDialog::recalculateDetails()
     connect(m_process.get(), &Process::done, this, &ChangeSelectionDialog::setDetails);
     m_process->setWorkingDirectory(workingDir);
     m_process->setEnvironment(m_gitEnvironment);
-    m_process->setCommand({m_gitExecutable, {"show", "--decorate", "--stat=80", ref}});
+
+    const ColorNames colors = GitClient::colorNames();
+    const QString showFormat = QStringLiteral(
+                                   "--pretty=format:"
+                                   "commit %C(%1)%H%Creset %C(%2)%d%Creset%n"
+                                   "Author: %C(%3)%aN <%aE>%Creset%n"
+                                   "Date: %C(%4)%ad (%ar)%Creset%n"
+                                   "%n%C(%5)%s%Creset%n%n%b"
+                                   ).arg(colors.hash, colors.decoration, colors.author,
+                                         colors.date, colors.subject);
+
+    m_process->setCommand({m_gitExecutable, {"show", "--decorate", "--stat=80",
+                                             "--color=always", showFormat, ref}});
     m_process->start();
     m_detailsText->setPlainText(Tr::tr("Fetching commit data..."));
 }

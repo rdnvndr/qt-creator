@@ -21,6 +21,7 @@
 #include <coreplugin/modemanager.h>
 #include <qmldesigner/qmldesignerconstants.h>
 #include <qmldesignerbase/qmldesignerbaseplugin.h>
+#include <qmldesignerbase/settings/designersettings.h>
 
 #include <coreplugin/outputpane.h>
 #include <coreplugin/modemanager.h>
@@ -55,9 +56,7 @@
 #include <advanceddockingsystem/docksplitter.h>
 #include <advanceddockingsystem/iconprovider.h>
 
-using Core::MiniSplitter;
-using Core::IEditor;
-using Core::EditorManager;
+using namespace Core;
 
 using namespace QmlDesigner;
 
@@ -121,6 +120,10 @@ DesignModeWidget::DesignModeWidget()
     setAcceptDrops(true);
     if (Utils::StyleHelper::isQDSTheme() || Core::ICore::isQtDesignStudio())
         qApp->setStyle(QmlDesignerBasePlugin::style());
+
+    IContext::attach(this,
+                     Context(Constants::qmlDesignerContextId, Constants::qtQuickToolsMenuContextId),
+                     [this](const IContext::HelpCallback &callback) { contextHelp(callback); });
 }
 
 DesignModeWidget::~DesignModeWidget()
@@ -205,14 +208,20 @@ void DesignModeWidget::setup()
     ADS::DockManager::setConfigFlag(ADS::DockManager::OpaqueSplitterResize, true);
     ADS::DockManager::setConfigFlag(ADS::DockManager::AllTabsHaveCloseButton, false);
     ADS::DockManager::setConfigFlag(ADS::DockManager::RetainTabSizeWhenCloseButtonHidden, true);
-
     //ADS::DockManager::setAutoHideConfigFlags(ADS::DockManager::DefaultAutoHideConfig);
+
+    if (QmlDesignerBasePlugin::isLiteModeEnabled()) {
+        ADS::DockManager::setConfigFlag(ADS::DockManager::ActiveTabHasCloseButton, false);
+        ADS::DockManager::setConfigFlag(ADS::DockManager::MiddleMouseButtonClosesTab, false);
+        ADS::DockManager::setConfigFlag(ADS::DockManager::HideContextMenuDockWidgetTab, true);
+    }
 
     auto designerSettings = DesignerSettings(settings);
     if (designerSettings.value(DesignerSettingsKey::ENABLE_DOCKWIDGET_CONTENT_MIN_SIZE).toBool())
         m_minimumSizeHintMode = ADS::DockWidget::MinimumSizeHintFromContentMinimumSize;
 
     m_dockManager = new ADS::DockManager(this);
+    m_dockManager->setLiteMode(QmlDesignerBasePlugin::isLiteModeEnabled());
     m_dockManager->setSettings(settings);
     m_dockManager->setWorkspacePresetsPath(
         Core::ICore::resourcePath("qmldesigner/workspacePresets/").toString());
@@ -277,35 +286,6 @@ void DesignModeWidget::setup()
     ADS::DockManager::iconProvider().registerCustomIcon(ADS::FloatingWidgetNormalIcon,
                                                         floatingWidgetNormalIcon);
 
-    // Setup Actions and Menus
-    Core::ActionContainer *mview = Core::ActionManager::actionContainer(Core::Constants::M_VIEW);
-    // View > Views
-    Core::ActionContainer *mviews = Core::ActionManager::createMenu(Core::Constants::M_VIEW_VIEWS);
-    connect(mviews->menu(), &QMenu::aboutToShow, this, &DesignModeWidget::aboutToShowViews);
-    mviews->menu()->addSeparator();
-    // View > Workspaces
-    Core::ActionContainer *mworkspaces = Core::ActionManager::createMenu(QmlDesigner::Constants::M_VIEW_WORKSPACES);
-    mview->addMenu(mworkspaces, Core::Constants::G_VIEW_VIEWS);
-    mworkspaces->menu()->setTitle(tr("&Workspaces"));
-    mworkspaces->setOnAllDisabledBehavior(Core::ActionContainer::Show);
-    // Connect opening of the 'workspaces' menu with creation of the workspaces menu
-    connect(mworkspaces->menu(), &QMenu::aboutToShow, this, &DesignModeWidget::aboutToShowWorkspaces);
-
-    // Initially disable menus
-    mworkspaces->menu()->setEnabled(false);
-
-    // Enable/disable menus when mode is different to MODE_DESIGN
-    connect(Core::ModeManager::instance(),
-            &Core::ModeManager::currentModeChanged,
-            this,
-            [mworkspaces](Utils::Id mode, Utils::Id) {
-                if (mode == Core::Constants::MODE_DESIGN) {
-                    mworkspaces->menu()->setEnabled(true);
-                } else {
-                    mworkspaces->menu()->setEnabled(false);
-                }
-            });
-
     // Create a DockWidget for each QWidget and add them to the DockManager
     const Core::Context designContext(Core::Constants::C_DESIGN_MODE);
     static const Utils::Id actionToggle("QmlDesigner.Toggle");
@@ -327,7 +307,7 @@ void DesignModeWidget::setup()
             continue;
 
         hideToolButtons(navigationView.dockToolBarWidgets);
-        navigationView.widget->setWindowTitle(tr(factory->id().name()));
+        navigationView.widget->setWindowTitle(factory->displayName());
 
         QString idString = factory->id().toSetting().toString();
         const QString title = idString;
@@ -345,14 +325,19 @@ void DesignModeWidget::setup()
 
         // Create menu action
         auto command = Core::ActionManager::registerAction(dockWidget->toggleViewAction(),
-                                                           actionToggle.withSuffix(uniqueId + "Widget"),
+                                                           actionToggle.withSuffix(uniqueId).withSuffix("Widget"),
                                                            designContext);
         command->setAttribute(Core::Command::CA_Hide);
         viewCommands.append(command);
     }
 
     // Afterwards get all the other widgets
-    for (const WidgetInfo &widgetInfo : viewManager().widgetInfos()) {
+    for (const auto &view : viewManager().views()) {
+        if (!view->hasWidget())
+            continue;
+
+        auto widgetInfo = view->widgetInfo();
+
         ensureMinimumSize(widgetInfo.widget);
 
         auto dockWidget = createDockWidget(widgetInfo.widget,
@@ -365,9 +350,11 @@ void DesignModeWidget::setup()
         m_viewWidgets.append(widgetInfo.widget);
 
         // Create menu action
-        auto command = Core::ActionManager::registerAction(dockWidget->toggleViewAction(),
-                                                           actionToggle.withSuffix(
-                                                               widgetInfo.uniqueId + "Widget"),
+        auto viewAction = view->action();
+        viewAction->setText(widgetInfo.tabName);
+        dockWidget->setToggleViewAction(viewAction);
+        auto command = Core::ActionManager::registerAction(viewAction,
+                                                           actionToggle.withSuffix(widgetInfo.uniqueId).withSuffix("Widget"),
                                                            designContext);
         command->setAttribute(Core::Command::CA_Hide);
         viewCommands.append(command);
@@ -403,8 +390,40 @@ void DesignModeWidget::setup()
         return first->description() < second->description();
     });
 
-    for (Core::Command *command : viewCommands)
-        mviews->addAction(command);
+    if (!QmlDesignerBasePlugin::isLiteModeEnabled()) {
+        // Setup Actions and Menus
+        Core::ActionContainer *mview = Core::ActionManager::actionContainer(Core::Constants::M_VIEW);
+        // View > Views
+        Core::ActionContainer *mviews = Core::ActionManager::createMenu(Core::Constants::M_VIEW_VIEWS);
+        connect(mviews->menu(), &QMenu::aboutToShow, this, &DesignModeWidget::aboutToShowViews);
+        mviews->menu()->addSeparator();
+        // View > Workspaces
+        Core::ActionContainer *mworkspaces = Core::ActionManager::createMenu(
+            QmlDesigner::Constants::M_VIEW_WORKSPACES);
+        mview->addMenu(mworkspaces, Core::Constants::G_VIEW_VIEWS);
+        mworkspaces->menu()->setTitle(tr("&Workspaces"));
+        mworkspaces->setOnAllDisabledBehavior(Core::ActionContainer::Show);
+        // Connect opening of the 'workspaces' menu with creation of the workspaces menu
+        connect(mworkspaces->menu(), &QMenu::aboutToShow, this, &DesignModeWidget::aboutToShowWorkspaces);
+
+        // Initially disable menus
+        mworkspaces->menu()->setEnabled(false);
+
+        // Enable/disable menus when mode is different to MODE_DESIGN
+        connect(Core::ModeManager::instance(),
+                &Core::ModeManager::currentModeChanged,
+                this,
+                [mworkspaces](Utils::Id mode, Utils::Id) {
+                    if (mode == Core::Constants::MODE_DESIGN) {
+                        mworkspaces->menu()->setEnabled(true);
+                    } else {
+                        mworkspaces->menu()->setEnabled(false);
+                    }
+                });
+
+        for (Core::Command *command : viewCommands)
+            mviews->addAction(command);
+    }
 
     // Create toolbars
     if (!ToolBar::isVisible()) {

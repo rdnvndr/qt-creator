@@ -6,7 +6,7 @@
 #include "progressmanager.h"
 #include "../coreplugintr.h"
 
-#include <utils/process.h>
+#include <utils/qtcprocess.h>
 #include <utils/qtcassert.h>
 
 #include <QFutureWatcher>
@@ -97,7 +97,7 @@ ProcessProgress::ProcessProgress(Process *process)
         d->m_futureInterface.reportStarted();
 
         const QString name = d->displayName();
-        const auto id = Id::fromString(name + ".action");
+        const Id id = Id::fromString(name).withSuffix(".action");
         if (d->m_parser) {
             d->m_futureProgress = ProgressManager::addTask(d->m_futureInterface.future(), name, id);
         } else {

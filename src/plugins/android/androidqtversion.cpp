@@ -61,9 +61,9 @@ QString AndroidQtVersion::invalidReason() const
 {
     QString tmp = QtVersion::invalidReason();
     if (tmp.isEmpty()) {
-        if (androidConfig().ndkLocation(this).isEmpty())
+        if (AndroidConfig::ndkLocation(this).isEmpty())
             return Tr::tr("NDK is not configured in Devices > Android.");
-        if (androidConfig().sdkLocation().isEmpty())
+        if (AndroidConfig::sdkLocation().isEmpty())
             return Tr::tr("SDK is not configured in Devices > Android.");
         if (qtAbis().isEmpty())
             return Tr::tr("Failed to detect the ABIs used by the Qt version. Check the settings in "
@@ -79,26 +79,25 @@ bool AndroidQtVersion::supportsMultipleQtAbis() const
 
 Abis AndroidQtVersion::detectQtAbis() const
 {
-    const bool conf = androidConfig().sdkFullyConfigured();
+    const bool conf = AndroidConfig::sdkFullyConfigured();
     return conf ? Utils::transform<Abis>(androidAbis(), &AndroidManager::androidAbi2Abi) : Abis();
 }
 
-void AndroidQtVersion::addToEnvironment(const Kit *k, Utils::Environment &env) const
+void AndroidQtVersion::addToBuildEnvironment(const Kit *k, Utils::Environment &env) const
 {
-    QtVersion::addToEnvironment(k, env);
+    QtVersion::addToBuildEnvironment(k, env);
 
-    const AndroidConfig &config = androidConfig();
     // this env vars are used by qmake mkspecs to generate makefiles (check QTDIR/mkspecs/android-g++/qmake.conf for more info)
-    env.set(QLatin1String("ANDROID_NDK_HOST"), config.toolchainHost(this));
-    env.set(QLatin1String("ANDROID_NDK_ROOT"), config.ndkLocation(this).toUserOutput());
+    env.set(QLatin1String("ANDROID_NDK_HOST"), AndroidConfig::toolchainHost(this));
+    env.set(QLatin1String("ANDROID_NDK_ROOT"), AndroidConfig::ndkLocation(this).toUserOutput());
     env.set(QLatin1String("ANDROID_NDK_PLATFORM"),
-            config.bestNdkPlatformMatch(qMax(minimumNDK(), AndroidManager::minimumSDK(k)), this));
+        AndroidConfig::bestNdkPlatformMatch(qMax(minimumNDK(), AndroidManager::minimumSDK(k)), this));
 }
 
 void AndroidQtVersion::setupQmakeRunEnvironment(Utils::Environment &env) const
 {
     env.set(QLatin1String("ANDROID_NDK_ROOT"),
-            androidConfig().ndkLocation(this).toUserOutput());
+            AndroidConfig::ndkLocation(this).toUserOutput());
 }
 
 QString AndroidQtVersion::description() const

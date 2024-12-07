@@ -1,9 +1,11 @@
 {
+    "Id" : "projectexplorer",
     "Name" : "ProjectExplorer",
     "Version" : "${IDE_VERSION}",
     "CompatVersion" : "${IDE_VERSION_COMPAT}",
+    "VendorId" : "theqtcompany",
     "Vendor" : "The Qt Company Ltd",
-    "Copyright" : "(C) ${IDE_COPYRIGHT_YEAR} The Qt Company Ltd",
+    "Copyright" : "${IDE_COPYRIGHT}",
     "License" : [ "Commercial Usage",
                   "",
                   "Licensees holding valid Qt Commercial licenses may use this plugin in accordance with the Qt Commercial License Agreement provided with the Software or, alternatively, in accordance with the terms contained in a written agreement between you and The Qt Company.",
@@ -14,7 +16,8 @@
     ],
     "Category" : "Core",
     "Description" : "ProjectExplorer framework that can be extended with different kind of project types.",
-    "Url" : "http://www.qt.io",
+    "Url" : "https://www.qt.io",
+    "DocumentationUrl" : "https://doc.qt.io/qtcreator/creator-how-tos.html#manage-projects",
     "Arguments" : [
         {
             "Name" : "-customwizard-verbose",
@@ -37,6 +40,13 @@
         "        <glob pattern='*.tasks'/>",
         "        <glob pattern='*.tasks.txt'/>",
         "    </mime-type>",
+
+        "    <mime-type type='text/x-workspace-project'>",
+        "        <sub-class-of type='application/json'/>",
+        "        <comment>Workspace Qt Creator Project file</comment>",
+        "        <glob pattern='project.json' weight='100'/>",
+        "    </mime-type>",
+
         "</mime-info>"
     ]
 }

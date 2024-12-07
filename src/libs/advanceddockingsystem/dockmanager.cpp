@@ -102,6 +102,9 @@ public:
     bool m_wasShown = false;
     bool m_workspaceOrderDirty = false;
 
+    bool m_mcusProject = false;
+    bool m_liteModeEnabled = false;
+
     /**
      * Private data constructor
      */
@@ -370,12 +373,16 @@ DockManager::DockManager(QWidget *parent)
 
 DockManager::~DockManager()
 {
-    if (d->m_wasShown) {
-        emit aboutToUnloadWorkspace(d->m_workspace.fileName());
-        save();
+    // Only save startup workspace and lock state if not in lite design mode
+    if (!d->m_liteModeEnabled) {
+        if (d->m_wasShown) {
+            emit aboutToUnloadWorkspace(d->m_workspace.fileName());
+            save();
+        }
+
+        saveStartupWorkspace();
+        saveLockWorkspace();
     }
-    saveStartupWorkspace();
-    saveLockWorkspace();
 
     // Fix memory leaks, see https://github.com/githubuser0xFFFF/Qt-Advanced-Docking-System/issues/307
     std::vector<ADS::DockAreaWidget *> areas;
@@ -471,34 +478,41 @@ void DockManager::initialize()
 
     QString workspace = ADS::Constants::DEFAULT_WORKSPACE;
 
-    // Determine workspace to restore at startup
-    if (autoRestoreWorkspace()) {
-        const QString lastWorkspace = startupWorkspace();
-        if (!lastWorkspace.isEmpty()) {
-            if (!workspaceExists(lastWorkspace)) {
-                // This is a fallback mechanism for pre 4.1 settings which stored the workspace name
-                // instead of the file name.
+    if (d->m_liteModeEnabled && workspaceExists(ADS::Constants::LITE_WORKSPACE)) {
+        workspace = ADS::Constants::LITE_WORKSPACE;
+    } else {
+        // Determine workspace to restore at startup
+        if (autoRestoreWorkspace()) {
+            const QString lastWorkspace = startupWorkspace();
+            if (!lastWorkspace.isEmpty()) {
+                if (!workspaceExists(lastWorkspace)) {
+                    // This is a fallback mechanism for pre 4.1 settings which stored the workspace
+                    // name instead of the file name.
 
-                const std::vector<QString> separators = {"-", "_"};
+                    const std::vector<QString> separators = {"-", "_"};
 
-                for (const QString &separator : separators) {
-                    QString workspaceVariant = lastWorkspace;
-                    workspaceVariant.replace(" ", separator);
-                    workspaceVariant.append("." + workspaceFileExtension);
+                    for (const QString &separator : separators) {
+                        QString workspaceVariant = lastWorkspace;
+                        workspaceVariant.replace(" ", separator);
+                        workspaceVariant.append("." + workspaceFileExtension);
 
-                    if (workspaceExists(workspaceVariant))
-                        workspace = workspaceVariant;
+                        if (workspaceExists(workspaceVariant))
+                            workspace = workspaceVariant;
+                    }
+                } else {
+                    workspace = lastWorkspace;
                 }
-            } else {
-                workspace = lastWorkspace;
-            }
-        } else
-            qWarning() << "Could not restore workspace:" << lastWorkspace;
+            } else
+                qWarning() << "Could not restore workspace:" << lastWorkspace;
+        }
     }
 
     openWorkspace(workspace);
 
-    lockWorkspace(d->m_settings->value(Constants::LOCK_WORKSPACE_SETTINGS_KEY, false).toBool());
+    if (d->m_liteModeEnabled)
+        lockWorkspace(true);
+    else
+        lockWorkspace(d->m_settings->value(Constants::LOCK_WORKSPACE_SETTINGS_KEY, false).toBool());
 }
 
 DockAreaWidget *DockManager::addDockWidget(DockWidgetArea area,
@@ -1297,7 +1311,7 @@ expected_str<QString> DockManager::cloneWorkspace(const QString &originalFileNam
 
     const FilePath clonePath = workspaceNameToFilePath(cloneName);
 
-    const expected_str<void> copyResult = originalPath.copyFile(clonePath);
+    const Result copyResult = originalPath.copyFile(clonePath);
     if (!copyResult)
         return make_unexpected(Tr::tr("Could not clone \"%1\" due to: %2")
                                    .arg(originalPath.toUserOutput(), copyResult.error()));
@@ -1323,21 +1337,21 @@ expected_str<QString> DockManager::renameWorkspace(const QString &originalFileNa
     return originalFileName;
 }
 
-expected_str<void> DockManager::resetWorkspacePreset(const QString &fileName)
+Result DockManager::resetWorkspacePreset(const QString &fileName)
 {
     qCInfo(adsLog) << "Reset workspace" << fileName;
 
     Workspace *w = workspace(fileName);
     if (!w)
-        return make_unexpected(Tr::tr("Workspace \"%1\" does not exist.").arg(fileName));
+        return Result::Error(Tr::tr("Workspace \"%1\" does not exist.").arg(fileName));
 
     if (!w->isPreset())
-        return make_unexpected(Tr::tr("Workspace \"%1\" is not a preset.").arg(fileName));
+        return Result::Error(Tr::tr("Workspace \"%1\" is not a preset.").arg(fileName));
 
     const FilePath filePath = w->filePath();
 
     if (!filePath.removeFile())
-        return make_unexpected(Tr::tr("Cannot remove \"%1\".").arg(filePath.toUserOutput()));
+        return Result::Error(Tr::tr("Cannot remove \"%1\".").arg(filePath.toUserOutput()));
 
     return presetDirectory().pathAppended(fileName).copyFile(filePath);
 }
@@ -1386,7 +1400,7 @@ expected_str<QString> DockManager::importWorkspace(const QString &filePath)
 
     const FilePath targetFilePath = userDirectory().pathAppended(fileName);
 
-    const expected_str<void> copyResult = sourceFilePath.copyFile(targetFilePath);
+    const Result copyResult = sourceFilePath.copyFile(targetFilePath);
     if (!copyResult)
         return make_unexpected(
             Tr::tr("Could not copy \"%1\" to \"%2\" due to: %3")
@@ -1427,7 +1441,7 @@ expected_str<QString> DockManager::exportWorkspace(const QString &targetFilePath
             Tr::tr("The workspace \"%1\" does not exist ").arg(workspaceFile.toUserOutput()));
 
     // Finally copy the workspace to the target
-    const expected_str<void> copyResult = workspaceFile.copyFile(targetFile);
+    const Result copyResult = workspaceFile.copyFile(targetFile);
     if (!copyResult)
         return make_unexpected(
             Tr::tr("Could not copy \"%1\" to \"%2\" due to: %3")
@@ -1531,62 +1545,31 @@ QByteArray DockManager::loadFile(const FilePath &filePath)
 
 QString DockManager::readDisplayName(const FilePath &filePath)
 {
-    auto data = loadFile(filePath);
-
-    if (data.isEmpty())
-        return {};
-
-    auto tmp = data.startsWith("<?xml") ? data : qUncompress(data);
-
-    DockingStateReader reader(tmp);
-    if (!reader.readNextStartElement())
-        return {};
-
-    if (reader.name() != QLatin1String("QtAdvancedDockingSystem"))
-        return {};
-
-    return reader.attributes().value(workspaceDisplayNameAttribute.toString()).toString();
+    return readAttribute(filePath, workspaceDisplayNameAttribute);
 }
 
 bool DockManager::writeDisplayName(const FilePath &filePath, const QString &displayName)
 {
-    const expected_str<QByteArray> content = filePath.fileContents();
-
-    QTC_ASSERT_EXPECTED(content, return false);
-
-    QDomDocument doc;
-    QString error_msg;
-    int error_line, error_col;
-    if (!doc.setContent(*content, &error_msg, &error_line, &error_col)) {
-        qWarning() << QString("XML error on line %1, col %2: %3")
-                          .arg(error_line)
-                          .arg(error_col)
-                          .arg(error_msg);
-        return false;
-    }
-
-    QDomElement docElem = doc.documentElement();
-    docElem.setAttribute(workspaceDisplayNameAttribute.toString(), displayName);
-
-    const expected_str<void> result = write(filePath, doc.toByteArray(workspaceXmlFormattingIndent));
-    if (!result) {
-        qWarning() << "Could not write display name" << displayName << "to" << filePath << ":"
-                   << result.error();
-        return false;
-    }
-
-    return true;
+    return writeAttribute(filePath, workspaceDisplayNameAttribute, displayName);
 }
 
 QString DockManager::readMcusEnabled(const FilePath &filePath)
 {
-    auto data = loadFile(filePath);
+    return readAttribute(filePath, workspaceMcusEnabledAttribute);
+}
 
+bool DockManager::writeMcusEnabled(const FilePath &filePath, const QString &mcusEnabled)
+{
+    return writeAttribute(filePath, workspaceMcusEnabledAttribute, mcusEnabled);
+}
+
+QString DockManager::readAttribute(const FilePath &filePath, QStringView key)
+{
+    auto data = loadFile(filePath);
     if (data.isEmpty())
         return {};
 
     auto tmp = data.startsWith("<?xml") ? data : qUncompress(data);
-
     DockingStateReader reader(tmp);
     if (!reader.readNextStartElement())
         return {};
@@ -1594,13 +1577,12 @@ QString DockManager::readMcusEnabled(const FilePath &filePath)
     if (reader.name() != QLatin1String("QtAdvancedDockingSystem"))
         return {};
 
-    return reader.attributes().value(workspaceMcusEnabledAttribute.toString()).toString();
+    return reader.attributes().value(key.toString()).toString();
 }
 
-bool DockManager::writeMcusEnabled(const FilePath &filePath, const QString &mcusEnabled)
+bool DockManager::writeAttribute(const FilePath &filePath, QStringView key, const QString &value)
 {
     const expected_str<QByteArray> content = filePath.fileContents();
-
     QTC_ASSERT_EXPECTED(content, return false);
 
     QDomDocument doc;
@@ -1608,23 +1590,19 @@ bool DockManager::writeMcusEnabled(const FilePath &filePath, const QString &mcus
     int error_line, error_col;
     if (!doc.setContent(*content, &error_msg, &error_line, &error_col)) {
         qWarning() << QString("XML error on line %1, col %2: %3")
-                          .arg(error_line)
-                          .arg(error_col)
-                          .arg(error_msg);
+                          .arg(error_line).arg(error_col).arg(error_msg);
         return false;
     }
 
     QDomElement docElem = doc.documentElement();
-    docElem.setAttribute(workspaceMcusEnabledAttribute.toString(), mcusEnabled);
+    docElem.setAttribute(key.toString(), value);
 
     const expected_str<void> result = write(filePath, doc.toByteArray(workspaceXmlFormattingIndent));
-    if (!result) {
-        qWarning() << "Could not write mcusEnabled" << mcusEnabled << "to" << filePath << ":"
-                   << result.error();
-        return false;
-    }
+    if (result)
+        return true;
 
-    return true;
+    qWarning() << "Could not write" << key << value << "to" << filePath << ":" << result.error();
+    return false;
 }
 
 expected_str<void> DockManager::write(const FilePath &filePath, const QByteArray &data)
@@ -1697,7 +1675,7 @@ void DockManager::syncWorkspacePresets()
             continue;
         }
 
-        const expected_str<void> copyResult = filePath.copyFile(
+        const Result copyResult = filePath.copyFile(
             userDirectory().pathAppended(filePath.fileName()));
         if (!copyResult)
             qWarning() << QString("Could not copy '%1' to '%2' due to %3")
@@ -1749,11 +1727,21 @@ void DockManager::saveLockWorkspace()
 }
 
 void DockManager::setMcusProject(bool value) {
-    m_mcusProject = value;
+    d->m_mcusProject = value;
 }
 
 bool DockManager::mcusProject() const {
-   return m_mcusProject;
+    return d->m_mcusProject;
+}
+
+void DockManager::setLiteMode(bool value)
+{
+    d->m_liteModeEnabled = value;
+}
+
+bool DockManager::isLiteModeEnabled() const
+{
+    return d->m_liteModeEnabled;
 }
 
 } // namespace ADS

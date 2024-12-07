@@ -6,6 +6,8 @@
 #include <abstractview.h>
 #include <qmlitemnode.h>
 
+#include <utils/uniqueobjectptr.h>
+
 #include <QPointer>
 
 QT_BEGIN_NAMESPACE
@@ -19,7 +21,6 @@ class ConnectionViewWidget;
 class BindingModel;
 class ConnectionModel;
 class DynamicPropertiesModel;
-class BackendModel;
 class ConnectionViewQuickWidget;
 class PropertyTreeModel;
 class PropertyListProxyModel;
@@ -53,8 +54,6 @@ public:
     void selectedNodesChanged(const QList<ModelNode> &selectedNodeList,
                               const QList<ModelNode> &lastSelectedNodeList) override;
 
-    void importsChanged(const Imports &addedImports, const Imports &removedImports) override;
-
     void currentStateChanged(const ModelNode &node) override;
 
     WidgetInfo widgetInfo() override;
@@ -65,7 +64,6 @@ public:
 
     ConnectionModel *connectionModel() const;
     BindingModel *bindingModel() const;
-    BackendModel *backendModel() const;
 
     int currentIndex() const;
     void setCurrentIndex(int i);
@@ -81,15 +79,10 @@ signals:
     void currentIndexChanged();
 
 private:
-    ConnectionModel *m_connectionModel;
-    BindingModel *m_bindingModel;
-    DynamicPropertiesModel *m_dynamicPropertiesModel;
-    BackendModel *m_backendModel;
-    PropertyTreeModel *m_propertyTreeModel;
-    PropertyListProxyModel *m_propertyListProxyModel;
-    int m_currentIndex = 0;
+    struct ConnectionViewData;
 
-    QPointer<ConnectionViewQuickWidget> m_connectionViewQuickWidget;
+private:
+    std::unique_ptr<ConnectionViewData> d;
 };
 
 } // namespace QmlDesigner

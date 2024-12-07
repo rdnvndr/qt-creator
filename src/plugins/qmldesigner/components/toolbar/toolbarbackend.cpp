@@ -3,15 +3,19 @@
 
 #include "toolbarbackend.h"
 
+#include "messagemodel.h"
+#include "appoutputmodel.h"
+
 #include <changestyleaction.h>
 #include <crumblebar.h>
 #include <designeractionmanager.h>
 #include <designmodewidget.h>
-#include <viewmanager.h>
-#include <zoomaction.h>
+#include <dynamiclicensecheck.h>
 #include <qmldesignerconstants.h>
 #include <qmldesignerplugin.h>
 #include <qmleditormenu.h>
+#include <viewmanager.h>
+#include <zoomaction.h>
 
 #include <coreplugin/actionmanager/actionmanager.h>
 #include <coreplugin/coreconstants.h>
@@ -20,6 +24,10 @@
 #include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/icore.h>
 #include <coreplugin/modemanager.h>
+
+#include <texteditor/textdocument.h>
+
+#include <projectexplorer/kitaspects.h>
 #include <projectexplorer/kitmanager.h>
 #include <projectexplorer/project.h>
 #include <projectexplorer/projectexplorer.h>
@@ -301,6 +309,18 @@ ToolBarBackend::ToolBarBackend(QObject *parent)
             this,
             &ToolBarBackend::documentIndexChanged);
 
+    connect(Core::EditorManager::instance(), &Core::EditorManager::currentEditorChanged, this, [this] {
+        static QMetaObject::Connection lastConnection;
+        disconnect(lastConnection);
+
+        if (auto textDocument = qobject_cast<TextEditor::TextDocument *>(
+                Core::EditorManager::currentDocument())) {
+            lastConnection = connect(textDocument->document(), &QTextDocument::modificationChanged,
+                    this, &ToolBarBackend::isDocumentDirtyChanged);
+            emit isDocumentDirtyChanged();
+        }
+    });
+
     connect(Core::EditorManager::instance(),
             &Core::EditorManager::currentEditorChanged,
             this,
@@ -389,6 +409,10 @@ void ToolBarBackend::registerDeclarativeType()
     qmlRegisterType<ActionSubscriber>("ToolBar", 1, 0, "ActionSubscriber");
     qmlRegisterType<CrumbleBarModel>("ToolBar", 1, 0, "CrumbleBarModel");
     qmlRegisterType<WorkspaceModel>("ToolBar", 1, 0, "WorkspaceModel");
+
+    qmlRegisterType<MessageModel>("OutputPane", 1, 0, "MessageModel");
+    qmlRegisterType<AppOutputParentModel>("OutputPane", 1, 0, "AppOutputParentModel");
+    qmlRegisterType<AppOutputChildModel>("OutputPane", 1, 0, "AppOutputChildModel");
 }
 
 void ToolBarBackend::triggerModeChange()
@@ -688,7 +712,7 @@ QStringList ToolBarBackend::kits() const
             /*&& kit->isAutoDetected() */;
     });
 
-    return Utils::transform(kits, [](ProjectExplorer::Kit *kit) { return kit->displayName(); });
+    return Utils::transform(kits, &ProjectExplorer::Kit::displayName);
 }
 
 int ToolBarBackend::currentKit() const
@@ -732,6 +756,22 @@ bool ToolBarBackend::isMCUs() const
 bool ToolBarBackend::projectOpened() const
 {
     return ProjectExplorer::ProjectManager::instance()->startupProject();
+}
+
+bool ToolBarBackend::isSharingEnabled()
+{
+    return QmlDesigner::checkEnterpriseLicense();
+}
+
+bool ToolBarBackend::isDocumentDirty() const
+{
+    return Core::EditorManager::currentDocument()
+           && Core::EditorManager::currentDocument()->isModified();
+}
+
+bool ToolBarBackend::isLiteModeEnabled() const
+{
+    return QmlDesignerBasePlugin::isLiteModeEnabled();
 }
 
 void ToolBarBackend::launchGlobalAnnotations()

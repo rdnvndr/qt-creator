@@ -11,11 +11,6 @@
 #include <utils/utilsicons.h>
 
 #include <QIcon>
-#include <QLoggingCategory>
-
-namespace {
-static Q_LOGGING_CATEGORY(androidSdkModelLog, "qtc.android.sdkmodel", QtWarningMsg)
-}
 
 namespace Android {
 namespace Internal {
@@ -27,14 +22,8 @@ AndroidSdkModel::AndroidSdkModel(AndroidSdkManager *sdkManager, QObject *parent)
       m_sdkManager(sdkManager)
 {
     QTC_CHECK(m_sdkManager);
-    connect(m_sdkManager, &AndroidSdkManager::packageReloadBegin, this, [this] {
-        clearContainers();
-        beginResetModel();
-    });
-    connect(m_sdkManager, &AndroidSdkManager::packageReloadFinished, this, [this] {
-        refreshData();
-        endResetModel();
-    });
+    connect(m_sdkManager, &AndroidSdkManager::packagesReloaded, this, &AndroidSdkModel::refreshData);
+    refreshData();
 }
 
 QVariant AndroidSdkModel::headerData(int section, Qt::Orientation orientation, int role) const
@@ -258,51 +247,19 @@ bool AndroidSdkModel::setData(const QModelIndex &index, const QVariant &value, i
     return false;
 }
 
-void AndroidSdkModel::selectMissingEssentials()
+InstallationChange AndroidSdkModel::installationChange() const
 {
-    resetSelection();
-    QStringList pendingPkgs(androidConfig().allEssentials());
-    auto addTool = [this](QList<const AndroidSdkPackage *>::const_iterator itr) {
-        if ((*itr)->installedLocation().isEmpty()) {
-            m_changeState << *itr;
-            auto i = index(std::distance(m_tools.cbegin(), itr), 0, index(0, 0));
-            emit dataChanged(i, i, {Qt::CheckStateRole});
-        }
-    };
-    for (auto tool = m_tools.cbegin(); tool != m_tools.cend(); ++tool) {
-        if (!pendingPkgs.contains((*tool)->sdkStylePath()))
-            continue;
+    if (m_changeState.isEmpty())
+        return {};
 
-        addTool(tool);
-        pendingPkgs.removeOne((*tool)->sdkStylePath());
-
-        if (pendingPkgs.isEmpty())
-            break;
+    InstallationChange change;
+    for (const AndroidSdkPackage *package : m_changeState) {
+        if (package->state() == AndroidSdkPackage::Installed)
+            change.toUninstall << package->sdkStylePath();
+        else
+            change.toInstall << package->sdkStylePath();
     }
-
-    // Select SDK platform
-    for (const SdkPlatform *platform : std::as_const(m_sdkPlatforms)) {
-        if (!platform->installedLocation().isEmpty()) {
-            pendingPkgs.removeOne(platform->sdkStylePath());
-        } else if (pendingPkgs.contains(platform->sdkStylePath()) &&
-            platform->installedLocation().isEmpty()) {
-            auto i = index(0, 0, index(1, 0));
-            m_changeState << platform;
-            emit dataChanged(i, i, {Qt::CheckStateRole});
-            pendingPkgs.removeOne(platform->sdkStylePath());
-        }
-        if (pendingPkgs.isEmpty())
-            break;
-    }
-
-    m_missingEssentials = pendingPkgs;
-    if (!m_missingEssentials.isEmpty())
-        qCDebug(androidSdkModelLog) << "Couldn't find some essential packages:" << m_missingEssentials;
-}
-
-QList<const AndroidSdkPackage *> AndroidSdkModel::userSelection() const
-{
-    return Utils::toList(m_changeState);
+    return change;
 }
 
 void AndroidSdkModel::resetSelection()
@@ -312,16 +269,12 @@ void AndroidSdkModel::resetSelection()
     endResetModel();
 }
 
-void AndroidSdkModel::clearContainers()
+void AndroidSdkModel::refreshData()
 {
     m_sdkPlatforms.clear();
     m_tools.clear();
     m_changeState.clear();
-}
-
-void AndroidSdkModel::refreshData()
-{
-    clearContainers();
+    beginResetModel();
     for (AndroidSdkPackage *p : m_sdkManager->allSdkPackages()) {
         if (p->type() == AndroidSdkPackage::SdkPlatformPackage)
             m_sdkPlatforms << static_cast<SdkPlatform *>(p);
@@ -329,19 +282,16 @@ void AndroidSdkModel::refreshData()
             m_tools << p;
     }
     Utils::sort(m_sdkPlatforms, [](const SdkPlatform *p1, const SdkPlatform *p2) {
-       return p1->apiLevel() > p2->apiLevel();
+        return p1->apiLevel() > p2->apiLevel();
     });
 
     Utils::sort(m_tools, [](const AndroidSdkPackage *p1, const AndroidSdkPackage *p2) {
-       if (p1->state() == p2->state()) {
-           if (p1->type() ==  p2->type())
-               return p1->revision() > p2->revision();
-           else
-               return p1->type() > p2->type();
-       } else {
-           return p1->state() < p2->state();
-       }
+        if (p1->state() == p2->state())
+            return p1->type() == p2->type() ? p1->revision() > p2->revision() : p1->type() > p2->type();
+        else
+            return p1->state() < p2->state();
     });
+    endResetModel();
 }
 
 } // namespace Internal

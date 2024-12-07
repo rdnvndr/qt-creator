@@ -6,8 +6,9 @@
 #include "indenter.h"
 
 #include <texteditor/texteditor_global.h>
+
 #include <utils/changeset.h>
-#include <utils/fileutils.h>
+#include <utils/filepath.h>
 #include <utils/id.h>
 #include <utils/textfileformat.h>
 
@@ -60,6 +61,7 @@ public:
     void setChangeSet(const Utils::ChangeSet &changeSet);
     void setOpenEditor(bool activate = false, int pos = -1);
     bool apply();
+    bool apply(const Utils::ChangeSet &changeSet);
     bool create(const QString &contents, bool reindent, bool openInEditor);
 
 protected:

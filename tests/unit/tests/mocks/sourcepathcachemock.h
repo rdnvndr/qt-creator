@@ -5,9 +5,9 @@
 
 #include "../utils/googletest.h"
 
-#include <projectstorage/sourcepath.h>
-#include <projectstorage/sourcepathcacheinterface.h>
-#include <projectstorageids.h>
+#include <sourcepathids.h>
+#include <sourcepathstorage/sourcepath.h>
+#include <sourcepathstorage/sourcepathcacheinterface.h>
 
 class SourcePathCacheMock : public QmlDesigner::SourcePathCacheInterface
 {
@@ -40,10 +40,6 @@ public:
     MOCK_METHOD(Utils::PathString,
                 sourceContextPath,
                 (QmlDesigner::SourceContextId directoryPathId),
-                (const, override));
-    MOCK_METHOD(QmlDesigner::SourceContextId,
-                sourceContextId,
-                (QmlDesigner::SourceId sourceId),
                 (const, override));
     MOCK_METHOD(void, populateIfEmpty, (), (override));
 };

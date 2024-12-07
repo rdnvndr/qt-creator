@@ -21,6 +21,7 @@ public:
     QString qmlPuppetFallbackDirectory() const override;
     QString defaultPuppetToplevelBuildDirectory() const override;
     QUrl projectUrl() const override;
+    QString projectName() const override;
     QString currentProjectDirPath() const override;
     QUrl currentResourcePath() const override;
     void parseItemLibraryDescriptions() override;
@@ -40,6 +41,8 @@ public:
     bool isQtForMcusProject() const override;
     QString qtQuickVersion() const override;
     Utils::FilePath resourcePath(const QString &relativePath) const override;
+    QString userResourcePath(QStringView relativePath) const override;
+    QWidget *mainWindow() const override;
 
 private:
     const DesignerSettings &m_designerSettings;

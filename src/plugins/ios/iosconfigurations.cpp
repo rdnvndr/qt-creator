@@ -12,8 +12,6 @@
 
 #include <coreplugin/icore.h>
 
-#include <extensionsystem/pluginmanager.h>
-
 #include <projectexplorer/kitaspects.h>
 #include <projectexplorer/kitmanager.h>
 #include <projectexplorer/devicesupport/devicemanager.h>
@@ -22,6 +20,7 @@
 #include <projectexplorer/toolchain.h>
 #include <projectexplorer/gcctoolchain.h>
 #include <projectexplorer/projectexplorerconstants.h>
+#include <projectexplorer/toolchainconfigwidget.h>
 
 #include <debugger/debuggeritemmanager.h>
 #include <debugger/debuggeritem.h>
@@ -34,8 +33,8 @@
 
 #include <utils/algorithm.h>
 #include <utils/futuresynchronizer.h>
-#include <utils/process.h>
 #include <utils/qtcassert.h>
+#include <utils/qtcprocess.h>
 
 #include <QDir>
 #include <QDomDocument>
@@ -69,7 +68,6 @@ const bool IgnoreAllDevicesDefault = false;
 
 const char SettingsGroup[] = "IosConfigurations";
 const char ignoreAllDevicesKey[] = "IgnoreAllDevices";
-const char screenshotDirPathKey[] = "ScreeshotDirPath";
 
 const char provisioningTeamsTag[] = "IDEProvisioningTeams";
 const char freeTeamTag[] = "isFreeProvisioningTeam";
@@ -343,19 +341,6 @@ void IosConfigurations::setIgnoreAllDevices(bool ignoreDevices)
     }
 }
 
-void IosConfigurations::setScreenshotDir(const FilePath &path)
-{
-    if (m_instance->m_screenshotDir != path) {
-        m_instance->m_screenshotDir = path;
-        m_instance->save();
-    }
-}
-
-FilePath IosConfigurations::screenshotDir()
-{
-    return m_instance->m_screenshotDir;
-}
-
 FilePath IosConfigurations::developerPath()
 {
     return m_instance->m_developerPath;
@@ -366,20 +351,11 @@ QVersionNumber IosConfigurations::xcodeVersion()
     return m_instance->m_xcodeVersion;
 }
 
-static FilePath defaultScreenshotDirPath()
-{
-    return FilePath::fromUserInput(
-        QStandardPaths::standardLocations(QStandardPaths::PicturesLocation).constFirst());
-}
-
 void IosConfigurations::save()
 {
     QtcSettings *settings = Core::ICore::settings();
     settings->beginGroup(SettingsGroup);
     settings->setValueWithDefault(ignoreAllDevicesKey, m_ignoreAllDevices, IgnoreAllDevicesDefault);
-    settings->setValueWithDefault(screenshotDirPathKey,
-                                  m_screenshotDir.toSettings(),
-                                  defaultScreenshotDirPath().toSettings());
     settings->endGroup();
 }
 
@@ -396,11 +372,6 @@ void IosConfigurations::load()
     QtcSettings *settings = Core::ICore::settings();
     settings->beginGroup(SettingsGroup);
     m_ignoreAllDevices = settings->value(ignoreAllDevicesKey, IgnoreAllDevicesDefault).toBool();
-    m_screenshotDir = FilePath::fromSettings(settings->value(screenshotDirPathKey));
-
-    if (!m_screenshotDir.isWritableDir())
-        m_screenshotDir = defaultScreenshotDirPath();
-
     settings->endGroup();
 }
 
@@ -414,8 +385,7 @@ void IosConfigurations::updateSimulators()
         dev = IDevice::ConstPtr(new IosSimulator(devId));
         devManager->addDevice(dev);
     }
-    ExtensionSystem::PluginManager::futureSynchronizer()->addFuture(
-        SimulatorControl::updateAvailableSimulators(this));
+    Utils::futureSynchronizer()->addFuture(SimulatorControl::updateAvailableSimulators(this));
 }
 
 void IosConfigurations::setDeveloperPath(const FilePath &devPath)
@@ -586,6 +556,12 @@ public:
     }
 
     Toolchains autoDetect(const ToolchainDetector &detector) const final;
+
+    std::unique_ptr<ToolchainConfigWidget> createConfigurationWidget(
+        const ToolchainBundle &bundle) const override
+    {
+        return GccToolchain::createConfigurationWidget(bundle);
+    }
 };
 
 Toolchains IosToolchainFactory::autoDetect(const ToolchainDetector &detector) const

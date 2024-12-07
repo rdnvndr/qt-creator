@@ -10,6 +10,8 @@
 #include "variantproperty.h"
 #include "qmltimelinekeyframegroup.h"
 
+#include <utils3d.h>
+
 #include <utils/qtcassert.h>
 
 namespace QmlDesigner {
@@ -314,6 +316,11 @@ void MaterialBrowserModel::deleteSelectedMaterial()
 
 void MaterialBrowserModel::updateSelectedMaterial()
 {
+    if (!m_materialList.isEmpty() && m_selectedIndex < 0) {
+        ModelNode mat = Utils3D::selectedMaterial(m_view);
+        m_selectedIndex = materialIndex(mat);
+    }
+
     selectMaterial(m_selectedIndex, true);
 }
 
@@ -326,10 +333,7 @@ void MaterialBrowserModel::updateMaterialName(const ModelNode &material)
 
 int MaterialBrowserModel::materialIndex(const ModelNode &material) const
 {
-    if (m_materialIndexHash.contains(material.internalId()))
-        return m_materialIndexHash.value(material.internalId());
-
-    return -1;
+    return m_materialIndexHash.value(material.internalId(), -1);
 }
 
 ModelNode MaterialBrowserModel::materialAt(int idx) const
@@ -366,6 +370,9 @@ void MaterialBrowserModel::selectMaterial(int idx, bool force)
     if (idx != m_selectedIndex || force) {
         m_selectedIndex = idx;
         emit selectedIndexChanged(idx);
+
+        m_selectedMaterialIsComponent = selectedMaterial().isComponent();
+        emit selectedMaterialIsComponentChanged();
     }
 }
 
@@ -398,8 +405,8 @@ void MaterialBrowserModel::copyMaterialProperties(int idx, const QString &sectio
         // Dynamic properties must always be set in base state
         const QList<AbstractProperty> dynProps = m_copiedMaterial.dynamicProperties();
         for (const auto &prop : dynProps) {
-            dynamicProps.insert(prop.name(), prop.dynamicTypeName());
-            validProps.insert(prop.name());
+            dynamicProps.insert(prop.name().toByteArray(), prop.dynamicTypeName());
+            validProps.insert(prop.name().toByteArray());
         }
     }
 
@@ -414,7 +421,7 @@ void MaterialBrowserModel::copyMaterialProperties(int idx, const QString &sectio
             if (changes.isValid()) {
                 const QList<AbstractProperty> changedProps = changes.targetProperties();
                 for (const auto &changedProp : changedProps)
-                    validProps.insert(changedProp.name());
+                    validProps.insert(changedProp.name().toByteArray());
             }
         }
 
@@ -434,22 +441,20 @@ void MaterialBrowserModel::copyMaterialProperties(int idx, const QString &sectio
         QJsonObject propsSpecObj = m_propertyGroupsObj.value(m_copiedMaterialType).toObject();
         if (propsSpecObj.contains(section)) { // should always be true
            const QJsonArray propNames = propsSpecObj.value(section).toArray();
-           // auto == QJsonValueConstRef after 04dc959d49e5e3 / Qt 6.4, QJsonValueRef before
-           for (const auto &propName : propNames)
+           for (const QJsonValueConstRef &propName : propNames)
                copiedProps.append(propName.toString().toLatin1());
 
            if (section == "Base") { // add QtQuick3D.Material base props as well
                QJsonObject propsMatObj = m_propertyGroupsObj.value("Material").toObject();
                const QJsonArray propNames = propsMatObj.value("Base").toArray();
-               // auto == QJsonValueConstRef after 04dc959d49e5e3 / Qt 6.4, QJsonValueRef before
-               for (const auto &propName : propNames)
+               for (const QJsonValueConstRef &propName : propNames)
                    copiedProps.append(propName.toString().toLatin1());
            }
         }
     }
 
     m_copiedMaterialProps.clear();
-    for (const auto &propName : copiedProps) {
+    for (const PropertyName &propName : copiedProps) {
         PropertyCopyData data;
         data.name = propName;
         data.isValid = m_allPropsCopied || validProps.contains(propName);

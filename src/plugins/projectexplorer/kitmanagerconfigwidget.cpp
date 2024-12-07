@@ -5,6 +5,7 @@
 
 #include "devicesupport/idevicefactory.h"
 #include "kit.h"
+#include "kitaspect.h"
 #include "kitaspects.h"
 #include "kitmanager.h"
 #include "projectexplorertr.h"
@@ -12,6 +13,7 @@
 
 #include <utils/algorithm.h>
 #include <utils/detailswidget.h>
+#include <utils/fileutils.h>
 #include <utils/layoutbuilder.h>
 #include <utils/macroexpander.h>
 #include <utils/pathchooser.h>
@@ -141,6 +143,11 @@ QIcon KitManagerConfigWidget::displayIcon() const
     return m_modifiedKit->displayIcon();
 }
 
+void KitManagerConfigWidget::clearCachedDisplayName()
+{
+    m_cachedDisplayName.clear();
+}
+
 void KitManagerConfigWidget::setFocusToName()
 {
     m_nameEdit->selectAll();
@@ -200,7 +207,7 @@ QString KitManagerConfigWidget::validityMessage() const
     return m_modifiedKit->toHtml(tmp);
 }
 
-void KitManagerConfigWidget::addAspectToWorkingCopy(Layouting::LayoutItem &parent, KitAspectFactory *factory)
+void KitManagerConfigWidget::addAspectToWorkingCopy(Layouting::Layout &parent, KitAspectFactory *factory)
 {
     QTC_ASSERT(factory, return);
     KitAspect *aspect = factory->createKitAspect(workingCopy());

@@ -57,7 +57,7 @@ DeviceTestDialog::DeviceTestDialog(const IDevice::Ptr &deviceConfiguration,
             this, &DeviceTestDialog::handleErrorMessage);
     connect(d->deviceTester, &DeviceTester::finished,
             this, &DeviceTestDialog::handleTestFinished);
-    d->deviceTester->testDevice(deviceConfiguration);
+    d->deviceTester->testDevice();
 }
 
 DeviceTestDialog::~DeviceTestDialog() = default;
@@ -95,10 +95,8 @@ void DeviceTestDialog::handleTestFinished(DeviceTester::TestResult result)
 
 void DeviceTestDialog::addText(const QString &text, Utils::Theme::Color color, bool bold)
 {
-    Utils::Theme *theme = Utils::creatorTheme();
-
     QTextCharFormat format = d->textEdit->currentCharFormat();
-    format.setForeground(QBrush(theme->color(color)));
+    format.setForeground(QBrush(creatorColor(color)));
     QFont font = format.font();
     font.setBold(bold);
     format.setFont(font);

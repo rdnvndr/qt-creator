@@ -55,6 +55,8 @@
 #include <QVBoxLayout>
 #include <QVariant>
 
+#include <utility>
+
 using namespace Core;
 using namespace Tasking;
 using namespace Utils;
@@ -202,20 +204,46 @@ static const QList<BuildConfiguration *> buildConfigsForSelection(const Target *
     return {};
 }
 
-static int queue(const QList<Project *> &projects, const QList<Id> &stepIds,
-                 ConfigSelection configSelection, const RunConfiguration *forRunConfig = nullptr,
-                 RunControl *starter = nullptr)
+using ProjectAndStepIds = std::pair<Project *, QList<Id>>;
+using ProjectsAndStepIds = QList<ProjectAndStepIds>;
+static ProjectsAndStepIds projectWithDependencies(
+    const Project *mainProject, const QList<Id> &mainStepIds)
+{
+    QList<Id> depStepIds = mainStepIds;
+    if (ProjectManager::deployProjectDependencies()
+        && depStepIds.contains(Constants::BUILDSTEPS_BUILD)
+        && !depStepIds.contains(Constants::BUILDSTEPS_DEPLOY)) {
+        depStepIds << Constants::BUILDSTEPS_DEPLOY;
+    }
+    ProjectsAndStepIds result
+        = Utils::transform(ProjectManager::projectOrder(mainProject), [&](Project *p) {
+              return std::make_pair(p, depStepIds);
+          });
+
+    // Shouldn't be necessary, but see the weird check at the end of
+    // ProjectManagerPrivate::dependencies().
+    if (QTC_GUARD(result.last().first == mainProject))
+        result.last().second = mainStepIds;
+
+    return result;
+}
+
+static int queue(
+    const ProjectsAndStepIds &projectsAndStepIds,
+    ConfigSelection configSelection,
+    const RunConfiguration *forRunConfig = nullptr,
+    RunControl *starter = nullptr)
 {
     if (!ProjectExplorerPlugin::saveModifiedFiles())
         return -1;
 
-    const ProjectExplorerSettings &settings = ProjectExplorerPlugin::projectExplorerSettings();
-    if (settings.stopBeforeBuild != StopBeforeBuild::None
-            && stepIds.contains(Constants::BUILDSTEPS_BUILD)) {
-        StopBeforeBuild stopCondition = settings.stopBeforeBuild;
+    const StopBeforeBuild stopBeforeBuild = projectExplorerSettings().stopBeforeBuild;
+    if (stopBeforeBuild != StopBeforeBuild::None && !projectsAndStepIds.isEmpty()
+        && projectsAndStepIds.last().second.contains(Constants::BUILDSTEPS_BUILD)) {
+        StopBeforeBuild stopCondition = stopBeforeBuild;
         if (stopCondition == StopBeforeBuild::SameApp && !forRunConfig)
             stopCondition = StopBeforeBuild::SameBuildDir;
-        const auto isStoppableRc = [&projects, stopCondition, configSelection, forRunConfig,
+        const auto isStoppableRc = [&projectsAndStepIds, stopCondition, configSelection, forRunConfig,
                                     starter](RunControl *rc) {
             if (rc == starter)
                 return false;
@@ -228,24 +256,27 @@ static int queue(const QList<Project *> &projects, const QList<Id> &stepIds,
             case StopBeforeBuild::All:
                 return true;
             case StopBeforeBuild::SameProject:
-                return projects.contains(rc->project());
-            case StopBeforeBuild::SameBuildDir:
-                return Utils::contains(projects, [rc, configSelection](Project *p) {
-                    const FilePath executable = rc->commandLine().executable();
-                    IDevice::ConstPtr device = DeviceManager::deviceForPath(executable);
-                    for (const Target * const t : targetsForSelection(p, configSelection)) {
-                        if (!device)
-                            device = DeviceKitAspect::device(t->kit());
-                        if (!device || device->type() != Constants::DESKTOP_DEVICE_TYPE)
-                            continue;
-                        for (const BuildConfiguration * const bc
-                             : buildConfigsForSelection(t, configSelection)) {
-                            if (executable.isChildOf(bc->buildDirectory()))
-                                return true;
-                        }
-                    }
-                    return false;
+                return Utils::contains(projectsAndStepIds, [rc](const ProjectAndStepIds &p) {
+                    return p.first == rc->project();
                 });
+            case StopBeforeBuild::SameBuildDir:
+                return Utils::contains(
+                    projectsAndStepIds, [rc, configSelection](const ProjectAndStepIds &p) {
+                        const FilePath executable = rc->commandLine().executable();
+                        IDevice::ConstPtr device = DeviceManager::deviceForPath(executable);
+                        for (const Target *const t : targetsForSelection(p.first, configSelection)) {
+                            if (!device)
+                                device = DeviceKitAspect::device(t->kit());
+                            if (!device || device->type() != Constants::DESKTOP_DEVICE_TYPE)
+                                continue;
+                            for (const BuildConfiguration *const bc :
+                                 buildConfigsForSelection(t, configSelection)) {
+                                if (executable.isChildOf(bc->buildDirectory()))
+                                    return true;
+                            }
+                        }
+                        return false;
+                    });
             case StopBeforeBuild::SameApp:
                 QTC_ASSERT(forRunConfig, return false);
                 return forRunConfig->buildTargetInfo().targetFilePath
@@ -258,7 +289,7 @@ static int queue(const QList<Project *> &projects, const QList<Id> &stepIds,
 
         if (!toStop.isEmpty()) {
             bool stopThem = true;
-            if (settings.prompToStopRunControl) {
+            if (projectExplorerSettings().prompToStopRunControl) {
                 QStringList names = Utils::transform(toStop, &RunControl::displayName);
                 if (QMessageBox::question(ICore::dialogParent(),
                         Tr::tr("Stop Applications"),
@@ -285,22 +316,22 @@ static int queue(const QList<Project *> &projects, const QList<Id> &stepIds,
     QList<BuildStepList *> stepLists;
     QStringList preambleMessage;
 
-    for (const Project *pro : projects) {
-        if (pro && pro->needsConfiguration()) {
+    for (const ProjectAndStepIds &p : projectsAndStepIds) {
+        if (p.first && p.first->needsConfiguration()) {
             preambleMessage.append(
                         Tr::tr("The project %1 is not configured, skipping it.")
-                        .arg(pro->displayName()) + QLatin1Char('\n'));
+                        .arg(p.first->displayName()) + QLatin1Char('\n'));
         }
     }
-    for (const Project *pro : projects) {
-        for (const Target *const t : targetsForSelection(pro, configSelection)) {
+    for (const ProjectAndStepIds &p : projectsAndStepIds) {
+        for (const Target *const t : targetsForSelection(p.first, configSelection)) {
             for (const BuildConfiguration *bc : buildConfigsForSelection(t, configSelection)) {
                 const IDevice::Ptr device = std::const_pointer_cast<IDevice>(
                     BuildDeviceKitAspect::device(bc->kit()));
                 if (device && !device->prepareForBuild(t)) {
                     preambleMessage.append(
                         Tr::tr("The build device failed to prepare for the build of %1 (%2).")
-                            .arg(pro->displayName())
+                            .arg(p.first->displayName())
                             .arg(t->displayName())
                         + QLatin1Char('\n'));
                 }
@@ -308,13 +339,16 @@ static int queue(const QList<Project *> &projects, const QList<Id> &stepIds,
         }
     }
 
-    for (const Id id : stepIds) {
-        const bool isBuild = id == Constants::BUILDSTEPS_BUILD;
-        const bool isClean = id == Constants::BUILDSTEPS_CLEAN;
-        const bool isDeploy = id == Constants::BUILDSTEPS_DEPLOY;
-        for (const Project *pro : projects) {
-            if (!pro || pro->needsConfiguration())
-                continue;
+    for (const ProjectAndStepIds &p : projectsAndStepIds) {
+        const Project * const pro = p.first;
+        if (!pro || pro->needsConfiguration())
+            continue;
+
+        for (const Id id : p.second) {
+            const bool isBuild = id == Constants::BUILDSTEPS_BUILD;
+            const bool isClean = id == Constants::BUILDSTEPS_CLEAN;
+            const bool isDeploy = id == Constants::BUILDSTEPS_DEPLOY;
+
             BuildStepList *bsl = nullptr;
             for (const Target * target : targetsForSelection(pro, configSelection)) {
                 if (isBuild || isClean) {
@@ -462,73 +496,78 @@ void BuildManager::extensionsInitialized()
 
 void BuildManager::buildProjectWithoutDependencies(Project *project)
 {
-    queue({project}, {Id(Constants::BUILDSTEPS_BUILD)}, ConfigSelection::Active);
+    queue({std::make_pair(project, QList<Id>{Constants::BUILDSTEPS_BUILD})}, ConfigSelection::Active);
 }
 
 void BuildManager::cleanProjectWithoutDependencies(Project *project)
 {
-    queue({project}, {Id(Constants::BUILDSTEPS_CLEAN)}, ConfigSelection::Active);
+    queue({std::make_pair(project, QList<Id>{Constants::BUILDSTEPS_CLEAN})}, ConfigSelection::Active);
 }
 
 void BuildManager::rebuildProjectWithoutDependencies(Project *project)
 {
-    queue({project}, {Id(Constants::BUILDSTEPS_CLEAN), Id(Constants::BUILDSTEPS_BUILD)},
+    queue({std::make_pair(project, QList<Id>{Constants::BUILDSTEPS_CLEAN, Constants::BUILDSTEPS_BUILD})},
           ConfigSelection::Active);
 }
 
 void BuildManager::buildProjectWithDependencies(Project *project, ConfigSelection configSelection,
                                                 RunControl *starter)
 {
-    queue(ProjectManager::projectOrder(project), {Id(Constants::BUILDSTEPS_BUILD)},
+    queue(projectWithDependencies(project, {Id(Constants::BUILDSTEPS_BUILD)}),
           configSelection, nullptr, starter);
 }
 
 void BuildManager::cleanProjectWithDependencies(Project *project, ConfigSelection configSelection)
 {
-    queue(ProjectManager::projectOrder(project), {Id(Constants::BUILDSTEPS_CLEAN)},
-          configSelection);
+    queue(projectWithDependencies(project, {Id(Constants::BUILDSTEPS_CLEAN)}), configSelection);
 }
 
 void BuildManager::rebuildProjectWithDependencies(Project *project, ConfigSelection configSelection)
 {
-    queue(ProjectManager::projectOrder(project),
-          {Id(Constants::BUILDSTEPS_CLEAN), Id(Constants::BUILDSTEPS_BUILD)},
-          configSelection);
+    queue(
+        projectWithDependencies(
+            project, QList<Id>{Constants::BUILDSTEPS_CLEAN, Constants::BUILDSTEPS_BUILD}),
+        configSelection);
+}
+
+static ProjectsAndStepIds projectsWithStepIds(
+    const QList<Project *> &projects, const QList<Id> &stepIds)
+{
+    return Utils::transform(projects, [&](Project *p) { return std::make_pair(p, stepIds); });
 }
 
 void BuildManager::buildProjects(const QList<Project *> &projects, ConfigSelection configSelection)
 {
-    queue(projects, {Id(Constants::BUILDSTEPS_BUILD)}, configSelection);
+    queue(projectsWithStepIds(projects, {Constants::BUILDSTEPS_BUILD}), configSelection);
 }
 
 void BuildManager::cleanProjects(const QList<Project *> &projects, ConfigSelection configSelection)
 {
-    queue(projects, {Id(Constants::BUILDSTEPS_CLEAN)}, configSelection);
+    queue(projectsWithStepIds(projects, {Constants::BUILDSTEPS_CLEAN}), configSelection);
 }
 
 void BuildManager::rebuildProjects(const QList<Project *> &projects,
                                    ConfigSelection configSelection)
 {
-    queue(projects, {Id(Constants::BUILDSTEPS_CLEAN), Id(Constants::BUILDSTEPS_BUILD)},
+    queue(projectsWithStepIds(projects, {Constants::BUILDSTEPS_CLEAN, Constants::BUILDSTEPS_BUILD}),
           configSelection);
 }
 
 void BuildManager::deployProjects(const QList<Project *> &projects)
 {
     QList<Id> steps;
-    if (ProjectExplorerPlugin::projectExplorerSettings().buildBeforeDeploy != BuildBeforeRunMode::Off)
+    if (projectExplorerSettings().buildBeforeDeploy != BuildBeforeRunMode::Off)
         steps << Id(Constants::BUILDSTEPS_BUILD);
     steps << Id(Constants::BUILDSTEPS_DEPLOY);
-    queue(projects, steps, ConfigSelection::Active);
+    queue(projectsWithStepIds(projects, steps), ConfigSelection::Active);
 }
 
 BuildForRunConfigStatus BuildManager::potentiallyBuildForRunConfig(RunConfiguration *rc)
 {
     QList<Id> stepIds;
-    const ProjectExplorerSettings &settings = ProjectExplorerPlugin::projectExplorerSettings();
-    if (settings.deployBeforeRun) {
+    if (projectExplorerSettings().deployBeforeRun) {
         if (!isBuilding()) {
-            switch (settings.buildBeforeDeploy) {
+            switch (projectExplorerSettings().buildBeforeDeploy) {
             case BuildBeforeRunMode::AppOnly:
                 if (rc->target()->activeBuildConfiguration())
                     rc->target()->activeBuildConfiguration()->restrictNextBuild(rc);
@@ -545,7 +584,7 @@ BuildForRunConfigStatus BuildManager::potentiallyBuildForRunConfig(RunConfigurat
     }
 
     Project * const pro = rc->target()->project();
-    const int queueCount = queue(ProjectManager::projectOrder(pro), stepIds,
+    const int queueCount = queue(projectWithDependencies(pro, stepIds),
                                  ConfigSelection::Active, rc);
     if (rc->target()->activeBuildConfiguration())
         rc->target()->activeBuildConfiguration()->restrictNextBuild(nullptr);
@@ -721,13 +760,12 @@ void BuildManager::startBuildQueue()
     };
 
     const GroupItem abortPolicy
-        = ProjectExplorerPlugin::projectExplorerSettings().abortBuildAllOnError
-              ? stopOnError : continueOnError;
+        = projectExplorerSettings().abortBuildAllOnError ? stopOnError : continueOnError;
 
-    QList<GroupItem> topLevel { abortPolicy, ParserAwaiterTask(onAwaiterSetup) };
+    GroupItems topLevel { abortPolicy, ParserAwaiterTask(onAwaiterSetup) };
     Project *lastProject = nullptr;
     Target *lastTarget = nullptr;
-    QList<GroupItem> targetTasks;
+    GroupItems targetTasks;
     d->m_progress = 0;
     d->m_maxProgress = 0;
 
@@ -776,16 +814,19 @@ void BuildManager::startBuildQueue()
                 return;
             const QString projectName = buildStep->project()->displayName();
             const QString targetName = target->displayName();
-            addToOutputWindow(Tr::tr("Error while building/deploying project %1 (kit: %2)")
-                                  .arg(projectName, targetName), BuildStep::OutputFormat::Stderr);
+            addToOutputWindow(
+                Tr::tr("Error while building/deploying project %1 (kit: %2)")
+                    .arg(projectName, targetName),
+                BuildStep::OutputFormat::ErrorMessage);
             const Tasks kitTasks = target->kit()->validate();
             if (!kitTasks.isEmpty()) {
                 addToOutputWindow(Tr::tr("The kit %1 has configuration issues which might "
                                          "be the root cause for this problem.")
-                                      .arg(targetName), BuildStep::OutputFormat::Stderr);
+                                      .arg(targetName), BuildStep::OutputFormat::ErrorMessage);
             }
-            addToOutputWindow(Tr::tr("When executing step \"%1\"")
-                                  .arg(buildStep->displayName()), BuildStep::OutputFormat::Stderr);
+            addToOutputWindow(
+                Tr::tr("When executing step \"%1\"").arg(buildStep->displayName()),
+                BuildStep::OutputFormat::ErrorMessage);
         };
         const Group recipeGroup {
             onGroupSetup(onRecipeSetup),
@@ -856,7 +897,7 @@ bool BuildManager::buildQueueAppend(const QList<BuildItem> &items, const QString
 {
     if (!d->m_taskTreeRunner.isRunning()) {
         d->m_outputWindow->clearContents();
-        if (ProjectExplorerPlugin::projectExplorerSettings().clearIssuesOnRebuild) {
+        if (projectExplorerSettings().clearIssuesOnRebuild) {
             TaskHub::clearTasks(Constants::TASK_CATEGORY_COMPILE);
             TaskHub::clearTasks(Constants::TASK_CATEGORY_BUILDSYSTEM);
             TaskHub::clearTasks(Constants::TASK_CATEGORY_DEPLOYMENT);
@@ -881,9 +922,9 @@ bool BuildManager::buildQueueAppend(const QList<BuildItem> &items, const QString
         const QString projectName = buildStep->project()->displayName();
         const QString targetName = buildStep->target()->displayName();
         addToOutputWindow(Tr::tr("Error while building/deploying project %1 (kit: %2)")
-                              .arg(projectName, targetName), BuildStep::OutputFormat::Stderr);
+                              .arg(projectName, targetName), BuildStep::OutputFormat::ErrorMessage);
         addToOutputWindow(Tr::tr("When executing step \"%1\"")
-                              .arg(buildStep->displayName()), BuildStep::OutputFormat::Stderr);
+                              .arg(buildStep->displayName()), BuildStep::OutputFormat::ErrorMessage);
         for (BuildStep *buildStep : std::as_const(connectedSteps))
             disconnect(buildStep, nullptr, m_instance, nullptr);
         d->m_outputWindow->popup(IOutputPane::NoModeSwitch);
@@ -923,7 +964,7 @@ bool BuildManager::buildLists(const QList<BuildStepList *> &bsls, const QStringL
         const QString name = displayNameForStepId(list->id());
         const QList<BuildStep *> steps = list->steps();
         for (BuildStep *step : steps)
-            buildItems.append({step, step->enabled(), name});
+            buildItems.append({step, step->stepEnabled(), name});
         d->m_isDeploying = d->m_isDeploying || list->id() == Constants::BUILDSTEPS_DEPLOY;
     }
 
@@ -936,7 +977,7 @@ bool BuildManager::buildLists(const QList<BuildStepList *> &bsls, const QStringL
 
 void BuildManager::appendStep(BuildStep *step, const QString &name)
 {
-    buildQueueAppend({{step, step->enabled(), name}});
+    buildQueueAppend({{step, step->stepEnabled(), name}});
 }
 
 template <class T>

@@ -2,32 +2,11 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 #pragma once
 
-#include "androidconfigurations.h"
+#include <solutions/tasking/tasktree.h>
 
-#include <QFuture>
+namespace Android::Internal::AndroidAvdManager {
 
-#include <optional>
+Tasking::ExecutableItem startAvdRecipe(
+    const QString &avdName, const Tasking::Storage<QString> &serialNumberStorage);
 
-namespace Android::Internal {
-
-class AndroidAvdManager
-{
-public:
-    AndroidAvdManager();
-    ~AndroidAvdManager();
-
-    QFuture<CreateAvdInfo> createAvd(CreateAvdInfo info) const;
-    QFuture<AndroidDeviceInfoList> avdList() const;
-
-    QString startAvd(const QString &name) const;
-    bool startAvdAsync(const QString &avdName) const;
-    QString findAvd(const QString &avdName) const;
-    QString waitForAvd(const QString &avdName, const std::optional<QFuture<void>> &future = {}) const;
-    bool isAvdBooted(const QString &device) const;
-    static bool avdManagerCommand(const QStringList &args, QString *output);
-
-private:
-    bool waitForBooted(const QString &serialNumber, const std::optional<QFuture<void>> &future = {}) const;
-};
-
-} // Android::Internal
+} // namespace Android::Internal::AndroidAvdManager

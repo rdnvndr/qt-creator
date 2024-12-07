@@ -31,8 +31,8 @@
     sources. Because the client has a local cache for package storage, you can
     work offline, as long as no new packages are needed from remote servers.
 
-    To use Conan, install it by using \QOI or the tools that
-    your operating system has. For example, on Windows, you can use the
+    To use Conan, install it by using \l{Get and Install Qt}{\QOI} or the tools
+    that your operating system has. For example, on Windows, you can use the
     \c {choco install conan} or \c {pip install conan} command.
 
     \note Enable the Conan plugin to use it.
@@ -44,9 +44,16 @@
     Then, you must edit the build settings of the project to specify the
     location of the file and the contents of the Conan install command.
 
-    Alternatively, you can automatically set up the Conan package manager for
-    use with CMake.
+    \section1 Automatic Package Manager Setup
+
+    To automatically set up the Conan package manager for use with CMake,
+    go to \uicontrol Projects > \uicontrol {Project Settings} > \uicontrol CMake,
+    and select \uicontrol {Package manager auto setup}.
+
+    To turn off the automatic package manager setup, set
+    \c PackageManagerAutoSetup to \c false in \l{Configure Presets}
+    {CMake presets} or a \l{Share project settings}{CMakeLists.txt.shared} file.
 
     \sa {Conan Build Configuration}, {Enable and disable plugins},
-    {Using CMake with Package Managers}
+    {Override CMake settings for a project}, {Using CMake with Package Managers}
 */

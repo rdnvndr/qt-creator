@@ -41,7 +41,7 @@ using namespace StyleHelper::SpacingTokens;
 
 static QColor themeColor(Theme::Color role)
 {
-    return creatorTheme()->color(role);
+    return creatorColor(role);
 }
 
 namespace WelcomePageHelpers {
@@ -51,7 +51,7 @@ void setBackgroundColor(QWidget *widget, Theme::Color colorRole)
     QPalette palette = creatorTheme()->palette();
     const QPalette::ColorRole role = QPalette::Window;
     palette.setBrush(role, {});
-    palette.setColor(role, creatorTheme()->color(colorRole));
+    palette.setColor(role, creatorColor(colorRole));
     widget->setPalette(palette);
     widget->setBackgroundRole(role);
     widget->setAutoFillBackground(true);
@@ -118,6 +118,10 @@ static const TextFormat &buttonTF(Button::Role role, WidgetState state)
     static const TextFormat smallLinkHoveredTF
         {Theme::Token_Text_Accent, smallLinkDefaultTF.uiElement,
          smallLinkDefaultTF.drawTextFlags};
+    static const TextFormat tagDefaultTF
+        {Theme::Token_Text_Muted, StyleHelper::UiElement::UiElementLabelMedium};
+    static const TextFormat tagHoverTF
+        {Theme::Token_Text_Default, tagDefaultTF.uiElement};
 
     switch (role) {
     case Button::MediumPrimary: return mediumPrimaryTF;
@@ -128,6 +132,8 @@ static const TextFormat &buttonTF(Button::Role role, WidgetState state)
                                              : smallListCheckedTF;
     case Button::SmallLink: return (state == WidgetStateDefault) ? smallLinkDefaultTF
                                              : smallLinkHoveredTF;
+    case Button::Tag: return (state == WidgetStateDefault) ? tagDefaultTF
+                                             : tagHoverTF;
     }
     return mediumPrimaryTF;
 }
@@ -195,29 +201,36 @@ void Button::paintEvent(QPaintEvent *event)
     switch (m_role) {
     case MediumPrimary:
     case SmallPrimary: {
-        const QBrush fill(creatorTheme()->color(isDown()
-                                                    ? Theme::Token_Accent_Subtle
-                                                    : hovered ? Theme::Token_Accent_Muted
-                                                              : Theme::Token_Accent_Default));
+        const QBrush fill(creatorColor(isDown()
+                                       ? Theme::Token_Accent_Subtle
+                                       : hovered ? Theme::Token_Accent_Muted
+                                                 : Theme::Token_Accent_Default));
         drawCardBackground(&p, bgR, fill, QPen(Qt::NoPen), brRectRounding);
         break;
     }
     case MediumSecondary:
     case SmallSecondary: {
-        const QPen outline(creatorTheme()->color(Theme::Token_Text_Default), hovered ? 2 : 1);
+        const QPen outline(creatorColor(Theme::Token_Text_Default), hovered ? 2 : 1);
         drawCardBackground(&p, bgR, QBrush(Qt::NoBrush), outline, brRectRounding);
         break;
     }
     case SmallList: {
         if (isChecked() || hovered) {
-            const QBrush fill(creatorTheme()->color(isChecked() ? Theme::Token_Foreground_Muted
-                                                                : Theme::Token_Foreground_Subtle));
+            const QBrush fill(creatorColor(isChecked() ? Theme::Token_Foreground_Muted
+                                                       : Theme::Token_Foreground_Subtle));
             drawCardBackground(&p, bgR, fill, QPen(Qt::NoPen), brRectRounding);
         }
         break;
     }
     case SmallLink:
         break;
+    case Tag: {
+        const QBrush fill(hovered ? creatorColor(Theme::Token_Foreground_Subtle)
+                                  : QBrush(Qt::NoBrush));
+        const QPen outline(hovered ? QPen(Qt::NoPen) : creatorColor(Theme::Token_Stroke_Subtle));
+        drawCardBackground(&p, bgR, fill, outline, brRectRounding);
+        break;
+    }
     }
 
     if (!m_pixmap.isNull()) {
@@ -244,6 +257,10 @@ void Button::setPixmap(const QPixmap &pixmap)
 
 void Button::updateMargins()
 {
+    if (m_role == Tag) {
+        setContentsMargins(HPaddingXs, VPaddingXxs, HPaddingXs, VPaddingXxs);
+        return;
+    }
     const bool tokenSizeS = m_role == MediumPrimary || m_role == MediumSecondary
                             || m_role == SmallList || m_role == SmallLink;
     const int gap = tokenSizeS ? HGapS : HGapXs;
@@ -281,7 +298,7 @@ constexpr TextFormat searchBoxPlaceholderTF
 
 static const QPixmap &searchBoxIcon()
 {
-    static const QPixmap icon = Icon({{FilePath::fromString(":/core/images/search"),
+    static const QPixmap icon = Icon({{FilePath::fromString(":/core/images/search.png"),
                                        Theme::Token_Text_Muted}}, Icon::Tint).pixmap();
     return icon;
 }
@@ -329,11 +346,11 @@ void SearchBox::leaveEvent(QEvent *event)
 
 static void paintCommonBackground(QPainter *p, const QRectF &rect, const QWidget *widget)
 {
-    const QBrush fill(creatorTheme()->color(Theme::Token_Background_Muted));
+    const QBrush fill(creatorColor(Theme::Token_Background_Muted));
     const Theme::Color c = widget->hasFocus() ? Theme::Token_Stroke_Strong :
                                widget->underMouse() ? Theme::Token_Stroke_Muted
                                                     : Theme::Token_Stroke_Subtle;
-    const QPen pen(creatorTheme()->color(c));
+    const QPen pen(creatorColor(c));
     drawCardBackground(p, rect, fill, pen);
 }
 
@@ -366,7 +383,7 @@ constexpr TextFormat ComboBoxTf
 
 static const QPixmap &comboBoxIcon()
 {
-    static const QPixmap icon = Icon({{FilePath::fromString(":/core/images/expandarrow"),
+    static const QPixmap icon = Icon({{FilePath::fromString(":/core/images/expandarrow.png"),
                                        ComboBoxTf.themeColor}}, Icon::Tint).pixmap();
     return icon;
 }
@@ -428,6 +445,95 @@ void ComboBox::paintEvent(QPaintEvent *)
     p.drawPixmap(iconPos, icon);
 }
 
+constexpr TextFormat SwitchLabelTf
+    {Theme::Token_Text_Default, StyleHelper::UiElementLabelMedium};
+constexpr QSize switchTrackS(32, 16);
+
+Switch::Switch(const QString &text, QWidget *parent)
+    : QAbstractButton(parent)
+{
+    setText(text);
+    setCheckable(true);
+    setAttribute(Qt::WA_Hover);
+    setSizePolicy(QSizePolicy::Preferred, QSizePolicy::MinimumExpanding);
+    setLayoutDirection(Qt::RightToLeft); // Switch right, label left
+}
+
+QSize Switch::sizeHint() const
+{
+    const QFontMetrics fm(SwitchLabelTf.font());
+    const int textWidth = fm.horizontalAdvance(text());
+    const int width = switchTrackS.width() + HGapS + textWidth;
+    return {width, ExPaddingGapM + SwitchLabelTf.lineHeight() + ExPaddingGapM};
+}
+
+QSize Switch::minimumSizeHint() const
+{
+    return switchTrackS;
+}
+
+void Switch::paintEvent([[maybe_unused]] QPaintEvent *event)
+{
+    const bool ltr = layoutDirection() == Qt::LeftToRight;
+    const int trackX = ltr ? 0 : width() - switchTrackS.width();
+    const int trackY = (height() - switchTrackS.height()) / 2;
+    const QRect trackR(QPoint(trackX, trackY), switchTrackS);
+    const int trackRounding = trackR.height() / 2;
+    const bool checkedEnabled = isChecked() && isEnabled();
+    QPainter p(this);
+
+    { // track
+        const bool hovered = underMouse();
+        const QBrush fill = creatorColor(checkedEnabled ? (hovered ? Theme::Token_Accent_Subtle
+                                                                   : Theme::Token_Accent_Default)
+                                                        : Theme::Token_Foreground_Subtle);
+        const QPen outline = checkedEnabled ? QPen(Qt::NoPen)
+                                            : creatorColor(hovered ? Theme::Token_Stroke_Muted
+                                                                   : Theme::Token_Stroke_Subtle);
+        drawCardBackground(&p, trackR, fill, outline, trackRounding);
+    }
+    { // track label
+        const QColor color = creatorColor(isEnabled() ? (isChecked() ? Theme::Token_Basic_White
+                                                                     : Theme::Token_Text_Muted)
+                                                      : Theme::Token_Text_Subtle);
+        const int labelS = 6;
+        const int labelY = (height() - labelS) / 2;
+        if (isChecked()) {
+            const QRect onLabelR(trackX + 8, labelY, 1, labelS);
+            p.fillRect(onLabelR, color);
+        } else {
+            const QRect offLabelR(trackX + switchTrackS.width() - trackRounding - labelS / 2 - 1,
+                                  labelY, labelS, labelS);
+            drawCardBackground(&p, offLabelR, Qt::NoBrush, color, labelS / 2);
+        }
+    }
+    { // knob
+        const int thumbPadding = checkedEnabled ? 3 : 2;
+        const int thumbH = switchTrackS.height() - thumbPadding - thumbPadding;
+        const int thumbW = isDown() ? (checkedEnabled ? 17 : 19)
+                                    : thumbH;
+        const int thumbRounding = thumbH / 2;
+        const int thumbX = trackX + (isChecked() ? switchTrackS.width() - thumbW - thumbPadding
+                                                 : thumbPadding);
+        const QRect thumbR(thumbX, trackY + thumbPadding, thumbW, thumbH);
+        const QBrush fill = creatorColor(isEnabled() ? Theme::Token_Basic_White
+                                                     : Theme::Token_Foreground_Default);
+        const QPen outline = checkedEnabled ? QPen(Qt::NoPen)
+                                            : creatorColor(Theme::Token_Stroke_Subtle);
+        drawCardBackground(&p, thumbR, fill, outline, thumbRounding);
+    }
+    { // switch text label
+        const int switchAndGapWidth = switchTrackS.width() + HGapS;
+        const QRect textR(ltr ? switchAndGapWidth : 0, 0, width() - switchAndGapWidth,
+                          trackY + switchTrackS.height());
+        p.setFont(SwitchLabelTf.font());
+        p.setPen(isEnabled() ? SwitchLabelTf.color() : creatorColor(Theme::Token_Text_Subtle));
+        const QString elidedLabel =
+            p.fontMetrics().elidedText(text(), Qt::ElideRight, textR.width());
+        p.drawText(textR, SwitchLabelTf.drawTextFlags, elidedLabel);
+    }
+}
+
 GridView::GridView(QWidget *parent)
     : QListView(parent)
 {
@@ -446,7 +552,7 @@ GridView::GridView(QWidget *parent)
 
 void GridView::leaveEvent(QEvent *)
 {
-    QHoverEvent hev(QEvent::HoverLeave, QPointF(), QPointF());
+    QHoverEvent hev(QEvent::HoverLeave, QPointF(), QPointF(), QPointF());
     viewportEvent(&hev); // Seemingly needed to kill the hover paint.
 }
 
@@ -834,7 +940,6 @@ void ListItemDelegate::paint(QPainter *painter, const QStyleOptionViewItem &opti
     const QFont tagsLabelFont = tagsLabelTF.font();
     const QFontMetrics tagsLabelFM(tagsLabelFont);
     const QFont descriptionFont = descriptionTF.font();
-    const QFontMetrics descriptionFM(descriptionFont);
 
     const QRect bgRGlobal = option.rect.adjusted(0, 0, -ExVPaddingGapXl, -ExVPaddingGapXl);
     const QRect bgR = bgRGlobal.translated(-option.rect.topLeft());
@@ -1203,7 +1308,7 @@ ListModel *SectionedGridView::addSection(const Section &section, const QList<Lis
         st,
         seeAllLink,
         Space(ExVPaddingGapXl),
-        customMargin({0, ExPaddingGapL, 0, VPaddingL}),
+        customMargins(0, ExPaddingGapL, 0, VPaddingL),
     }.emerge();
     m_sectionLabels.append(sectionLabel);
     auto scrollArea = qobject_cast<QScrollArea *>(widget(0));
@@ -1274,7 +1379,7 @@ void SectionedGridView::zoomInSection(const Section &section)
         st,
         backLink,
         Space(ExVPaddingGapXl),
-        customMargin({0, ExPaddingGapL, 0, VPaddingL}),
+        customMargins(0, ExPaddingGapL, 0, VPaddingL),
     }.emerge();
 
     auto gridView = new GridView(zoomedInWidget);

@@ -2,10 +2,16 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 import QtQuick
+import QtQuick.Controls
+import QtCore
 import HelperWidgets
+import StudioControls 1.0 as StudioControls
 
-PropertyEditorPane {
-    id: itemPane
+Item {
+    id: root
+
+    property string __previewEnv
+    property string __previewModel
 
     width: 420
     height: 420
@@ -15,65 +21,135 @@ PropertyEditorPane {
     signal previewModelChanged(string model)
 
     // invoked from C++ to refresh material preview image
-    function refreshPreview()
-    {
-        topSection.refreshPreview()
-    }
+    signal refreshPreview()
 
     // Called from C++ to close context menu on focus out
     function closeContextMenu()
     {
-        topSection.closeContextMenu()
         Controller.closeContextMenu()
     }
 
     // Called from C++ to initialize preview menu checkmarks
-    function initPreviewData(env, model)
-    {
-        topSection.previewEnv = env;
-        topSection.previewModel = model
+    function initPreviewData(env, model) {
+        root.__previewEnv = env
+        root.__previewModel = model
     }
 
-    MaterialEditorTopSection {
-        id: topSection
+    MaterialEditorToolBar {
+        id: toolbar
 
-        onToolBarAction: (action) => itemPane.toolBarAction(action)
-        onPreviewEnvChanged: itemPane.previewEnvChanged(previewEnv)
-        onPreviewModelChanged: itemPane.previewModelChanged(previewModel)
+        width: parent.width
+
+        onToolBarAction: (action) => root.toolBarAction(action)
     }
 
-    Item { width: 1; height: 10 }
+    Settings {
+        id: settings
 
-    DynamicPropertiesSection {
-        propertiesModel: MaterialEditorDynamicPropertiesModel {}
+        property var topSection
+        property bool dockMode
     }
 
-    Loader {
-        id: specificsTwo
+    StudioControls.SplitView {
+        id: splitView
 
-        property string theSource: specificQmlData
+        readonly property bool isHorizontal: splitView.orientation == Qt.Horizontal
 
-        anchors.left: parent.left
-        anchors.right: parent.right
-        visible: specificsTwo.theSource !== ""
-        sourceComponent: specificQmlComponent
+        anchors.top: toolbar.bottom
+        anchors.bottom: parent.bottom
+        width: parent.width
+        orientation: splitView.width > 1000 ? Qt.Horizontal : Qt.Vertical
+        clip: true
 
-        onTheSourceChanged: {
-            specificsTwo.active = false
-            specificsTwo.active = true
+        Loader {
+            id: leftSideView
+
+            SplitView.fillWidth: leftSideView.visible
+            SplitView.fillHeight: leftSideView.visible
+            SplitView.minimumWidth: leftSideView.visible ? 300 : 0
+            SplitView.minimumHeight: leftSideView.visible ? 300 : 0
+
+            active: splitView.isHorizontal
+            visible: leftSideView.active && leftSideView.item
+
+            sourceComponent: PreviewComponent {}
+        }
+
+        PropertyEditorPane {
+            id: itemPane
+
+            clip: true
+            SplitView.fillWidth: !leftSideView.visible
+            SplitView.fillHeight: true
+            SplitView.minimumWidth: leftSideView.visible ? 400 : 0
+            SplitView.maximumWidth: leftSideView.visible ? 800 : -1
+
+            headerDocked: !leftSideView.visible && settings.dockMode
+
+            headerComponent: MaterialEditorTopSection {
+                id: topSection
+
+                Component.onCompleted: topSection.restoreState(settings.topSection)
+                Component.onDestruction: settings.topSection = topSection.saveState()
+                previewComponent: PreviewComponent {}
+                showImage: !splitView.isHorizontal
+            }
+
+            DynamicPropertiesSection {
+                propertiesModel: MaterialEditorDynamicPropertiesModel {}
+            }
+
+            Loader {
+                id: specificsTwo
+
+                property string theSource: specificQmlData
+
+                width: itemPane.width
+                visible: specificsTwo.theSource !== ""
+                sourceComponent: specificQmlComponent
+
+                onTheSourceChanged: {
+                    specificsTwo.active = false
+                    specificsTwo.active = true
+                }
+            }
+
+            Item { // spacer
+                width: 1
+                height: 10
+                visible: specificsTwo.visible
+            }
+
+            Loader {
+                id: specificsOne
+                width: itemPane.width
+                source: specificsUrl
+            }
         }
     }
 
-    Item {
-        width: 1
-        height: 10
-        visible: specificsTwo.visible
-    }
+    component PreviewComponent : MaterialEditorPreview {
+        id: previewItem
 
-    Loader {
-        id: specificsOne
-        anchors.left: parent.left
-        anchors.right: parent.right
-        source: specificsUrl
+        onPreviewEnvChanged: root.previewEnvChanged(previewEnv)
+        onPreviewModelChanged: root.previewModelChanged(previewModel)
+
+        pinned: settings.dockMode
+        showPinButton: !leftSideView.visible
+        onPinnedChanged: settings.dockMode = previewItem.pinned
+
+        Binding {
+            previewItem.previewEnv: root.__previewEnv
+            previewItem.previewModel: root.__previewModel
+            delayed: true
+        }
+
+        Connections {
+            target: root
+
+            function onRefreshPreview() {
+                previewItem.refreshPreview()
+            }
+        }
     }
 }

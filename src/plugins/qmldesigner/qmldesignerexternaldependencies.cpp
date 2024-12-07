@@ -56,6 +56,11 @@ QUrl ExternalDependencies::projectUrl() const
     return {};
 }
 
+QString ExternalDependencies::projectName() const
+{
+    return QmlDesignerPlugin::instance()->documentManager().currentProjectName();
+}
+
 QString ExternalDependencies::currentProjectDirPath() const
 {
     return QmlDesignerPlugin::instance()->documentManager().currentProjectDirPath().toString();
@@ -268,6 +273,16 @@ QString ExternalDependencies::qtQuickVersion() const
 Utils::FilePath ExternalDependencies::resourcePath(const QString &relativePath) const
 {
     return Core::ICore::resourcePath(relativePath);
+}
+
+QString ExternalDependencies::userResourcePath(QStringView relativePath) const
+{
+    return Core::ICore::userResourcePath(relativePath.toString()).path();
+}
+
+QWidget *ExternalDependencies::mainWindow() const
+{
+    return Core::ICore::mainWindow();
 }
 
 } // namespace QmlDesigner

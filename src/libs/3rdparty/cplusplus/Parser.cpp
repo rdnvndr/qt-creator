@@ -20,7 +20,6 @@
 
 #include "Parser.h"
 #include "Token.h"
-#include "Lexer.h"
 #include "Control.h"
 #include "AST.h"
 #include "Literals.h"
@@ -30,7 +29,6 @@
 #include <unordered_map>
 #include <utility>
 
-#include <string>
 #include <cstdio> // for putchar
 
 #if defined(__INTEL_COMPILER) && !defined(va_copy)
@@ -489,15 +487,17 @@ int Parser::find(int token, int stopAt)
     return 0;
 }
 
-void Parser::match(int kind, int *token)
+bool Parser::match(int kind, int *token)
 {
-    if (LA() == kind)
+    if (LA() == kind) {
         *token = consumeToken();
-    else {
-        *token = 0;
-        error(_tokenIndex, "expected token `%s' got `%s'",
-              Token::name(kind), tok().spell());
+        return true;
     }
+
+    *token = 0;
+    error(_tokenIndex, "expected token `%s' got `%s'",
+          Token::name(kind), tok().spell());
+    return false;
 }
 
 bool Parser::parseClassOrNamespaceName(NameAST *&node)
@@ -1533,14 +1533,21 @@ bool Parser::parseOperator(OperatorAST *&node) // ### FIXME
         } else if (LA() == T_LBRACKET && LA(2) == T_RBRACKET) {
             ast->op_token = ast->open_token = consumeToken();
             ast->close_token = consumeToken();
-        } else if (_languageFeatures.cxx11Enabled &&
-                   LA() == T_STRING_LITERAL && LA(2) == T_IDENTIFIER &&
-                   !tok().f.userDefinedLiteral && tok().string->size() == 0 &&
-                   tok(2).identifier->size() > 1 && tok(2).identifier->chars()[0] == '_') {
+        } else if (_languageFeatures.cxx11Enabled && LA() == T_STRING_LITERAL) {
             // C++11 user-defined literal operator, e.g.:
             // int operator"" _abc123(const char *str, size_t size) { ... }
-            ast->op_token = consumeToken();
-            consumeToken(); // consume literal operator identifier
+            // There are two variants: With and without a space after the quotes. The former
+            // is deprecated.
+            if (LA(2) == T_IDENTIFIER && !tok().f.userDefinedLiteral
+                    && tok().string->size() == 0 &&
+                    tok(2).identifier->size() > 1 && tok(2).identifier->chars()[0] == '_') {
+                ast->op_token = consumeToken();
+                consumeToken(); // consume literal operator identifier
+            } else if (tok().f.userDefinedLiteral) {
+                ast->op_token = consumeToken();
+            } else {
+                return false;
+            }
         } else {
             return false;
         }
@@ -3088,7 +3095,7 @@ bool Parser::parseInitializer0x(ExpressionAST *&node, int *equals_token)
     }
 
     else if (LA() == T_LPAREN) {
-        return parseExpressionListParen(node);
+        return parseExpressionListParen(node, false);
     }
 
     return false;
@@ -3258,7 +3265,7 @@ bool Parser::parseMemInitializer(MemInitializerListAST *&node)
     ast->name = name;
 
     if (LA() == T_LPAREN) {
-        parseExpressionListParen(ast->expression);
+        parseExpressionListParen(ast->expression, true);
     } else if (_languageFeatures.cxx11Enabled && LA() == T_LBRACE) {
         parseBracedInitList0x(ast->expression);
     } else {
@@ -3498,7 +3505,8 @@ bool Parser::parseExpressionStatement(StatementAST *&node)
     DEBUG_THIS_RULE();
     if (LA() == T_SEMICOLON) {
         ExpressionStatementAST *ast = new (_pool) ExpressionStatementAST;
-        match(T_SEMICOLON, &ast->semicolon_token);
+        if (!match(T_SEMICOLON, &ast->semicolon_token))
+            return false;
         node = ast;
         return true;
     }
@@ -3519,9 +3527,10 @@ bool Parser::parseExpressionStatement(StatementAST *&node)
         ExpressionStatementAST *ast = new (previousPool) ExpressionStatementAST;
         if (expression)
             ast->expression = expression->clone(previousPool);
-        match(T_SEMICOLON, &ast->semicolon_token);
-        node = ast;
-        parsed = true;
+        if (match(T_SEMICOLON, &ast->semicolon_token)) {
+            node = ast;
+            parsed = true;
+        }
     }
 
     _inExpressionStatement = wasInExpressionStatement;
@@ -5452,7 +5461,7 @@ bool Parser::parseTypenameCallExpression(ExpressionAST *&node)
             ast->typename_token = typename_token;
             ast->name = name;
             if (LA() == T_LPAREN) {
-                parseExpressionListParen(ast->expression);
+                parseExpressionListParen(ast->expression, false);
             } else { // T_LBRACE
                 parseBracedInitList0x(ast->expression);
             }
@@ -5511,7 +5520,7 @@ bool Parser::parseCorePostfixExpression(ExpressionAST *&node)
                 (LA() == T_LPAREN || (_languageFeatures.cxx11Enabled && LA() == T_LBRACE))) {
             ExpressionAST *expr = nullptr;
             if (LA() == T_LPAREN) {
-                parseExpressionListParen(expr);
+                parseExpressionListParen(expr, false);
             } else { // T_LBRACE
                 parseBracedInitList0x(expr);
             }
@@ -5707,13 +5716,14 @@ bool Parser::parseUnaryExpression(ExpressionAST *&node)
 }
 
 // new-placement ::= T_LPAREN expression-list T_RPAREN
-bool Parser::parseExpressionListParen(ExpressionAST *&node)
+bool Parser::parseExpressionListParen(ExpressionAST *&node, bool allowEmpty)
 {
     DEBUG_THIS_RULE();
     if (LA() == T_LPAREN) {
         int lparen_token = consumeToken();
         ExpressionListAST *expression_list = nullptr;
-        if (parseExpressionList(expression_list) && LA() == T_RPAREN) {
+        const bool hasList = parseExpressionList(expression_list);
+        if ((hasList || allowEmpty) && LA() == T_RPAREN) {
             int rparen_token = consumeToken();
             ExpressionListParenAST *ast = new (_pool) ExpressionListParenAST;
             ast->lparen_token = lparen_token;
@@ -5746,7 +5756,7 @@ bool Parser::parseNewExpression(ExpressionAST *&node)
 
     ExpressionAST *parenExpressionList = nullptr;
 
-    if (parseExpressionListParen(parenExpressionList)) {
+    if (parseExpressionListParen(parenExpressionList, false)) {
         int after_new_placement = cursor();
 
         NewTypeIdAST *new_type_id = nullptr;
@@ -5839,7 +5849,7 @@ bool Parser::parseNewInitializer(ExpressionAST *&node)
 {
     DEBUG_THIS_RULE();
     if (LA() == T_LPAREN)
-        return parseExpressionListParen(node);
+        return parseExpressionListParen(node, true);
     else if (_languageFeatures.cxx11Enabled && LA() == T_LBRACE)
         return parseBracedInitList0x(node);
     return false;

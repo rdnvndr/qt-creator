@@ -11,12 +11,11 @@
 #include <projectexplorer/projectmanager.h>
 
 #include <utils/algorithm.h>
-#include <utils/filepath.h>
+#include <utils/fileutils.h>
 #include <utils/macroexpander.h>
 #include <utils/wizardpage.h>
 
 #include <QComboBox>
-#include <QFileInfo>
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -76,7 +75,7 @@ TranslationWizardPage::TranslationWizardPage(const QString &enabledExpr, bool si
     auto localeStrings = transform<QList<LocalePair>>(allLocales,
                 [](const QLocale &l) {
                     const QString displayName = QLocale::languageToString(l.language()).append(" (")
-                            .append(QLocale::countryToString(l.country())).append(')');
+                            .append(QLocale::territoryToString(l.territory())).append(')');
                     const QString tsFileBaseName = l.name();
                     return qMakePair(displayName, tsFileBaseName);
                 });

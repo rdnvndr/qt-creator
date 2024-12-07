@@ -3,20 +3,21 @@
 
 #include "../utils/googletest.h"
 
-#include "../mocks/filesystemmock.h"
-#include "../mocks/mockqfilesystemwatcher.h"
-#include "../mocks/mocktimer.h"
-#include "../mocks/projectstoragepathwatchernotifiermock.h"
+#include <filesystemmock.h>
+#include <mockqfilesystemwatcher.h>
+#include <mocktimer.h>
+#include <projectstorageerrornotifiermock.h>
+#include <projectstoragepathwatchernotifiermock.h>
 
 #include <projectstorage/projectstorage.h>
 #include <projectstorage/projectstoragepathwatcher.h>
-#include <projectstorage/sourcepathcache.h>
+#include <sourcepathstorage/sourcepathcache.h>
 #include <sqlitedatabase.h>
 
 #include <utils/smallstring.h>
 
 namespace {
-using SourcePathCache = QmlDesigner::SourcePathCache<QmlDesigner::ProjectStorage<Sqlite::Database>>;
+using SourcePathCache = QmlDesigner::SourcePathCache<QmlDesigner::SourcePathStorage>;
 using Watcher = QmlDesigner::ProjectStoragePathWatcher<NiceMock<MockQFileSytemWatcher>,
                                                        NiceMock<MockTimer>,
                                                        SourcePathCache>;
@@ -39,21 +40,21 @@ using QmlDesigner::WatcherEntry;
 class ProjectStoragePathWatcher : public testing::Test
 {
 protected:
-    static void SetUpTestSuite()
+    struct StaticData
     {
-        static_database = std::make_unique<Sqlite::Database>(":memory:", Sqlite::JournalMode::Memory);
+        Sqlite::Database database{":memory:", Sqlite::JournalMode::Memory};
+        Sqlite::Database sourcePathDatabase{":memory:", Sqlite::JournalMode::Memory};
+        ProjectStorageErrorNotifierMock errorNotifierMock;
+        QmlDesigner::ProjectStorage storage{database, errorNotifierMock, database.isInitialized()};
+        QmlDesigner::SourcePathStorage sourcePathStorage{sourcePathDatabase,
+                                                         sourcePathDatabase.isInitialized()};
+    };
 
-        static_projectStorage = std::make_unique<QmlDesigner::ProjectStorage<Sqlite::Database>>(
-            *static_database, static_database->isInitialized());
-    }
+    static void SetUpTestSuite() { staticData = std::make_unique<StaticData>(); }
 
-    static void TearDownTestSuite()
-    {
-        static_projectStorage.reset();
-        static_database.reset();
-    }
+    static void TearDownTestSuite() { staticData.reset(); }
 
-    ~ProjectStoragePathWatcher() { static_projectStorage->resetForTestsOnly(); }
+    ~ProjectStoragePathWatcher() { storage.resetForTestsOnly(); }
 
     ProjectStoragePathWatcher()
     {
@@ -79,11 +80,10 @@ protected:
 protected:
     NiceMock<ProjectStoragePathWatcherNotifierMock> notifier;
     NiceMock<FileSystemMock> mockFileSystem;
-    inline static std::unique_ptr<Sqlite::Database> static_database;
-    Sqlite::Database &database = *static_database;
-    inline static std::unique_ptr<QmlDesigner::ProjectStorage<Sqlite::Database>> static_projectStorage;
-    QmlDesigner::ProjectStorage<Sqlite::Database> &storage = *static_projectStorage;
-    SourcePathCache pathCache{storage};
+    inline static std::unique_ptr<StaticData> staticData;
+    Sqlite::Database &database = staticData->database;
+    QmlDesigner::ProjectStorage &storage = staticData->storage;
+    SourcePathCache pathCache{staticData->sourcePathStorage};
     Watcher watcher{pathCache, mockFileSystem, &notifier};
     NiceMock<MockQFileSytemWatcher> &mockQFileSytemWatcher = watcher.fileSystemWatcher();
     ProjectChunkId projectChunkId1{ProjectPartId::create(2), SourceType::Qml};
@@ -107,9 +107,9 @@ protected:
                            pathCache.sourceId(path3),
                            pathCache.sourceId(path4),
                            pathCache.sourceId(path5)};
-    SourceContextIds sourceContextIds = {pathCache.sourceContextId(sourceIds[0]),
-                                         pathCache.sourceContextId(sourceIds[2]),
-                                         pathCache.sourceContextId(sourceIds[4])};
+    SourceContextIds sourceContextIds = {sourceIds[0].contextId(),
+                                         sourceIds[2].contextId(),
+                                         sourceIds[4].contextId()};
     ProjectChunkIds ids{projectChunkId1, projectChunkId2, projectChunkId3};
     WatcherEntry watcherEntry1{projectChunkId1, sourceContextIds[0], sourceIds[0]};
     WatcherEntry watcherEntry2{projectChunkId2, sourceContextIds[0], sourceIds[0]};
@@ -369,10 +369,9 @@ TEST_F(ProjectStoragePathWatcher, two_notify_file_changes)
         .WillByDefault(Return(FileStatus{sourceIds[3], 1, 2}));
 
     EXPECT_CALL(notifier,
-                pathsWithIdsChanged(ElementsAre(
-                    IdPaths{projectChunkId1, {SourceId::create(1), SourceId::create(2)}},
-                    IdPaths{projectChunkId2,
-                            {SourceId::create(1), SourceId::create(2), SourceId::create(4)}})));
+                pathsWithIdsChanged(
+                    ElementsAre(IdPaths{projectChunkId1, {sourceIds[0], sourceIds[1]}},
+                                IdPaths{projectChunkId2, {sourceIds[0], sourceIds[1], sourceIds[3]}})));
 
     mockQFileSytemWatcher.directoryChanged(sourceContextPath);
     mockQFileSytemWatcher.directoryChanged(sourceContextPath2);

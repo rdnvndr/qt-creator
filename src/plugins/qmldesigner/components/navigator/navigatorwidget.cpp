@@ -25,6 +25,8 @@
 #include <utils/stylehelper.h>
 #include <utils/utilsicons.h>
 
+using namespace Core;
+
 namespace QmlDesigner {
 
 NavigatorWidget::NavigatorWidget(NavigatorView *view)
@@ -67,6 +69,10 @@ NavigatorWidget::NavigatorWidget(NavigatorView *view)
     QmlDesignerPlugin::trackWidgetFocusTime(this, Constants::EVENT_NAVIGATORVIEW_TIME);
 
     setFocusProxy(m_treeView);
+
+    IContext::attach(this,
+                     Core::Context(Constants::qmlNavigatorContextId, Constants::qtQuickToolsMenuContextId),
+                     [this](const IContext::HelpCallback &callback) { contextHelp(callback); });
 }
 
 void NavigatorWidget::setTreeModel(QAbstractItemModel *model)
@@ -180,10 +186,11 @@ QToolBar *NavigatorWidget::createToolBar()
 
 void NavigatorWidget::contextHelp(const Core::IContext::HelpCallback &callback) const
 {
-    if (auto view = navigatorView())
+    if (auto view = navigatorView()) {
         QmlDesignerPlugin::contextHelp(callback, view->contextHelpId());
-    else
+    } else {
         callback({});
+    }
 }
 
 void NavigatorWidget::disableNavigator()

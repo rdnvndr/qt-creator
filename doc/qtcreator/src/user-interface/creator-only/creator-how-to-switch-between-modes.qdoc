@@ -27,7 +27,7 @@
         \li Purpose
         \li Read More
     \row
-        \li {1,7} \inlineimage qtcreator-mode-selector.png
+        \li {1,8} \inlineimage qtcreator-mode-selector.webp {Mode selector}
     \row
         \li \uicontrol Welcome
         \li \key Ctrl+1
@@ -57,8 +57,13 @@
             This mode is available when a project is open.
         \li \l{Configuring Projects}
     \row
-        \li \uicontrol Help
+        \li \uicontrol Extensions
         \li \key Ctrl+6
+        \li Load \QC extensions from the computer or the web.
+        \li \l{Load extensions}
+    \row
+        \li \uicontrol Help
+        \li \key Ctrl+7
         \li Read documentation.
         \li \l{Get help}
     \endtable
@@ -68,10 +73,20 @@
     \uicontrol {Start Debugging of Startup Project} automatically
     switches to \uicontrol {Debug} mode.
 
-    To hide the mode selector and to save space on the display, select
-    \uicontrol View > \uicontrol {Mode Selector Style} > \uicontrol Hidden.
-    To only show icons on the mode selector, select the \uicontrol {Icons Only}
-    style.
+    \section1 Hide and show modes
+
+    To hide and show modes in the mode selector and to save space on the display,
+    go to \uicontrol View > \uicontrol Modes:
+
+    \list
+        \li To hide the mode selector, select \uicontrol Hidden.
+        \li To only show icons on the mode selector, select
+            \uicontrol {Icons Only}.
+        \li To hide modes that you don't use, clear the \uicontrol {Show <Mode>}
+            checkboxes.
+    \endlist
+
+    You can use the keyboard shortcuts to switch to the hidden modes.
 
     \sa {Show and hide sidebars},{Show and hide the main menu}
 */

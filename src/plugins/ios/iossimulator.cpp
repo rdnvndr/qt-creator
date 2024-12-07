@@ -8,7 +8,7 @@
 #include <projectexplorer/kitaspects.h>
 
 #include <utils/port.h>
-#include <utils/process.h>
+#include <utils/qtcprocess.h>
 
 #include <QMapIterator>
 
@@ -28,7 +28,7 @@ IosSimulator::IosSimulator(Id id)
     setType(Constants::IOS_SIMULATOR_TYPE);
     setMachineType(IDevice::Emulator);
     setOsType(Utils::OsTypeMac);
-    settings()->displayName.setDefaultValue(Tr::tr("iOS Simulator"));
+    setDefaultDisplayName(Tr::tr("iOS Simulator"));
     setDisplayType(Tr::tr("iOS Simulator"));
     setDeviceState(DeviceStateUnknown);
 }

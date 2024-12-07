@@ -6,8 +6,6 @@
 #include "../coreplugintr.h"
 #include "../editormanager/documentmodel.h"
 
-#include <extensionsystem/pluginmanager.h>
-
 #include <utils/algorithm.h>
 #include <utils/async.h>
 #include <utils/link.h>
@@ -72,16 +70,13 @@ static void matchEditors(QPromise<void> &promise, const LocatorStorage &storage,
 
 LocatorMatcherTasks OpenDocumentsFilter::matchers()
 {
-    Storage<LocatorStorage> storage;
-
-    const auto onSetup = [storage](Async<void> &async) {
+    const auto onSetup = [](Async<void> &async) {
         const QList<Entry> editorsData = Utils::transform(DocumentModel::entries(),
             [](const DocumentModel::Entry *e) { return Entry{e->filePath(), e->displayName()}; });
-        async.setFutureSynchronizer(ExtensionSystem::PluginManager::futureSynchronizer());
-        async.setConcurrentCallData(matchEditors, *storage, editorsData);
+        async.setConcurrentCallData(matchEditors, *LocatorStorage::storage(), editorsData);
     };
 
-    return {{AsyncTask<void>(onSetup), storage}};
+    return {AsyncTask<void>(onSetup)};
 }
 
 } // namespace Core::Internal

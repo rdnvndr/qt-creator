@@ -37,10 +37,10 @@ public:
     QString searchText() const;
     ItemLibraryImport *importByUrl(const QString &importName) const;
 
-    void update(ItemLibraryInfo *itemLibraryInfo, Model *model);
+    void update(Model *model);
     void updateUsedImports(const Imports &usedImports);
 
-    QMimeData *getMimeData(const ItemLibraryEntry &itemLibraryEntry);
+    std::unique_ptr<QMimeData> getMimeData(const ItemLibraryEntry &itemLibraryEntry);
 
     void setSearchText(const QString &searchText);
     void setFlowMode(bool);

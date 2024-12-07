@@ -30,6 +30,7 @@
 
 #include <utils/action.h>
 #include <utils/commandline.h>
+#include <utils/fileutils.h>
 #include <utils/layoutbuilder.h>
 #include <utils/qtcassert.h>
 
@@ -72,7 +73,7 @@ public:
     FossilPluginPrivate();
 
     // IVersionControl
-    QString displayName() const final;
+    QString displayName() const final { return "Fossil"; }
     Id id() const final;
 
     bool isVcsFileOrDirectory(const FilePath &filePath) const final;
@@ -90,6 +91,15 @@ public:
 
     void vcsAnnotate(const FilePath &file, int line) final;
     void vcsDescribe(const FilePath &source, const QString &id) final;
+    void vcsLog(const Utils::FilePath &topLevel, const Utils::FilePath &relativeDirectory) final {
+        FossilClient::SupportedFeatures features = fossilClient().supportedFeatures();
+        QStringList options = {"-n", QString::number(fossilClient().settings().logCount())};
+
+        if (features.testFlag(FossilClient::TimelineWidthFeature))
+            options << "-W" << QString::number(fossilClient().settings().timelineWidth());
+
+        fossilClient().log(topLevel, {relativeDirectory.path()}, options);
+    }
 
     VcsCommand *createInitialCheckoutCommand(const QString &url,
                                              const FilePath &baseDirectory,
@@ -138,7 +148,7 @@ public:
         Constants::FILELOG_ID,
         VcsBase::Tr::tr("Fossil File Log Editor"),
         Constants::LOGAPP,
-        [] { return new FossilEditorWidget; },
+        &createFossilEditorWidget,
         std::bind(&FossilPluginPrivate::vcsDescribe, this, _1, _2)
     }};
 
@@ -147,7 +157,7 @@ public:
         Constants::ANNOTATELOG_ID,
         VcsBase::Tr::tr("Fossil Annotation Editor"),
         Constants::ANNOTATEAPP,
-        [] { return new FossilEditorWidget; },
+        &createFossilEditorWidget,
         std::bind(&FossilPluginPrivate::vcsDescribe, this, _1, _2)
     }};
 
@@ -156,7 +166,7 @@ public:
         Constants::DIFFLOG_ID,
         VcsBase::Tr::tr("Fossil Diff Editor"),
         Constants::DIFFAPP,
-        [] { return new FossilEditorWidget; },
+        &createFossilEditorWidget,
         std::bind(&FossilPluginPrivate::vcsDescribe, this, _1, _2)
     }};
 
@@ -217,7 +227,6 @@ FossilPluginPrivate::FossilPluginPrivate()
     m_commandLocator = new CommandLocator("Fossil", "fossil", "fossil", this);
     m_commandLocator->setDescription(Tr::tr("Triggers a Fossil version control operation."));
 
-    ProjectExplorer::JsonWizardFactory::addWizardPath(FilePath::fromString(Constants::WIZARD_PATH));
     JsExpander::registerGlobalObject("Fossil", [] { return new FossilJsExtension; });
 
     connect(&settings(), &AspectContainer::changed,
@@ -778,11 +787,6 @@ void FossilPluginPrivate::updateActions(VersionControlBase::ActionState as)
         repoAction->setEnabled(repoEnabled);
 }
 
-QString FossilPluginPrivate::displayName() const
-{
-    return Tr::tr("Fossil");
-}
-
 Id FossilPluginPrivate::id() const
 {
     return Id(Constants::VCS_ID_FOSSIL);
@@ -927,7 +931,7 @@ VcsCommand *FossilPluginPrivate::createInitialCheckoutCommand(const QString &sou
     checkoutPath.createDir();
 
     // Setup the wizard page command job
-    auto command = VcsBaseClient::createVcsCommand(this, checkoutPath,
+    auto command = VcsBaseClient::createVcsCommand(checkoutPath,
                                                    fossilClient().processEnvironment(checkoutPath));
 
     if (!isLocalRepository
@@ -959,12 +963,9 @@ VcsCommand *FossilPluginPrivate::createInitialCheckoutCommand(const QString &sou
         //
         // So here we want Fossil to save the remote details when specified.
 
-        QStringList args;
-        args << fossilClient().vcsCommandString(FossilClient::CloneCommand)
-             << extraOptions
-             << sourceUrl
-             << fossilFileNative;
-        command->addJob({fossilClient().vcsBinary(checkoutPath), args}, -1);
+        command->addJob({fossilClient().vcsBinary(checkoutPath),
+            {fossilClient().vcsCommandString(FossilClient::CloneCommand), extraOptions,
+             sourceUrl, fossilFileNative}}, -1);
     }
 
     // check out the cloned repository file into the working copy directory;
@@ -978,15 +979,14 @@ VcsCommand *FossilPluginPrivate::createInitialCheckoutCommand(const QString &sou
     // set user default to admin user if specified
     if (!isLocalRepository
         && !adminUser.isEmpty()) {
-        const QStringList args({ "user", "default", adminUser, "--user", adminUser});
-        command->addJob({fossilClient().vcsBinary(checkoutPath), args}, -1);
+        command->addJob({fossilClient().vcsBinary(checkoutPath),
+                         {"user", "default", adminUser, "--user", adminUser}}, -1);
     }
 
     // turn-off autosync if requested
-    if (!isLocalRepository
-        && disableAutosync) {
-        const QStringList args({"settings", "autosync", "off"});
-        command->addJob({fossilClient().vcsBinary(checkoutPath), args}, -1);
+    if (!isLocalRepository && disableAutosync) {
+        command->addJob({fossilClient().vcsBinary(checkoutPath), {"settings", "autosync", "off"}},
+                        -1);
     }
 
     return command;
@@ -994,11 +994,11 @@ VcsCommand *FossilPluginPrivate::createInitialCheckoutCommand(const QString &sou
 
 void FossilPluginPrivate::changed(const QVariant &v)
 {
-    switch (v.type()) {
-    case QVariant::String:
+    switch (v.typeId()) {
+    case QMetaType::QString:
         emit repositoryChanged(FilePath::fromVariant(v));
         break;
-    case QVariant::StringList:
+    case QMetaType::QStringList:
         emit filesChanged(v.toStringList());
         break;
     default:

@@ -2,17 +2,19 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 #include "propertyeditorcontextobject.h"
-#include "timelineeditor/easingcurvedialog.h"
 
-#include <abstractview.h>
-#include <nodemetainfo.h>
-#include <rewritingexception.h>
-#include <qmldesignerconstants.h>
-#include <qml3dnode.h>
-#include <qmldesignerplugin.h>
-#include <qmlmodelnodeproxy.h>
-#include <qmlobjectnode.h>
-#include <qmltimeline.h>
+#include "abstractview.h"
+#include "easingcurvedialog.h"
+#include "nodemetainfo.h"
+#include "propertyeditorutils.h"
+#include "qml3dnode.h"
+#include "qmldesignerconstants.h"
+#include "qmldesignerplugin.h"
+#include "qmlmodelnodeproxy.h"
+#include "qmlobjectnode.h"
+#include "qmltimeline.h"
+
+#include <qmldesignerbase/settings/designersettings.h>
 
 #include <coreplugin/messagebox.h>
 #include <utils/algorithm.h>
@@ -73,22 +75,24 @@ namespace QmlDesigner {
 
 static Q_LOGGING_CATEGORY(urlSpecifics, "qtc.propertyeditor.specifics", QtWarningMsg)
 
-    PropertyEditorContextObject::PropertyEditorContextObject(QObject *parent)
+    PropertyEditorContextObject::PropertyEditorContextObject(Quick2PropertyEditorView *widget,
+                                                             QObject *parent)
     : QObject(parent)
     , m_isBaseState(false)
     , m_selectionChanged(false)
     , m_backendValues(nullptr)
     , m_qmlComponent(nullptr)
     , m_qmlContext(nullptr)
+    , m_quickWidget(widget)
 {}
 
 QString PropertyEditorContextObject::convertColorToString(const QVariant &color)
 {
     QString colorString;
     QColor theColor;
-    if (color.canConvert(QVariant::Color)) {
+    if (color.canConvert(QMetaType(QMetaType::QColor))) {
         theColor = color.value<QColor>();
-    } else if (color.canConvert(QVariant::Vector3D)) {
+    } else if (color.canConvert(QMetaType(QMetaType::QVector3D))) {
         auto vec = color.value<QVector3D>();
         theColor = QColor::fromRgbF(vec.x(), vec.y(), vec.z());
     }
@@ -203,10 +207,8 @@ void PropertyEditorContextObject::changeTypeName(const QString &typeName)
         }
 
         // Create a list of properties available for the new type
-        auto propertiesAndSignals = Utils::transform<PropertyNameList>(metaInfo.properties(),
-                                                                       [](const auto &property) {
-                                                                           return property.name();
-                                                                       });
+        auto propertiesAndSignals = Utils::transform<PropertyNameList>(
+            PropertyEditorUtils::filteredProperties(metaInfo), &PropertyMetaInfo::name);
         // Add signals to the list
         for (const auto &signal : metaInfo.signalNames()) {
             if (signal.isEmpty())
@@ -225,9 +227,9 @@ void PropertyEditorContextObject::changeTypeName(const QString &typeName)
                 continue;
 
             // Add dynamic property
-            propertiesAndSignals.append(property.name());
+            propertiesAndSignals.append(property.name().toByteArray());
             // Add its change signal
-            PropertyName name = property.name();
+            PropertyName name = property.name().toByteArray();
             QChar firstChar = QChar(property.name().at(0)).toUpper().toLatin1();
             name[0] = firstChar.toLatin1();
             name.prepend("on");
@@ -239,7 +241,7 @@ void PropertyEditorContextObject::changeTypeName(const QString &typeName)
         QList<PropertyName> incompatibleProperties;
         for (const auto &property : selectedNode.properties()) {
             if (!propertiesAndSignals.contains(property.name()))
-                incompatibleProperties.append(property.name());
+                incompatibleProperties.append(property.name().toByteArray());
         }
 
         Utils::sort(incompatibleProperties);
@@ -304,7 +306,7 @@ void PropertyEditorContextObject::insertKeyframe(const QString &propertyName)
 
     ModelNode selectedNode = rewriterView->selectedModelNodes().constFirst();
 
-    QmlTimeline timeline = rewriterView->currentTimeline();
+    QmlTimeline timeline = rewriterView->currentTimelineNode();
 
     QTC_ASSERT(timeline.isValid(), return );
     QTC_ASSERT(selectedNode.isValid(), return );
@@ -585,8 +587,7 @@ int PropertyEditorContextObject::devicePixelRatio()
 
 QStringList PropertyEditorContextObject::styleNamesForFamily(const QString &family)
 {
-    const QFontDatabase dataBase;
-    return dataBase.styles(family);
+    return QFontDatabase::styles(family);
 }
 
 QStringList PropertyEditorContextObject::allStatesForId(const QString &id)
@@ -618,6 +619,20 @@ void PropertyEditorContextObject::verifyInsightImport()
 
     if (!m_model->hasImport(import))
         m_model->changeImports({import}, {});
+}
+
+QRect PropertyEditorContextObject::screenRect() const
+{
+    if (m_quickWidget && m_quickWidget->screen())
+        return m_quickWidget->screen()->availableGeometry();
+    return  {};
+}
+
+QPoint PropertyEditorContextObject::globalPos(const QPoint &point) const
+{
+    if (m_quickWidget)
+        return m_quickWidget->mapToGlobal(point);
+    return point;
 }
 
 void EasingCurveEditor::registerDeclarativeType()

@@ -54,6 +54,7 @@ QtcLibrary {
         "benchmarker.h",
         "buildablehelperlibrary.cpp",
         "buildablehelperlibrary.h",
+        "builderutils.h",
         "camelcasecursor.cpp",
         "camelcasecursor.h",
         "categorysortfiltermodel.cpp",
@@ -77,6 +78,7 @@ QtcLibrary {
         "cpplanguage_details.h",
         "crumblepath.cpp",
         "crumblepath.h",
+        "datafromprocess.h",
         "delegates.cpp",
         "delegates.h",
         "detailsbutton.cpp",
@@ -147,6 +149,7 @@ QtcLibrary {
         "globalfilechangeblocker.h",
         "guard.cpp",
         "guard.h",
+        "guardedcallback.h",
         "guiutils.cpp",
         "guiutils.h",
         "highlightingitemdelegate.cpp",
@@ -161,6 +164,8 @@ QtcLibrary {
         "icon.h",
         "iconbutton.cpp",
         "iconbutton.h",
+        "icondisplay.cpp",
+        "icondisplay.h",
         "id.cpp",
         "id.h",
         "indexedcontainerproxyconstiterator.h",
@@ -184,8 +189,12 @@ QtcLibrary {
         "link.h",
         "listmodel.h",
         "listutils.h",
+        "lua.cpp",
+        "lua.h",
         "macroexpander.cpp",
         "macroexpander.h",
+        "markdownbrowser.cpp",
+        "markdownbrowser.h",
         "mathutils.cpp",
         "mathutils.h",
         "mimeconstants.h",
@@ -230,8 +239,8 @@ QtcLibrary {
         "portlist.cpp",
         "portlist.h",
         "predicates.h",
-        "process.cpp",
-        "process.h",
+        "qtcprocess.cpp",
+        "qtcprocess.h",
         "processenums.h",
         "processhandle.cpp",
         "processhandle.h",
@@ -257,10 +266,13 @@ QtcLibrary {
         "qtcolorbutton.h",
         "qtcsettings.cpp",
         "qtcsettings.h",
+        "ranges.h",
         "reloadpromptutils.cpp",
         "reloadpromptutils.h",
         "removefiledialog.cpp",
         "removefiledialog.h",
+        "result.cpp",
+        "result.h",
         "savefile.cpp",
         "savefile.h",
         "scopedswap.h",
@@ -371,9 +383,6 @@ QtcLibrary {
             "fsengine.h",
             "fsenginehandler.cpp",
             "fsenginehandler.h",
-            "fsengine_impl.cpp",
-            "fsengine_impl.h",
-            "rootinjectfsengine.h",
         ]
     }
 
@@ -472,6 +481,6 @@ QtcLibrary {
     Export {
         Depends { name: "Qt"; submodules: ["concurrent", "widgets" ] }
         Depends { name: "Tasking" }
-        cpp.includePaths: "mimetypes2"
+        cpp.includePaths: exportingProduct.sourceDirectory + "/mimetypes2"
     }
 }

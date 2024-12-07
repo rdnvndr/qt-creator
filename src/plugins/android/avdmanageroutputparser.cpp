@@ -60,7 +60,7 @@ static std::optional<AndroidDeviceInfo> parseAvd(const QStringList &deviceInfo)
             if (avdPath.exists()) {
                 // Get ABI.
                 const Utils::FilePath configFile = avdPath.pathAppended("config.ini");
-                QSettings config(configFile.toString(), QSettings::IniFormat);
+                QSettings config(configFile.toFSPathString(), QSettings::IniFormat);
                 value = config.value(avdInfoAbiKey).toString();
                 if (!value.isEmpty())
                     avd.cpuAbi << value;
@@ -71,13 +71,13 @@ static std::optional<AndroidDeviceInfo> parseAvd(const QStringList &deviceInfo)
                 const QString avdInfoFileName = avd.avdName + ".ini";
                 const Utils::FilePath avdInfoFile = avdPath.parentDir().pathAppended(
                     avdInfoFileName);
-                QSettings avdInfo(avdInfoFile.toString(), QSettings::IniFormat);
+                QSettings avdInfo(avdInfoFile.toFSPathString(), QSettings::IniFormat);
                 value = avdInfo.value(avdInfoTargetKey).toString();
                 if (!value.isEmpty())
                     avd.sdk = platformNameToApiLevel(value);
                 else
                     qCDebug(avdOutputParserLog)
-                        << "Avd Parsing: Cannot find sdk API:" << avdInfoFile.toString();
+                        << "Avd Parsing: Cannot find sdk API:" << avdInfoFile.toUserOutput();
             }
         }
     }
@@ -86,10 +86,10 @@ static std::optional<AndroidDeviceInfo> parseAvd(const QStringList &deviceInfo)
     return {};
 }
 
-AndroidDeviceInfoList parseAvdList(const QString &output, Utils::FilePaths *avdErrorPaths)
+ParsedAvdList parseAvdList(const QString &output)
 {
-    QTC_CHECK(avdErrorPaths);
     AndroidDeviceInfoList avdList;
+    Utils::FilePaths errorPaths;
     QStringList avdInfo;
     using ErrorPath = Utils::FilePath;
     using AvdResult = std::variant<std::monostate, AndroidDeviceInfo, ErrorPath>;
@@ -120,14 +120,14 @@ AndroidDeviceInfoList parseAvdList(const QString &output, Utils::FilePaths *avdE
             if (auto info = std::get_if<AndroidDeviceInfo>(&result))
                 avdList << *info;
             else if (auto errorPath = std::get_if<ErrorPath>(&result))
-                *avdErrorPaths << *errorPath;
+                errorPaths << *errorPath;
             avdInfo.clear();
         } else {
             avdInfo << line;
         }
     }
 
-    return Utils::sorted(std::move(avdList));
+    return {Utils::sorted(std::move(avdList)), errorPaths};
 }
 
 int platformNameToApiLevel(const QString &platformName)
@@ -156,8 +156,10 @@ int platformNameToApiLevel(const QString &platformName)
 
 QString convertNameToExtension(const QString &name)
 {
-    if (name.endsWith("ext4"))
-        return " Extension 4";
+    static const QRegularExpression rexEx(R"(-ext(\d+)$)");
+    const QRegularExpressionMatch match = rexEx.match(name);
+    if (match.hasMatch())
+        return " Extension " + match.captured(1);
 
     return {};
 }

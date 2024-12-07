@@ -13,12 +13,13 @@ namespace {
 using BasicProperty = QmlDesigner::PropertyComponentGenerator::BasicProperty;
 using ComplexProperty = QmlDesigner::PropertyComponentGenerator::ComplexProperty;
 using QmlDesigner::PropertyMetaInfo;
+using QmlDesigner::Storage::ModuleKind;
 
 class PropertyEditorComponentGenerator : public ::testing::Test
 {
 protected:
     QmlDesigner::NodeMetaInfo createType(Utils::SmallStringView name,
-                                         QmlDesigner::TypeIds baseTypeIds = {})
+                                         const QmlDesigner::SmallTypeIds<16> &baseTypeIds = {})
     {
         auto typeId = projectStorageMock.createValue(qtQuickModuleId, name, baseTypeIds);
 
@@ -83,10 +84,11 @@ protected:
 
 protected:
     QmlDesigner::SourceId sourceId = QmlDesigner::SourceId::create(10);
-    NiceMock<ProjectStorageMockWithQtQtuick> projectStorageMock{sourceId};
+    NiceMock<ProjectStorageMockWithQtQuick> projectStorageMock{sourceId, "/path"};
     NiceMock<PropertyComponentGeneratorMock> propertyGeneratorMock;
     QmlDesigner::PropertyEditorComponentGenerator generator{propertyGeneratorMock};
-    QmlDesigner::ModuleId qtQuickModuleId = projectStorageMock.createModule("QtQuick");
+    QmlDesigner::ModuleId qtQuickModuleId = projectStorageMock.createModule("QtQuick",
+                                                                            ModuleKind::QmlLibrary);
     QmlDesigner::NodeMetaInfo fooTypeInfo = createType("Foo");
     QmlDesigner::TypeId dummyTypeId = projectStorageMock.commonTypeCache().builtinTypeId<double>();
 };

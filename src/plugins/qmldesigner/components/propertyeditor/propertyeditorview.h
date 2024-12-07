@@ -25,6 +25,7 @@ class ModelNode;
 class PropertyEditorQmlBackend;
 class PropertyEditorView;
 class PropertyEditorWidget;
+class QmlObjectNode;
 
 class PropertyEditorView : public AbstractView
 {
@@ -41,7 +42,9 @@ public:
     void selectedNodesChanged(const QList<ModelNode> &selectedNodeList,
                               const QList<ModelNode> &lastSelectedNodeList) override;
     void nodeAboutToBeRemoved(const ModelNode &removedNode) override;
-
+    void nodeRemoved(const ModelNode &removedNode,
+                     const NodeAbstractProperty &parentProperty,
+                     PropertyChangeFlags propertyChange) override;
     void propertiesRemoved(const QList<AbstractProperty>& propertyList) override;
 
     void modelAttached(Model *model) override;
@@ -84,10 +87,20 @@ public:
 
     void refreshMetaInfos(const TypeIds &deletedTypeIds) override;
 
+    static void setExpressionOnObjectNode(const QmlObjectNode &objectNode,
+                                          PropertyNameView name,
+                                          const QString &expression);
+
+    static void generateAliasForProperty(const ModelNode &modelNode,
+                                         const QString &propertyName);
+
+    static void removeAliasForProperty(const ModelNode &modelNode,
+                                         const QString &propertyName);
+
 protected:
     void timerEvent(QTimerEvent *event) override;
     void setupPane(const TypeName &typeName);
-    void setValue(const QmlObjectNode &fxObjectNode, const PropertyName &name, const QVariant &value);
+    void setValue(const QmlObjectNode &fxObjectNode, PropertyNameView name, const QVariant &value);
     bool eventFilter(QObject *obj, QEvent *event) override;
 
 private: //functions
@@ -101,11 +114,12 @@ private: //functions
     void delayedResetView();
     void setupQmlBackend();
 
-    void commitVariantValueToModel(const PropertyName &propertyName, const QVariant &value);
-    void commitAuxValueToModel(const PropertyName &propertyName, const QVariant &value);
-    void removePropertyFromModel(const PropertyName &propertyName);
+    void commitVariantValueToModel(PropertyNameView propertyName, const QVariant &value);
+    void commitAuxValueToModel(PropertyNameView propertyName, const QVariant &value);
+    void removePropertyFromModel(PropertyNameView propertyName);
 
     bool noValidSelection() const;
+    void highlightTextureProperties(bool highlight = true);
 
 private: //variables
     AsynchronousImageCache &m_imageCache;
@@ -121,6 +135,7 @@ private: //variables
     bool m_locked;
     bool m_setupCompleted;
     QTimer *m_singleShotTimer;
+    bool m_textureAboutToBeRemoved = false;
 };
 
 } //QmlDesigner

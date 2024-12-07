@@ -18,7 +18,7 @@
 #include <projectexplorer/target.h>
 
 #include <utils/layoutbuilder.h>
-#include <utils/process.h>
+#include <utils/qtcprocess.h>
 #include <utils/qtcassert.h>
 
 #include <QComboBox>
@@ -131,7 +131,7 @@ public:
         addDataExtractor(this, &WebBrowserSelectionAspect::currentBrowser, &Data::currentBrowser);
     }
 
-    void addToLayout(Layouting::LayoutItem &parent) override
+    void addToLayoutImpl(Layouting::Layout &parent) override
     {
         QTC_CHECK(!m_webBrowserComboBox);
         m_webBrowserComboBox = new QComboBox;
@@ -205,16 +205,15 @@ public:
     EmrunRunWorker(RunControl *runControl)
         : SimpleTargetRunner(runControl)
     {
-        auto portsGatherer = new PortsGatherer(runControl);
-        addStartDependency(portsGatherer);
+        runControl->requestWorkerChannel();
 
-        setStartModifier([this, runControl, portsGatherer] {
+        setStartModifier([this, runControl] {
             const QString browserId =
-                    runControl->aspect<WebBrowserSelectionAspect>()->currentBrowser;
+                    runControl->aspectData<WebBrowserSelectionAspect>()->currentBrowser;
             setCommandLine(emrunCommand(runControl->target(),
                                         runControl->buildKey(),
                                         browserId,
-                                        QString::number(portsGatherer->findEndPoint().port())));
+                                        QString::number(runControl->workerChannel().port())));
             setEnvironment(runControl->buildEnvironment());
         });
     }

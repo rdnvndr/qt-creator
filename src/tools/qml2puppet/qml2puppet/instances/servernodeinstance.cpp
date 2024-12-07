@@ -26,6 +26,8 @@
 
 #include <qmlprivategate.h>
 
+#include <QtQuick/private/qquickitem_p.h>
+
 #include <QHash>
 #include <QSet>
 #include <QDebug>
@@ -116,8 +118,23 @@ bool ServerNodeInstance::isSubclassOf(QObject *object, const QByteArray &superTy
 
 QRectF ServerNodeInstance::effectAdjustedBoundingRect(QQuickItem *item)
 {
-    if (item)
-        return item->boundingRect().adjusted(-40, -40, 40, 40);
+    if (item) {
+        QQuickItemPrivate *pItem = QQuickItemPrivate::get(item);
+
+        QQmlProperty prop(item, "__effect");
+
+        if (pItem && pItem->layer() && pItem->layer()->sourceRect().isValid()) {
+            return pItem->layer()->sourceRect();
+        } else if (prop.read().toBool()) {
+            prop = QQmlProperty(item, "effectBoundingBox");
+            QRectF rect = prop.read().toRectF().adjusted(-40, -40, 40, 40);
+            if (rect.isValid())
+                return rect;
+            return item->boundingRect();
+        } else {
+            return item->boundingRect();
+        }
+    }
     return {};
 }
 
@@ -139,6 +156,11 @@ bool ServerNodeInstance::holdsGraphical() const
 bool ServerNodeInstance::isComponentWrap() const
 {
     return m_nodeInstance->isComponentWrap();
+}
+
+bool ServerNodeInstance::isComposedEffect() const
+{
+    return m_nodeInstance->isComposedEffect();
 }
 
 QQuickItem *ServerNodeInstance::contentItem() const

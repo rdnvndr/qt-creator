@@ -10,16 +10,18 @@
 #include "effectutils.h"
 #include "propertyhandler.h"
 
-//#include "qmldesigner/designercore/imagecache/midsizeimagecacheprovider.h"
-#include "theme.h"
+#include <modelnodeoperations.h>
+#include <qmlitemnode.h>
 
 #include <coreplugin/icore.h>
 #include <coreplugin/idocument.h>
 #include <coreplugin/editormanager/editormanager.h>
 
+#include <qmldesigner/components/componentcore/theme.h>
 #include <qmldesigner/documentmanager.h>
 #include <qmldesigner/qmldesignerconstants.h>
 #include <qmldesigner/qmldesignerplugin.h>
+#include <qmldesignerutils/asset.h>
 #include <studioquickwidget.h>
 
 #include <qmljs/qmljsmodelmanagerinterface.h>
@@ -27,6 +29,7 @@
 #include <utils/algorithm.h>
 #include <utils/async.h>
 #include <utils/environment.h>
+#include <utils/fileutils.h>
 #include <utils/qtcassert.h>
 
 #include <QHBoxLayout>
@@ -35,7 +38,11 @@
 #include <QQuickItem>
 #include <QTimer>
 
+using namespace Core;
+
 namespace EffectComposer {
+
+constexpr char qmlEffectComposerContextId[] = "QmlDesigner::EffectComposer";
 
 static QString propertyEditorResourcesPath()
 {
@@ -46,6 +53,23 @@ static QString propertyEditorResourcesPath()
     return Core::ICore::resourcePath("qmldesigner/propertyEditorQmlSources").toString();
 }
 
+static QList<QmlDesigner::ModelNode> modelNodesFromMimeData(const QByteArray &mimeData,
+                                                            QmlDesigner::AbstractView *view)
+{
+    QByteArray encodedModelNodeData = mimeData;
+    QDataStream modelNodeStream(&encodedModelNodeData, QIODevice::ReadOnly);
+
+    QList<QmlDesigner::ModelNode> modelNodeList;
+    while (!modelNodeStream.atEnd()) {
+        qint32 internalId;
+        modelNodeStream >> internalId;
+        if (view->hasModelNodeForInternalId(internalId))
+            modelNodeList.append(view->modelNodeForInternalId(internalId));
+    }
+
+    return modelNodeList;
+}
+
 EffectComposerWidget::EffectComposerWidget(EffectComposerView *view)
     : m_effectComposerModel{new EffectComposerModel(this)}
     , m_effectComposerNodesModel{new EffectComposerNodesModel(this)}
@@ -54,8 +78,6 @@ EffectComposerWidget::EffectComposerWidget(EffectComposerView *view)
 {
     setWindowTitle(tr("Effect Composer", "Title of effect composer widget"));
     setMinimumWidth(250);
-
-    m_quickWidget->quickWidget()->installEventFilter(this);
 
     // create the inner widget
     m_quickWidget->quickWidget()->setObjectName(QmlDesigner::Constants::OBJECT_NAME_EFFECT_COMPOSER);
@@ -117,6 +139,11 @@ EffectComposerWidget::EffectComposerWidget(EffectComposerView *view)
         }
     });
 
+    connect(m_effectComposerModel.data(), &EffectComposerModel::modelAboutToBeReset,
+            this, [this] {
+        QMetaObject::invokeMethod(quickWidget()->rootObject(), "storeExpandStates");
+    });
+
     connect(Core::EditorManager::instance(), &Core::EditorManager::aboutToSave, this, [this] {
         if (m_effectComposerModel->hasUnsavedChanges()) {
             QString compName = m_effectComposerModel->currentComposition();
@@ -124,17 +151,11 @@ EffectComposerWidget::EffectComposerWidget(EffectComposerView *view)
                 m_effectComposerModel->saveComposition(compName);
         }
     });
-}
 
-
-bool EffectComposerWidget::eventFilter(QObject *obj, QEvent *event)
-{
-    Q_UNUSED(obj)
-    Q_UNUSED(event)
-
-    // TODO
-
-    return false;
+    IContext::attach(this,
+                     Context(qmlEffectComposerContextId,
+                             QmlDesigner::Constants::qtQuickToolsMenuContextId),
+                     [this](const IContext::HelpCallback &callback) { contextHelp(callback); });
 }
 
 void EffectComposerWidget::contextHelp(const Core::IContext::HelpCallback &callback) const
@@ -185,6 +206,44 @@ QPoint EffectComposerWidget::globalPos(const QPoint &point) const
     if (m_quickWidget)
         return m_quickWidget->mapToGlobal(point);
     return point;
+}
+
+QString EffectComposerWidget::uniformDefaultImage(const QString &nodeName, const QString &uniformName) const
+{
+    return m_effectComposerNodesModel->defaultImagesForNode(nodeName).value(uniformName);
+}
+
+QString EffectComposerWidget::imagesPath() const
+{
+    return Core::ICore::resourcePath("qmldesigner/effectComposerNodes/images").toString();
+}
+
+bool EffectComposerWidget::isEffectAsset(const QUrl &url) const
+{
+    return QmlDesigner::Asset(url.toLocalFile()).isEffect();
+}
+
+void EffectComposerWidget::dropAsset(const QUrl &url)
+{
+    if (isEffectAsset(url))
+        openComposition(url.toLocalFile());
+}
+
+bool EffectComposerWidget::isEffectNode(const QByteArray &mimeData) const
+{
+    QList<QmlDesigner::ModelNode> nodes = modelNodesFromMimeData(mimeData, m_effectComposerView);
+    if (!nodes.isEmpty())
+        return QmlDesigner::QmlItemNode(nodes.last()).isEffectItem();
+    return false;
+}
+
+void EffectComposerWidget::dropNode(const QByteArray &mimeData)
+{
+    QList<QmlDesigner::ModelNode> nodes = modelNodesFromMimeData(mimeData, m_effectComposerView);
+    if (!nodes.isEmpty() && QmlDesigner::QmlItemNode(nodes.last()).isEffectItem()) {
+        Utils::FilePath path = QmlDesigner::ModelNodeOperations::findEffectFile(nodes.last());
+        openComposition(path.toFSPathString());
+    }
 }
 
 QSize EffectComposerWidget::sizeHint() const

@@ -17,8 +17,6 @@ QtcPlugin {
         "autoreconfstep.h",
         "autotoolsbuildconfiguration.cpp",
         "autotoolsbuildconfiguration.h",
-        "autotoolsbuildsystem.cpp",
-        "autotoolsbuildsystem.h",
         "autotoolsprojectconstants.h",
         "autotoolsprojectmanagertr.h",
         "autotoolsprojectplugin.cpp",
@@ -26,8 +24,6 @@ QtcPlugin {
         "configurestep.h",
         "makefileparser.cpp",
         "makefileparser.h",
-        "makefileparserthread.cpp",
-        "makefileparserthread.h",
         "makestep.cpp",
         "makestep.h",
     ]

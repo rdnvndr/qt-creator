@@ -5,7 +5,6 @@
 #include "savefile.h"
 
 #include "algorithm.h"
-#include "devicefileaccess.h"
 #include "environment.h"
 #include "qtcassert.h"
 #include "utilstr.h"
@@ -16,6 +15,7 @@
 #include <QDataStream>
 #include <QDateTime>
 #include <QDebug>
+#include <QFileInfo>
 #include <QRegularExpression>
 #include <QTemporaryFile>
 #include <QTextStream>
@@ -24,6 +24,8 @@
 #include <qplatformdefs.h>
 
 #ifdef QT_GUI_LIB
+#include "guiutils.h"
+
 #include <QMessageBox>
 #include <QGuiApplication>
 #endif
@@ -188,22 +190,15 @@ FileSaver::FileSaver(const FilePath &filePath, QIODevice::OpenMode mode)
             return;
         }
     }
-    if (filePath.needsDevice()) {
-        // Write to a local temporary file first. Actual saving to the selected location
-        // is done via m_filePath.writeFileContents() in finalize()
-        m_isSafe = false;
-        auto tf = new QTemporaryFile(QDir::tempPath() + "/remotefilesaver-XXXXXX");
-        tf->setAutoRemove(false);
-        m_file.reset(tf);
-    } else {
-        const bool readOnlyOrAppend = mode & (QIODevice::ReadOnly | QIODevice::Append);
-        m_isSafe = !readOnlyOrAppend && !filePath.hasHardLinks()
-                   && !qtcEnvironmentVariableIsSet("QTC_DISABLE_ATOMICSAVE");
-        if (m_isSafe)
-            m_file.reset(new SaveFile(filePath));
-        else
-            m_file.reset(new QFile{filePath.path()});
-    }
+
+    const bool readOnlyOrAppend = mode & (QIODevice::ReadOnly | QIODevice::Append);
+    m_isSafe = !readOnlyOrAppend && !filePath.hasHardLinks()
+               && !qtcEnvironmentVariableIsSet("QTC_DISABLE_ATOMICSAVE");
+    if (m_isSafe)
+        m_file.reset(new SaveFile(filePath));
+    else
+        m_file.reset(new QFile{filePath.toFSPathString()});
+
     if (!m_file->open(QIODevice::WriteOnly | mode)) {
         QString err = filePath.exists() ?
                 Tr::tr("Cannot overwrite file %1: %2") : Tr::tr("Cannot create file %1: %2");
@@ -214,16 +209,6 @@ FileSaver::FileSaver(const FilePath &filePath, QIODevice::OpenMode mode)
 
 bool FileSaver::finalize()
 {
-    if (m_filePath.needsDevice()) {
-        m_file->close();
-        m_file->open(QIODevice::ReadOnly);
-        const QByteArray data = m_file->readAll();
-        const expected_str<qint64> res = m_filePath.writeFileContents(data);
-        m_file->remove();
-        m_file.reset();
-        return res.has_value();
-    }
-
     if (!m_isSafe)
         return FileSaverBase::finalize();
 
@@ -304,49 +289,52 @@ FileUtils::CopyAskingForOverwrite::CopyAskingForOverwrite(QWidget *dialogParent,
     , m_postOperation(postOperation)
 {}
 
-bool FileUtils::CopyAskingForOverwrite::operator()(const FilePath &src,
-                                                   const FilePath &dest,
-                                                   QString *error)
+FileUtils::CopyHelper FileUtils::CopyAskingForOverwrite::operator()()
 {
-    bool copyFile = true;
-    if (dest.exists()) {
-        if (m_skipAll)
-            copyFile = false;
-        else if (!m_overwriteAll) {
-            const int res = QMessageBox::question(
-                m_parent,
-                Tr::tr("Overwrite File?"),
-                Tr::tr("Overwrite existing file \"%1\"?").arg(dest.toUserOutput()),
-                QMessageBox::Yes | QMessageBox::YesToAll | QMessageBox::No | QMessageBox::NoToAll
-                    | QMessageBox::Cancel);
-            if (res == QMessageBox::Cancel) {
-                return false;
-            } else if (res == QMessageBox::No) {
+    CopyHelper helperFunction = [this](const FilePath &src, const FilePath &dest, QString *error) {
+        bool copyFile = true;
+        if (dest.exists()) {
+            if (m_skipAll)
                 copyFile = false;
-            } else if (res == QMessageBox::NoToAll) {
-                m_skipAll = true;
-                copyFile = false;
-            } else if (res == QMessageBox::YesToAll) {
-                m_overwriteAll = true;
-            }
-            if (copyFile)
+            else if (!m_overwriteAll) {
+                const int res = QMessageBox::question(
+                    m_parent,
+                    Tr::tr("Overwrite File?"),
+                    Tr::tr("Overwrite existing file \"%1\"?").arg(dest.toUserOutput()),
+                    QMessageBox::Yes | QMessageBox::YesToAll | QMessageBox::No
+                            | QMessageBox::NoToAll | QMessageBox::Cancel);
+                if (res == QMessageBox::Cancel) {
+                    return false;
+                } else if (res == QMessageBox::No) {
+                    copyFile = false;
+                } else if (res == QMessageBox::NoToAll) {
+                    m_skipAll = true;
+                    copyFile = false;
+                } else if (res == QMessageBox::YesToAll) {
+                    m_overwriteAll = true;
+                }
+                if (copyFile)
+                    dest.removeFile();
+            } else {
                 dest.removeFile();
-        }
-    }
-    if (copyFile) {
-        dest.parentDir().ensureWritableDir();
-        if (!src.copyFile(dest)) {
-            if (error) {
-                *error = Tr::tr("Could not copy file \"%1\" to \"%2\".")
-                             .arg(src.toUserOutput(), dest.toUserOutput());
             }
-            return false;
         }
-        if (m_postOperation)
-            m_postOperation(dest);
-    }
-    m_files.append(dest.absoluteFilePath());
-    return true;
+        if (copyFile) {
+            dest.parentDir().ensureWritableDir();
+            if (!src.copyFile(dest)) {
+                if (error) {
+                    *error = Tr::tr("Could not copy file \"%1\" to \"%2\".")
+                                 .arg(src.toUserOutput(), dest.toUserOutput());
+                }
+                return false;
+            }
+            if (m_postOperation)
+                m_postOperation(dest);
+        }
+        m_files.append(dest.absoluteFilePath());
+        return true;
+    };
+    return helperFunction;
 }
 
 FilePaths FileUtils::CopyAskingForOverwrite::files() const
@@ -413,18 +401,6 @@ void withNtfsPermissions(const std::function<void()> &task)
 
 
 #ifdef QT_WIDGETS_LIB
-
-static std::function<QWidget *()> s_dialogParentGetter;
-
-void FileUtils::setDialogParentGetter(const std::function<QWidget *()> &getter)
-{
-    s_dialogParentGetter = getter;
-}
-
-static QWidget *dialogParent(QWidget *parent)
-{
-    return parent ? parent : s_dialogParentGetter ? s_dialogParentGetter() : nullptr;
-}
 
 static QUrl filePathToQUrl(const FilePath &filePath)
 {
@@ -705,11 +681,10 @@ FilePathInfo FileUtils::filePathInfoFromTriple(const QString &infos, int modeBas
     return {size, flags, dt};
 }
 
-bool FileUtils::copyRecursively(
-    const FilePath &srcFilePath,
-    const FilePath &tgtFilePath,
-    QString *error,
-    std::function<bool(const FilePath &, const FilePath &, QString *)> copyHelper)
+bool FileUtils::copyRecursively(const FilePath &srcFilePath,
+                                const FilePath &tgtFilePath,
+                                QString *error,
+                                CopyHelper copyHelper)
 {
     if (srcFilePath.isDir()) {
         if (!tgtFilePath.ensureWritableDir()) {
@@ -753,14 +728,14 @@ bool FileUtils::copyIfDifferent(const FilePath &srcFilePath, const FilePath &tgt
         if (srcModified == tgtModified) {
             // TODO: Create FilePath::hashFromContents() and compare hashes.
             const expected_str<QByteArray> srcContents = srcFilePath.fileContents();
-            const expected_str<QByteArray> tgtContents = srcFilePath.fileContents();
+            const expected_str<QByteArray> tgtContents = tgtFilePath.fileContents();
             if (srcContents && srcContents == tgtContents)
                 return true;
         }
         tgtFilePath.removeFile();
     }
 
-    const expected_str<void> copyResult = srcFilePath.copyFile(tgtFilePath);
+    const Result copyResult = srcFilePath.copyFile(tgtFilePath);
 
     // TODO forward error to caller instead of assert, since IO errors can always be expected
     QTC_ASSERT_EXPECTED(copyResult, return false);
@@ -817,7 +792,7 @@ QString FileUtils::normalizedPathName(const QString &name)
     TCHAR buffer[MAX_PATH];
     const bool success = SHGetPathFromIDList(file, buffer);
     ILFree(file);
-    return success ? QDir::fromNativeSeparators(QString::fromUtf16(reinterpret_cast<const ushort *>(buffer)))
+    return success ? QDir::fromNativeSeparators(QString::fromUtf16(reinterpret_cast<const char16_t *>(buffer)))
                    : name;
 #elif defined(Q_OS_MACOS)
     return Internal::normalizePathName(name);
@@ -837,6 +812,27 @@ FilePath FileUtils::commonPath(const FilePath &oldCommonPath, const FilePath &fi
 FilePath FileUtils::homePath()
 {
     return FilePath::fromUserInput(QDir::homePath());
+}
+
+expected_str<FilePath> FileUtils::scratchBufferFilePath(const QString &pattern)
+{
+    QString tmp = pattern;
+    QFileInfo fi(tmp);
+    if (!fi.isAbsolute()) {
+        QString tempPattern = QDir::tempPath();
+        if (!tempPattern.endsWith(QLatin1Char('/')))
+            tempPattern += QLatin1Char('/');
+        tmp = tempPattern + tmp;
+    }
+
+    QTemporaryFile file(tmp);
+    file.setAutoRemove(false);
+    if (!file.open()) {
+        return make_unexpected(Tr::tr("Failed to set up scratch buffer in \"%1\".")
+                                   .arg(FilePath::fromString(tmp).parentDir().toUserOutput()));
+    }
+    file.close();
+    return FilePath::fromString(file.fileName());
 }
 
 FilePaths FileUtils::toFilePathList(const QStringList &paths)

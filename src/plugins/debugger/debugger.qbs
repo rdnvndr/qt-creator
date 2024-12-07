@@ -123,6 +123,7 @@ QtcPlugin {
             "dapclient.cpp", "dapclient.h",
             "dapengine.cpp", "dapengine.h",
             "gdbdapengine.cpp", "gdbdapengine.h",
+            "lldbdapengine.cpp", "lldbdapengine.h",
             "pydapengine.cpp", "pydapengine.h",
         ]
     }
@@ -171,6 +172,7 @@ QtcPlugin {
         files: [
             "cdbsymbolpathlisteditor.cpp",
             "cdbsymbolpathlisteditor.h",
+            "coredumputils.cpp", "coredumputils.h",
             "hostutils.cpp", "hostutils.h",
             "peutils.cpp", "peutils.h",
             "symbolpathsdialog.cpp", "symbolpathsdialog.h"

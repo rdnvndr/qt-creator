@@ -16,7 +16,7 @@
     \if defined(qtcreator)
     When you start \QC, it opens to the \uicontrol Welcome mode.
 
-    \image qtcreator-breakdown.png {Welcome mode}
+    \image qtcreator-welcome.webp {Welcome mode}
 
     \table
     \header
@@ -33,7 +33,7 @@
     \row
         \li \inlineimage numbers/02.png
         \li Kit selector
-        \li Select the appropriate \l{glossary-buildandrun-kit}{kit} for building
+        \li Select the appropriate \l{Kits}{kit} for building
             the project and running it on particular hardware.
         \li \l{Activate kits for a project}
     \row
@@ -66,10 +66,8 @@
     To see where the above controls are in the UI, select
     \uicontrol Help > \uicontrol {UI Tour}.
 
-    The following video shows the parts of the UI and the \uicontrol Welcome
-    mode:
-
-    \youtube hOx3dod5-1A
+    To learn more about the parts of the UI and the \uicontrol Welcome mode, take
+    the \l{Qt Academy: Getting Started with \QC} course.
 
     \section1 What's New?
 
@@ -95,7 +93,7 @@
     \endif
 
     \if defined(qtdesignstudio)
-    \section1 Customizing the Menu
+    \section1 Customizing the Menu Bar
 
     By default, top-level menu items \uicontrol Build, \uicontrol Debug, and
     \uicontrol Analyze are not visible. These menu items have options for
@@ -112,6 +110,9 @@
     \image studio-menu-item-visibility.png
 
     You need to restart \QDS to apply changes made to these settings.
+
+    \note To show or hide the \uicontrol {Menu Bar}, select \uicontrol View >
+    \uicontrol {Show Menu Bar}, or use \key {Ctrl+Alt+M}.
 
     \section1 Customizing the UI
 

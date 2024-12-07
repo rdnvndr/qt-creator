@@ -225,7 +225,7 @@ private:
     \value ShowInApplicationIcon
         The progress indicator for this task is additionally
         shown in the application icon in the system's task bar or dock, on
-        platforms that support that (at the moment Windows 7 and Mac OS X).
+        platforms that support that (at the moment Windows 7 and macOS).
 */
 
 /*!
@@ -768,7 +768,7 @@ FutureProgress *ProgressManager::addTask(const QFuture<void> &future, const QStr
     Shows a progress indicator for task given by the QFutureInterface object
     \a futureInterface.
     The progress indicator shows the specified \a title along with the progress bar.
-    The progress indicator will increase monotonically with time, at \a expectedSeconds
+    The progress indicator will increase monotonically with time, at \a expectedDuration
     it will reach about 80%, and continue to increase with a decreasingly slower rate.
 
     The \a type of a task will specify a logical grouping with other

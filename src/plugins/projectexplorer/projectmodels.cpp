@@ -23,7 +23,7 @@
 #include <utils/dropsupport.h>
 #include <utils/fsengine/fileiconprovider.h>
 #include <utils/pathchooser.h>
-#include <utils/process.h>
+#include <utils/qtcprocess.h>
 #include <utils/qtcassert.h>
 #include <utils/stringutils.h>
 #include <utils/theme/theme.h>
@@ -215,6 +215,11 @@ QVariant FlatModel::data(const QModelIndex &index, int role) const
                 tooltip += "<p>" + Tr::tr("No kits are enabled for this project. "
                                       "Enable kits in the \"Projects\" mode.");
             }
+        } else if (fileNode) {
+            const QString &stateText =
+                IVersionControl::modificationToText(fileNode->modificationState());
+            if (!stateText.isEmpty())
+                tooltip += "<p>" + stateText;
         }
         return tooltip;
     }
@@ -241,8 +246,13 @@ QVariant FlatModel::data(const QModelIndex &index, int role) const
         return font;
     }
     case Qt::ForegroundRole:
+        if (fileNode) {
+            Core::IVersionControl::FileState state = fileNode->modificationState();
+            if (state != Core::IVersionControl::FileState::NoModification)
+                return Core::IVersionControl::vcStateToColor(state);
+        }
         return node->isEnabled() ? QVariant()
-                                 : Utils::creatorTheme()->color(Utils::Theme::TextColorDisabled);
+                                 : Utils::creatorColor(Utils::Theme::TextColorDisabled);
     case Project::FilePathRole:
         return node->filePath().toString();
     case Project::isParsingRole:
@@ -284,14 +294,16 @@ bool FlatModel::setData(const QModelIndex &index, const QVariant &value, int rol
     QTC_ASSERT(node, return false);
 
     std::vector<std::tuple<Node *, FilePath, FilePath>> toRename;
-    const Utils::FilePath orgFilePath = node->filePath();
-    const Utils::FilePath newFilePath = orgFilePath.parentDir().pathAppended(value.toString());
+    const FilePath orgFilePath = node->filePath();
+    const FilePath newFilePath = orgFilePath.parentDir().pathAppended(value.toString());
+    const FilePath valuePath = FilePath::fromString(value.toString());
     const QFileInfo orgFileInfo = orgFilePath.toFileInfo();
     toRename.emplace_back(std::make_tuple(node, orgFilePath, newFilePath));
 
     // The base name of the file was changed. Go look for other files with the same base name
     // and offer to rename them as well.
-    if (orgFilePath != newFilePath && orgFilePath.suffix() == newFilePath.suffix()) {
+    if (!orgFilePath.equalsCaseSensitive(newFilePath)
+        && orgFilePath.suffix() == newFilePath.suffix()) {
         const QList<Node *> candidateNodes = ProjectTree::siblingsWithSameBaseName(node);
         if (!candidateNodes.isEmpty()) {
             QStringList fileNames = transform<QStringList>(candidateNodes, [](const Node *n) {
@@ -308,12 +320,13 @@ bool FlatModel::setData(const QModelIndex &index, const QVariant &value, int rol
             case QMessageBox::Yes:
                 for (Node * const n : candidateNodes) {
                     QString targetFilePath = orgFileInfo.absolutePath() + '/'
-                                             + newFilePath.completeBaseName();
+                                             + valuePath.parentDir().path() + '/'
+                                             + valuePath.completeBaseName();
                     const QString suffix = n->filePath().suffix();
                     if (!suffix.isEmpty())
                         targetFilePath.append('.').append(suffix);
                     toRename.emplace_back(std::make_tuple(n, n->filePath(),
-                                                          FilePath::fromString(targetFilePath)));
+                                                          FilePath::fromString(targetFilePath).cleanPath()));
                 }
                 break;
             case QMessageBox::Cancel:
@@ -444,12 +457,58 @@ void FlatModel::handleProjectAdded(Project *project)
             parsingStateChanged(project);
         emit ProjectTree::instance()->nodeActionsChanged();
     });
+
+    const FilePath &rootPath = project->rootProjectDirectory();
+    IVersionControl *vc = VcsManager::findVersionControlForDirectory(rootPath);
+    if (vc) {
+        vc->monitorDirectory(rootPath);
+        connect(vc, &IVersionControl::updateFileStatus, this, &FlatModel::updateVCStatusFor);
+        connect(vc, &IVersionControl::clearFileStatus, this, &FlatModel::clearVCStatusFor);
+    }
+
     addOrRebuildProjectModel(project);
+}
+
+void FlatModel::updateVCStatusFor(const Utils::FilePath root, const QStringList &files)
+{
+    std::for_each(std::begin(files), std::end(files), [root, this](const QString &file) {
+        const FilePath filePath = root.pathAppended(file);
+        Node *node = ProjectTree::nodeForFile(filePath);
+        if (!node)
+            return;
+        FileNode *fileNode = node->asFileNode();
+        if (!fileNode)
+            return;
+
+        fileNode->resetModificationState();
+        const QModelIndex index = indexForNode(fileNode);
+        emit dataChanged(index, index, {Qt::ForegroundRole});
+    });
+}
+
+void FlatModel::clearVCStatusFor(const Utils::FilePath &root)
+{
+    ProjectTree::forEachNode([this, root](Node *n) {
+        FileNode *fileNode = n->asFileNode();
+        if (!fileNode)
+            return;
+        if (fileNode->filePath().isChildOf(root)) {
+            fileNode->resetModificationState();
+            const QModelIndex index = indexForNode(fileNode);
+            emit dataChanged(index, index, {Qt::ForegroundRole});
+        }
+    });
 }
 
 void FlatModel::handleProjectRemoved(Project *project)
 {
     destroyItem(nodeForProject(project));
+
+    if (!project)
+        return;
+    const FilePath &rootPath = project->rootProjectDirectory();
+    if (IVersionControl *vc = VcsManager::findVersionControlForDirectory(rootPath))
+        vc->stopMonitoringDirectory(rootPath);
 }
 
 WrapperNode *FlatModel::nodeForProject(const Project *project) const
@@ -679,6 +738,8 @@ bool FlatModel::dropMimeData(const QMimeData *data, Qt::DropAction action, int r
               return n->parentProjectNode() != sourceProjectNode; })) {
         return true;
     }
+    FolderNode * const sourceFolderNode = fileNodes.first()->parentFolderNode();
+    const bool sourceNodeIsSubDir = sourceFolderNode != sourceProjectNode;
     Node *targetNode = nodeForIndex(index(row, column, parent));
     if (!targetNode)
         targetNode = nodeForIndex(parent);
@@ -687,20 +748,22 @@ bool FlatModel::dropMimeData(const QMimeData *data, Qt::DropAction action, int r
     if (!targetProjectNode)
         targetProjectNode = targetNode->parentProjectNode();
     QTC_ASSERT(targetProjectNode, return true);
-    if (sourceProjectNode == targetProjectNode)
+    const bool targetNodeIsSubDir = targetNode != targetProjectNode && targetNode->asFolderNode();
+    if (sourceProjectNode == targetProjectNode && !targetNodeIsSubDir && !sourceNodeIsSubDir)
         return true;
 
     // Node weirdness: Sometimes the "file path" is a directory, sometimes it's a file...
-    const auto dirForProjectNode = [](const ProjectNode *pNode) {
-        const FilePath dir = pNode->filePath();
+    const auto dirForFolderNode = [](const FolderNode *node) {
+        const FilePath dir = node->filePath();
         if (dir.isDir())
             return dir;
         return FilePath::fromString(dir.toFileInfo().path());
     };
-    FilePath targetDir = dirForProjectNode(targetProjectNode);
+    FilePath targetDir = dirForFolderNode(targetNodeIsSubDir ? targetNode->asFolderNode()
+                                                             : targetProjectNode);
 
     // Ask the user what to do now: Copy or add? With or without file transfer?
-    DropFileDialog dlg(targetDir == dirForProjectNode(sourceProjectNode) ? FilePath() : targetDir);
+    DropFileDialog dlg(targetDir == dirForFolderNode(sourceFolderNode) ? FilePath() : targetDir);
     if (dlg.exec() != QDialog::Accepted)
         return true;
     if (!dlg.targetDir().isEmpty())
@@ -798,6 +861,10 @@ bool FlatModel::dropMimeData(const QMimeData *data, Qt::DropAction action, int r
             if (vcsAddPossible && !targetVcs.vcs->vcsAdd(targetFile))
                 failedVcsOp << targetFile;
         }
+        QList<std::pair<FilePath, FilePath>> renameList;
+        for (int i = 0; i < filesToAdd.size(); ++i)
+            renameList.emplaceBack(filesToRemove.at(i), filesToAdd.at(i));
+        emit ProjectExplorerPlugin::instance()->filesRenamed(renameList);
         const RemovedFilesFromProject result
                 = sourceProjectNode->removeFiles(filesToRemove, &failedRemoveFromProject);
         if (result == RemovedFilesFromProject::Wildcard)

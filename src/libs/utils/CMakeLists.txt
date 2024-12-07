@@ -19,6 +19,7 @@ add_qtc_library(Utils
     basetreeview.cpp basetreeview.h
     benchmarker.cpp benchmarker.h
     buildablehelperlibrary.cpp buildablehelperlibrary.h
+    builderutils.h
     camelcasecursor.cpp camelcasecursor.h
     categorysortfiltermodel.cpp categorysortfiltermodel.h
     changeset.cpp changeset.h
@@ -31,6 +32,7 @@ add_qtc_library(Utils
     completingtextedit.cpp completingtextedit.h
     cpplanguage_details.h
     crumblepath.cpp crumblepath.h
+    datafromprocess.h
     delegates.cpp delegates.h
     detailsbutton.cpp detailsbutton.h
     detailswidget.cpp detailswidget.h
@@ -72,6 +74,7 @@ add_qtc_library(Utils
     genericconstants.h
     globalfilechangeblocker.cpp globalfilechangeblocker.h
     guard.cpp guard.h
+    guardedcallback.h
     guiutils.cpp guiutils.h
     headerviewstretcher.cpp headerviewstretcher.h
     highlightingitemdelegate.cpp highlightingitemdelegate.h
@@ -80,6 +83,7 @@ add_qtc_library(Utils
     htmldocextractor.cpp htmldocextractor.h
     icon.cpp icon.h
     iconbutton.cpp iconbutton.h
+    icondisplay.h icondisplay.cpp
     id.cpp id.h
     indexedcontainerproxyconstiterator.h
     infobar.cpp infobar.h
@@ -93,7 +97,9 @@ add_qtc_library(Utils
     link.cpp link.h
     listmodel.h
     listutils.h
+    lua.cpp lua.h
     macroexpander.cpp macroexpander.h
+    markdownbrowser.cpp markdownbrowser.h
     mathutils.cpp mathutils.h
     mimeconstants.h
     mimeutils.h
@@ -122,7 +128,6 @@ add_qtc_library(Utils
     port.cpp port.h
     portlist.cpp portlist.h
     predicates.h
-    process.cpp process.h
     processenums.h
     processhandle.cpp processhandle.h
     processhelper.cpp processhelper.h
@@ -135,10 +140,12 @@ add_qtc_library(Utils
     qrcparser.cpp qrcparser.h
     qtcassert.cpp qtcassert.h
     qtcolorbutton.cpp qtcolorbutton.h
+    qtcprocess.cpp qtcprocess.h
     qtcsettings.cpp qtcsettings.h
     ranges.h
     reloadpromptutils.cpp reloadpromptutils.h
     removefiledialog.cpp removefiledialog.h
+    result.cpp result.h
     savefile.cpp savefile.h
     scopedswap.h
     scopedtimer.cpp scopedtimer.h
@@ -197,6 +204,7 @@ add_qtc_library(Utils
     utilstr.h
     utilsicons.cpp utilsicons.h
     utiltypes.h
+    utility.h
     variablechooser.cpp variablechooser.h
     winutils.cpp winutils.h
     wizard.cpp wizard.h
@@ -265,11 +273,8 @@ extend_qtc_library(Utils
   CONDITION TARGET Qt::CorePrivate
   DEPENDS Qt::CorePrivate ptyqt
   DEFINES QTC_UTILS_WITH_FSENGINE
-  SOURCES fsengine/fsengine_impl.cpp
-          fsengine/fsengine_impl.h
-          fsengine/diriterator.h
+  SOURCES fsengine/diriterator.h
           fsengine/fileiteratordevicesappender.h
-          fsengine/rootinjectfsengine.h
           fsengine/fixedlistfsengine.h
           fsengine/fsenginehandler.cpp
           fsengine/fsenginehandler.h

@@ -4,18 +4,14 @@
 
 #pragma once
 
-#include "androidavdmanager.h"
 #include "androidconfigurations.h"
 #include "androiddeviceinfo.h"
 
 #include <projectexplorer/devicesupport/idevice.h>
-#include <projectexplorer/devicesupport/idevicefactory.h>
 
-#include <QFutureWatcher>
-#include <QFileSystemWatcher>
+#include <solutions/tasking/tasktreerunner.h>
+
 #include <QSettings>
-
-namespace Utils { class Process; }
 
 namespace Android::Internal {
 
@@ -27,7 +23,6 @@ public:
     static IDevice::Ptr create();
     static AndroidDeviceInfo androidDeviceInfoFromIDevice(const IDevice *dev);
 
-    static QString displayNameFromInfo(const AndroidDeviceInfo &info);
     static Utils::Id idFromDeviceInfo(const AndroidDeviceInfo &info);
     static Utils::Id idFromAvdInfo(const CreateAvdInfo &info);
 
@@ -36,7 +31,6 @@ public:
 
     bool canHandleDeployments() const;
 
-    bool isValid() const;
     QString serialNumber() const;
     QString avdName() const;
     int sdkLevel() const;
@@ -53,6 +47,8 @@ public:
     QString sdcardSize() const;
     QString openGLStatus() const;
 
+    void startAvd();
+
 protected:
     void fromMap(const Utils::Store &map) final;
 
@@ -62,47 +58,19 @@ private:
     ProjectExplorer::IDeviceWidget *createWidget() override;
     ProjectExplorer::DeviceProcessSignalOperation::Ptr signalOperation() const override;
     QUrl toolControlChannel(const ControlChannelHint &) const override;
+    ProjectExplorer::PortsGatheringMethod portsGatheringMethod() const override;
 
     QSettings *avdSettings() const;
     void initAvdSettings();
 
     std::unique_ptr<QSettings> m_avdSettings;
+    Tasking::TaskTreeRunner m_taskTreeRunner;
 };
 
-class AndroidDeviceManager : public QObject
-{
-public:
-    static AndroidDeviceManager *instance();
-    void setupDevicesWatcher();
-    void updateAvdsList();
-    IDevice::DeviceState getDeviceState(const QString &serial, IDevice::MachineType type) const;
-    void updateDeviceState(const ProjectExplorer::IDevice::ConstPtr &device);
-
-    void startAvd(const ProjectExplorer::IDevice::Ptr &device, QWidget *parent = nullptr);
-    void eraseAvd(const ProjectExplorer::IDevice::Ptr &device, QWidget *parent = nullptr);
-    void setupWifiForDevice(const ProjectExplorer::IDevice::Ptr &device, QWidget *parent = nullptr);
-
-    void setEmulatorArguments(QWidget *parent = nullptr);
-
-    QString getRunningAvdsSerialNumber(const QString &name) const;
-
-private:
-    explicit AndroidDeviceManager(QObject *parent);
-    ~AndroidDeviceManager();
-
-    void HandleDevicesListChange(const QString &serialNumber);
-    void HandleAvdsListChange();
-
-    QString emulatorName(const QString &serialNumber) const;
-
-    QFutureWatcher<AndroidDeviceInfoList> m_avdsFutureWatcher;
-    std::unique_ptr<Utils::Process> m_removeAvdProcess;
-    QFileSystemWatcher m_avdFileSystemWatcher;
-    std::unique_ptr<Utils::Process> m_adbDeviceWatcherProcess;
-    AndroidAvdManager m_avdManager;
-
-    friend void setupAndroidDeviceManager(QObject *guard);
-};
+void setupDevicesWatcher();
+void updateAvdList();
+Tasking::Group createAvdRecipe(const Tasking::Storage<std::optional<QString>> &errorStorage,
+                               const CreateAvdInfo &info, bool force);
 
 void setupAndroidDevice();
 void setupAndroidDeviceManager(QObject *guard);

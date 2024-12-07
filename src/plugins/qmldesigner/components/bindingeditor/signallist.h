@@ -8,6 +8,8 @@
 #include <modelnode.h>
 #include <qmlconnections.h>
 
+#include <utils/uniqueobjectptr.h>
+
 #include <QtQml>
 #include <QObject>
 #include <QPointer>
@@ -53,7 +55,7 @@ public:
     explicit SignalList(QObject *parent = nullptr);
     ~SignalList();
 
-    static SignalList* showWidget(const ModelNode &modelNode);
+    static void showWidget(const ModelNode &modelNode);
 
     void setModelNode(const ModelNode &modelNode);
     void connectClicked(const QModelIndex &modelIndex);
@@ -74,8 +76,8 @@ private:
     void removeConnection(const QModelIndex &modelIndex);
 
 private:
-    QPointer<SignalListDialog> m_dialog;
-    SignalListModel *m_model;
+    Utils::UniqueObjectPtr<SignalListDialog> m_dialog;
+    Utils::UniqueObjectPtr<SignalListModel> m_model;
     ModelNode m_modelNode;
 };
 

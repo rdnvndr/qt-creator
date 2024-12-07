@@ -6,8 +6,10 @@
 #include "dashboard/dto.h"
 
 #include <utils/expected.h>
+#include <utils/id.h>
 
 #include <QHash>
+#include <QMap>
 #include <QUrl>
 #include <QVersionNumber>
 
@@ -25,6 +27,12 @@ namespace Axivion::Internal {
 
 constexpr int DefaultSearchLimit = 2048;
 
+enum class QueryMode {
+    SimpleQuery,            // just kind and version start and end
+    FilterQuery,            // + all filters if available
+    FullQuery               // + offset, limit, computeTotalRowCount
+};
+
 struct IssueListSearch
 {
     QString kind;
@@ -34,11 +42,12 @@ struct IssueListSearch
     QString owner;
     QString filter_path;
     QString sort;
+    QMap<QString, QString> filter;
     int offset = 0;
     int limit = DefaultSearchLimit;
     bool computeTotalRowCount = false;
 
-    QString toQuery() const;
+    QUrlQuery toUrlQuery(QueryMode mode) const;
 };
 
 class DashboardInfo
@@ -53,6 +62,8 @@ public:
 
 using DashboardInfoHandler = std::function<void(const Utils::expected_str<DashboardInfo> &)>;
 Tasking::Group dashboardInfoRecipe(const DashboardInfoHandler &handler = {});
+
+Tasking::Group projectInfoRecipe(const QString &projectName);
 
 // TODO: Wrap into expected_str<>?
 using TableInfoHandler = std::function<void(const Dto::TableInfoDto &)>;
@@ -69,7 +80,7 @@ Tasking::Group lineMarkerRecipe(const Utils::FilePath &filePath, const LineMarke
 using HtmlHandler = std::function<void(const QByteArray &)>;
 Tasking::Group issueHtmlRecipe(const QString &issueId, const HtmlHandler &handler);
 
-void fetchProjectInfo(const QString &projectName);
+void fetchDashboardAndProjectInfo(const DashboardInfoHandler &handler, const QString &projectName);
 std::optional<Dto::ProjectInfoDto> projectInfo();
 bool handleCertificateIssue();
 
@@ -77,7 +88,11 @@ QIcon iconForIssue(const std::optional<Dto::IssueKind> &issueKind);
 QString anyToSimpleString(const Dto::Any &any);
 void fetchIssueInfo(const QString &id);
 
+void switchActiveDashboardId(const Utils::Id &toDashboardId);
+const Utils::Id activeDashboardId();
 const std::optional<DashboardInfo> currentDashboardInfo();
+void setAnalysisVersion(const QString &version);
+void enableInlineIssues(bool enable);
 
 Utils::FilePath findFileForIssuePath(const Utils::FilePath &issuePath);
 

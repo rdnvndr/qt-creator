@@ -19,7 +19,7 @@
 
 #include <utils/algorithm.h>
 #include <utils/mimeutils.h>
-#include <utils/process.h>
+#include <utils/qtcprocess.h>
 
 #include <QReadLocker>
 
@@ -98,7 +98,7 @@ static QStringList replImportArgs(const FilePath &pythonFile, ReplType type)
                                     ? MimeTypes()
                                     : mimeTypesForFileName(pythonFile.toString());
     const bool isPython = Utils::anyOf(mimeTypes, [](const MimeType &mt) {
-        return mt.inherits("text/x-python") || mt.inherits("text/x-python3");
+        return mt.inherits(Constants::C_PY_MIMETYPE) || mt.inherits(Constants::C_PY3_MIMETYPE);
     });
     if (type == ReplType::Unmodified || !isPython)
         return {};
@@ -121,11 +121,9 @@ void openPythonRepl(QObject *parent, const FilePath &file, ReplType type)
         return file.absolutePath();
     };
 
-    const auto args = QStringList{"-i"} + replImportArgs(file, type);
     const FilePath pythonCommand = detectPython(file);
-
     Process process;
-    process.setCommand({pythonCommand, args});
+    process.setCommand({pythonCommand, {"-i", replImportArgs(file, type)}});
     process.setWorkingDirectory(workingDir(file));
     process.setTerminalMode(TerminalMode::Detached);
     process.start();
@@ -158,11 +156,11 @@ QString pythonName(const FilePath &pythonPath)
     return name;
 }
 
-PythonProject *pythonProjectForFile(const FilePath &pythonFile)
+PythonProject *pythonProjectForFile(const FilePath &file)
 {
     for (Project *project : ProjectManager::projects()) {
         if (auto pythonProject = qobject_cast<PythonProject *>(project)) {
-            if (pythonProject->isKnownFile(pythonFile))
+            if (pythonProject->isKnownFile(file))
                 return pythonProject;
         }
     }
@@ -201,7 +199,7 @@ static bool isUsableHelper(QHash<FilePath, bool> *cache, const QString &keyStrin
     if (it == cache->end()) {
         const Key key = keyFromString(keyString);
         Process process;
-        process.setCommand({python, QStringList{"-m", commandArg, "-h"}});
+        process.setCommand({python, {"-m", commandArg, "-h"}});
         process.runBlocking();
         const bool usable = process.result() == ProcessResult::FinishedWithSuccess;
         it = cache->insert(python, usable);

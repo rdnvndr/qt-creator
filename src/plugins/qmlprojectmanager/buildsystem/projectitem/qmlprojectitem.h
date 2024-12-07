@@ -46,6 +46,11 @@ public:
     void setImportPaths(const QStringList &paths);
     void addImportPath(const QString &importPath);
 
+    QStringList mockImports() const;
+    void setMockImports(const QStringList &paths);
+
+    QStringList qmlProjectModules() const;
+
     QStringList fileSelectors() const;
     void setFileSelectors(const QStringList &selectors);
     void addFileSelector(const QString &selector);
@@ -88,8 +93,14 @@ public:
 
     QJsonObject project() const;
 
+    bool enableCMakeGeneration() const;
+    void setEnableCMakeGeneration(bool enable);
+
+    bool enablePythonGeneration() const;
+    void setEnablePythonGeneration(bool enable);
+
 signals:
-    void qmlFilesChanged(const QSet<QString> &, const QSet<QString> &);
+    void filesChanged(const QSet<QString> &, const QSet<QString> &);
 
 private:
     typedef QSharedPointer<QmlProjectItem> ShrdPtrQPI;

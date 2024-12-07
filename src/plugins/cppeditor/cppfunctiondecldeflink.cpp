@@ -8,8 +8,8 @@
 #include "cppeditortr.h"
 #include "cppeditorwidget.h"
 #include "cpplocalsymbols.h"
-#include "cppquickfixassistant.h"
 #include "cpptoolsreuse.h"
+#include "quickfixes/cppquickfixassistant.h"
 #include "symbolfinder.h"
 
 #include <coreplugin/actionmanager/actionmanager.h>
@@ -20,8 +20,6 @@
 #include <cplusplus/declarationcomments.h>
 #include <cplusplus/Overview.h>
 #include <cplusplus/TypeOfExpression.h>
-
-#include <extensionsystem/pluginmanager.h>
 
 #include <texteditor/refactoroverlay.h>
 #include <texteditor/texteditorconstants.h>
@@ -239,7 +237,7 @@ void FunctionDeclDefLinkFinder::startFindLinkAt(
     m_watcher.reset(new QFutureWatcher<std::shared_ptr<FunctionDeclDefLink> >());
     connect(m_watcher.get(), &QFutureWatcherBase::finished, this, &FunctionDeclDefLinkFinder::onFutureDone);
     m_watcher->setFuture(Utils::asyncRun(findLinkHelper, result, refactoringChanges));
-    ExtensionSystem::PluginManager::futureSynchronizer()->addFuture(m_watcher->future());
+    Utils::futureSynchronizer()->addFuture(m_watcher->future());
 }
 
 bool FunctionDeclDefLink::isValid() const
@@ -269,13 +267,16 @@ void FunctionDeclDefLink::apply(CppEditorWidget *editor, bool jumpToMatch)
     const int targetStart = newTargetFile->position(targetLine, targetColumn);
     const int targetEnd = targetStart + targetInitial.size();
     if (targetInitial == newTargetFile->textOf(targetStart, targetEnd)) {
-        const ChangeSet changeset = changes(snapshot, targetStart);
-        newTargetFile->setChangeSet(changeset);
         if (jumpToMatch) {
             const int jumpTarget = newTargetFile->position(targetFunction->line(), targetFunction->column());
             newTargetFile->setOpenEditor(true, jumpTarget);
         }
-        newTargetFile->apply();
+        ChangeSet changeSet = changes(snapshot, targetStart);
+        for (ChangeSet::EditOp &op : changeSet.operationList()) {
+            if (op.type() == ChangeSet::EditOp::Replace)
+                op.setFormat1(true);
+        }
+        newTargetFile->apply(changeSet);
     } else {
         ToolTip::show(editor->toolTipPosition(linkSelection),
                       Tr::tr("Target file was changed, could not apply changes"));
@@ -481,10 +482,14 @@ static IndicesList unmatchedIndices(const IndicesList &indices)
 static QString ensureCorrectParameterSpacing(const QString &text, bool isFirstParam)
 {
     if (isFirstParam) { // drop leading spaces
+        int newlineCount = 0;
         int firstNonSpace = 0;
-        while (firstNonSpace + 1 < text.size() && text.at(firstNonSpace).isSpace())
+        while (firstNonSpace + 1 < text.size() && text.at(firstNonSpace).isSpace()) {
+            if (text.at(firstNonSpace) == QChar::ParagraphSeparator)
+                ++newlineCount;
             ++firstNonSpace;
-        return text.mid(firstNonSpace);
+        }
+        return QString(newlineCount, QChar::ParagraphSeparator) + text.mid(firstNonSpace);
     } else { // ensure one leading space
         if (text.isEmpty() || !text.at(0).isSpace())
             return QLatin1Char(' ') + text;

@@ -6,8 +6,10 @@ import QmlProject
 Project {
     mainFile: "Main.qml"
     targetDirectory: "/opt/UntitledProject13"
+    enableCMakeGeneration: false
+    enablePythonGeneration: false
     widgetApp: true
-    importPaths: [ "imports","asset_imports" ]
+    importPaths: [ "imports","asset_imports","mcu-modules" ]
 
     qdsVersion: "4.0"
     quickVersion: "6.2"
@@ -78,6 +80,10 @@ Project {
             "qmlproject/module/module.qmlproject"
         ]
         MCU.qulModules: ["Controls","Timeline"]
+    }
+
+    ModuleFiles {
+        directory: "../test-set-mcu-2"
     }
 
     FontFiles {

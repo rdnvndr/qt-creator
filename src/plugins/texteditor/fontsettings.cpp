@@ -103,6 +103,7 @@ bool FontSettings::fromSettings(const FormatDescriptions &descriptions, const Qt
     m_fontSize = s->value(group + fontSizeKey, m_fontSize).toInt();
     m_fontZoom= s->value(group + fontZoomKey, m_fontZoom).toInt();
     m_lineSpacing = s->value(group + lineSpacingKey, m_lineSpacing).toInt();
+    QTC_ASSERT(m_lineSpacing >= 0, m_lineSpacing = 100);
     m_antialias = s->value(group + antialiasKey, DEFAULT_ANTIALIAS).toBool();
 
     if (s->contains(group + schemeFileNamesKey)) {
@@ -156,7 +157,7 @@ QTextCharFormat FontSettings::toTextCharFormat(TextStyle category) const
     QTextCharFormat tf;
 
     if (category == C_TEXT) {
-        tf.setFontFamily(m_family);
+        tf.setFontFamilies({m_family});
         tf.setFontPointSize(m_fontSize * m_fontZoom / 100.);
         tf.setFontStyleStrategy(m_antialias ? QFont::PreferAntialias : QFont::NoAntialias);
     }
@@ -337,7 +338,7 @@ qreal FontSettings::lineSpacing() const
     QFont currentFont = font();
     currentFont.setPointSize(std::max(m_fontSize * m_fontZoom / 100, 1));
     qreal spacing = QFontMetricsF(currentFont).lineSpacing();
-    if (m_lineSpacing != 100)
+    if (QTC_GUARD(m_lineSpacing > 0) && m_lineSpacing != 100)
         spacing *= qreal(m_lineSpacing) / 100;
     return spacing;
 }
@@ -491,8 +492,7 @@ static QString defaultFontFamily()
         return QLatin1String("Menlo");
 
     const QString sourceCodePro(g_sourceCodePro);
-    const QFontDatabase dataBase;
-    if (dataBase.hasFamily(sourceCodePro))
+    if (QFontDatabase::hasFamily(sourceCodePro))
         return sourceCodePro;
 
     if (Utils::HostOsInfo::isAnyUnixHost())

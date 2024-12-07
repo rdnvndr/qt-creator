@@ -31,11 +31,12 @@ namespace WelcomePageHelpers {
 
 constexpr QSize WelcomeThumbnailSize(214, 160);
 
-class CORE_EXPORT TextFormat {
+class CORE_EXPORT TextFormat
+{
 public:
     QColor color() const
     {
-        return Utils::creatorTheme()->color(themeColor);
+        return Utils::creatorColor(themeColor);
     }
 
     QFont font(bool underlined = false) const
@@ -79,6 +80,7 @@ public:
         SmallSecondary,
         SmallList,
         SmallLink,
+        Tag,
     };
 
     explicit Button(const QString &text, Role role, QWidget *parent = nullptr);
@@ -120,8 +122,6 @@ public:
 
 protected:
     void paintEvent(QPaintEvent *event) override;
-
-protected:
     void enterEvent(QEnterEvent *event) override;
     void leaveEvent(QEvent *event) override;
 };
@@ -139,6 +139,18 @@ protected:
 protected:
     void enterEvent(QEnterEvent *event) override;
     void leaveEvent(QEvent *event) override;
+};
+
+class CORE_EXPORT Switch : public QAbstractButton
+{
+public:
+    explicit Switch(const QString &text, QWidget *parent = nullptr);
+
+    QSize sizeHint() const override;
+    QSize minimumSizeHint() const override;
+
+protected:
+    void paintEvent(QPaintEvent *event) override;
 };
 
 class CORE_EXPORT GridView : public QListView

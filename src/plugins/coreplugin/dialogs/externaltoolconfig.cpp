@@ -18,7 +18,7 @@
 #include <utils/layoutbuilder.h>
 #include <utils/macroexpander.h>
 #include <utils/pathchooser.h>
-#include <utils/process.h>
+#include <utils/qtcprocess.h>
 #include <utils/qtcassert.h>
 #include <utils/variablechooser.h>
 
@@ -40,8 +40,7 @@
 
 using namespace Utils;
 
-namespace Core {
-namespace Internal {
+namespace Core::Internal {
 
 const Qt::ItemFlags TOOLSMENU_ITEM_FLAGS = Qt::ItemIsSelectable | Qt::ItemIsEnabled | Qt::ItemIsDropEnabled;
 const Qt::ItemFlags CATEGORY_ITEM_FLAGS = Qt::ItemIsSelectable | Qt::ItemIsEnabled | Qt::ItemIsDropEnabled | Qt::ItemIsEditable;
@@ -563,7 +562,7 @@ ExternalToolConfig::ExternalToolConfig()
 
     Form {
         Tr::tr("Description:"), m_description, br,
-        Tr::tr("Executable:"), m_executable, br,
+        Tr::tr("Executable:", "noun"), m_executable, br,
         Tr::tr("Arguments:"), m_arguments, br,
         Tr::tr("Working directory:"), m_workingDirectory, br,
         outputLabel, m_outputBehavior, br,
@@ -700,12 +699,12 @@ void ExternalToolConfig::updateItem(const QModelIndex &index)
     tool->setDescription(m_description->text());
     FilePaths executables = tool->executables();
     if (executables.size() > 0)
-        executables[0] = m_executable->rawFilePath();
+        executables[0] = m_executable->unexpandedFilePath();
     else
-        executables << m_executable->rawFilePath();
+        executables << m_executable->unexpandedFilePath();
     tool->setExecutables(executables);
     tool->setArguments(m_arguments->text());
-    tool->setWorkingDirectory(m_workingDirectory->rawFilePath());
+    tool->setWorkingDirectory(m_workingDirectory->unexpandedFilePath());
     tool->setBaseEnvironmentProviderId(Id::fromSetting(m_baseEnvironment->currentData()));
     tool->setEnvironmentUserChanges(m_environment);
     tool->setOutputHandling(ExternalTool::OutputHandling(m_outputBehavior->currentIndex()));
@@ -924,7 +923,12 @@ void ExternalToolConfig::addCategory()
 
 void ExternalToolConfig::updateEffectiveArguments()
 {
-    m_arguments->setToolTip(Utils::globalMacroExpander()->expandProcessArgs(m_arguments->text()));
+    const expected_str<QString> result = Utils::globalMacroExpander()->expandProcessArgs(
+        m_arguments->text());
+    if (result)
+        m_arguments->setToolTip(*result);
+    else
+        m_arguments->setToolTip(result.error());
 }
 
 void ExternalToolConfig::editEnvironmentChanges()
@@ -949,15 +953,23 @@ void ExternalToolConfig::updateEnvironmentLabel()
     m_environmentLabel->setText(shortSummary.isEmpty() ? Tr::tr("No changes to apply.") : shortSummary);
 }
 
-// ToolSettingsPage
+// ExternalToolSettings
 
-ToolSettings::ToolSettings()
+class ExternalToolSettings final : public IOptionsPage
 {
-    setId(Constants::SETTINGS_ID_TOOLS);
-    setDisplayName(Tr::tr("External Tools"));
-    setCategory(Constants::SETTINGS_CATEGORY_CORE);
-    setWidgetCreator([] { return new ExternalToolConfig; });
+public:
+    ExternalToolSettings()
+    {
+        setId(Constants::SETTINGS_ID_TOOLS);
+        setDisplayName(Tr::tr("External Tools"));
+        setCategory(Constants::SETTINGS_CATEGORY_CORE);
+        setWidgetCreator([] { return new ExternalToolConfig; });
+    }
+};
+
+void setupExternalToolSettings()
+{
+    static ExternalToolSettings theExternalToolSettings;
 }
 
-} // Internal
-} // Core
+} // Core::Internal

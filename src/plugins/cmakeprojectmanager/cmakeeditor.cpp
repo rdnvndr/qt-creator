@@ -26,7 +26,6 @@
 #include <texteditor/basehoverhandler.h>
 #include <texteditor/textdocument.h>
 #include <texteditor/texteditor.h>
-#include <texteditor/texteditoractionhandler.h>
 
 #include <utils/mimeconstants.h>
 #include <utils/textutils.h>
@@ -49,7 +48,6 @@ class CMakeEditor final : public BaseTextEditor
 {
 public:
     CMakeEditor();
-    void contextHelp(const HelpCallback &callback) const final;
 
 private:
     CMakeKeywords m_keywords;
@@ -59,43 +57,42 @@ CMakeEditor::CMakeEditor()
 {
     if (auto tool = CMakeToolManager::defaultProjectOrDefaultCMakeTool())
         m_keywords = tool->keywords();
-}
 
-void CMakeEditor::contextHelp(const HelpCallback &callback) const
-{
-    auto helpPrefix = [this](const QString &word) {
-        if (m_keywords.includeStandardModules.contains(word))
-            return "module/";
-        if (m_keywords.functions.contains(word))
-            return "command/";
-        if (m_keywords.variables.contains(word))
-            return "variable/";
-        if (m_keywords.directoryProperties.contains(word))
-            return "prop_dir/";
-        if (m_keywords.targetProperties.contains(word))
-            return "prop_tgt/";
-        if (m_keywords.sourceProperties.contains(word))
-            return "prop_sf/";
-        if (m_keywords.testProperties.contains(word))
-            return "prop_test/";
-        if (m_keywords.properties.contains(word))
-            return "prop_gbl/";
-        if (m_keywords.policies.contains(word))
-            return "policy/";
-        if (m_keywords.environmentVariables.contains(word))
-            return "envvar/";
+    setContextHelpProvider([this](const HelpCallback &callback) {
+        auto helpPrefix = [this](const QString &word) {
+            if (m_keywords.includeStandardModules.contains(word))
+                return "module/";
+            if (m_keywords.functions.contains(word))
+                return "command/";
+            if (m_keywords.variables.contains(word))
+                return "variable/";
+            if (m_keywords.directoryProperties.contains(word))
+                return "prop_dir/";
+            if (m_keywords.targetProperties.contains(word))
+                return "prop_tgt/";
+            if (m_keywords.sourceProperties.contains(word))
+                return "prop_sf/";
+            if (m_keywords.testProperties.contains(word))
+                return "prop_test/";
+            if (m_keywords.properties.contains(word))
+                return "prop_gbl/";
+            if (m_keywords.policies.contains(word))
+                return "policy/";
+            if (m_keywords.environmentVariables.contains(word))
+                return "envvar/";
 
-        return "unknown/";
-    };
+            return "unknown/";
+        };
 
-    const QString word = Text::wordUnderCursor(editorWidget()->textCursor());
-    const QString id = helpPrefix(word) + word;
-    if (id.startsWith("unknown/")) {
-        BaseTextEditor::contextHelp(callback);
-        return;
-    }
+        const QString word = Text::wordUnderCursor(editorWidget()->textCursor());
+        const QString id = helpPrefix(word) + word;
+        if (id.startsWith("unknown/")) {
+            editorWidget()->contextHelpItem(callback);
+            return;
+        }
 
-    callback({{id, word}, {}, {}, HelpItem::Unknown});
+        callback({{id, word}, {}, {}, HelpItem::Unknown});
+    });
 }
 
 //
@@ -331,7 +328,8 @@ void CMakeEditorWidget::findLinkAt(const QTextCursor &cursor,
 
     if (auto project = ProjectTree::currentProject()) {
         buffer.replace("${CMAKE_SOURCE_DIR}", project->projectDirectory().path());
-        if (auto bs = ProjectTree::currentBuildSystem(); bs->buildConfiguration()) {
+        auto bs = ProjectTree::currentBuildSystem();
+        if (bs && bs->buildConfiguration()) {
             buffer.replace("${CMAKE_BINARY_DIR}", bs->buildConfiguration()->buildDirectory().path());
 
             // Get the path suffix from current source dir to project source dir and apply it
@@ -533,9 +531,9 @@ public:
         setCompletionAssistProvider(new CMakeFileCompletionAssistProvider);
         setAutoCompleterCreator([] { return new CMakeAutoCompleter; });
 
-        setEditorActionHandlers(TextEditorActionHandler::UnCommentSelection
-                                | TextEditorActionHandler::FollowSymbolUnderCursor
-                                | TextEditorActionHandler::Format);
+        setOptionalActionMask(OptionalActions::UnCommentSelection
+                                | OptionalActions::FollowSymbolUnderCursor
+                                | OptionalActions::Format);
 
         addHoverHandler(new CMakeHoverHandler);
 

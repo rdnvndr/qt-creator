@@ -222,6 +222,12 @@ protected:
     QColor toQColor(std::variant<int, QColor> color) const;
 
 private:
+    void scheduleViewportUpdate();
+
+signals:
+    void cleared();
+
+private:
     std::unique_ptr<TerminalViewPrivate> d;
 };
 

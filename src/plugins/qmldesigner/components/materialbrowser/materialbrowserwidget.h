@@ -7,6 +7,8 @@
 
 #include <coreplugin/icontext.h>
 
+#include <utils/uniqueobjectptr.h>
+
 #include <QFrame>
 
 QT_BEGIN_NAMESPACE
@@ -20,6 +22,7 @@ class StudioQuickWidget;
 namespace QmlDesigner {
 
 class AssetImageProvider;
+class BundleHelper;
 class MaterialBrowserView;
 class MaterialBrowserModel;
 class MaterialBrowserTexturesModel;
@@ -60,6 +63,9 @@ public:
     Q_INVOKABLE void acceptAssetsDropOnMaterial(int matIndex, const QList<QUrl> &urls);
     Q_INVOKABLE void acceptTextureDropOnMaterial(int matIndex, const QString &texId);
     Q_INVOKABLE void focusMaterialSection(bool focusMatSec);
+    Q_INVOKABLE void addMaterialToContentLibrary();
+    Q_INVOKABLE void importMaterial();
+    Q_INVOKABLE void exportMaterial();
 
     StudioQuickWidget *quickWidget() const;
 
@@ -83,12 +89,13 @@ private:
     QPointer<MaterialBrowserView>  m_materialBrowserView;
     QPointer<MaterialBrowserModel> m_materialBrowserModel;
     QPointer<MaterialBrowserTexturesModel> m_materialBrowserTexturesModel;
-    QScopedPointer<StudioQuickWidget> m_quickWidget;
+    Utils::UniqueObjectPtr<StudioQuickWidget> m_quickWidget;
 
     QShortcut *m_qmlSourceUpdateShortcut = nullptr;
     PreviewImageProvider *m_previewImageProvider = nullptr;
     AssetImageProvider *m_textureImageProvider = nullptr;
     Core::IContext *m_context = nullptr;
+    std::unique_ptr<BundleHelper> m_bundleHelper;
 
     QString m_filterText;
 

@@ -3,12 +3,12 @@
 
 #pragma once
 
-#include <QFormLayout>
-#include <QList>
-#include <QString>
-#include <QtGlobal>
+#include "builderutils.h"
 
-#include <optional>
+#include <QString>
+
+#include <initializer_list>
+#include <vector>
 
 #if defined(UTILS_LIBRARY)
 #  define QTCREATOR_UTILS_EXPORT Q_DECL_EXPORT
@@ -19,251 +19,603 @@
 #endif
 
 QT_BEGIN_NAMESPACE
+class QBoxLayout;
+class QCompleter;
+class QFormLayout;
+class QGridLayout;
+class QGroupBox;
+class QHBoxLayout;
+class QLabel;
 class QLayout;
-class QMargins;
 class QObject;
+class QPushButton;
+class QScrollArea;
+class QSize;
+class QSizePolicy;
+class QSpinBox;
+class QSplitter;
+class QStackedWidget;
+class QTabWidget;
+class QTextEdit;
+class QToolBar;
+class QVBoxLayout;
 class QWidget;
-template <class T> T qobject_cast(QObject *object);
 QT_END_NAMESPACE
+
+namespace SpinnerSolution {
+class SpinnerWidget;
+enum class SpinnerState;
+} // namespace SpinnerSolution
+
+namespace Utils {
+class FancyLineEdit;
+class FilePath;
+class MarkdownBrowser;
+class Icon;
+class IconDisplay;
+} // namespace Utils
 
 namespace Layouting {
 
-// LayoutItem
+//////////////////////////////////////////////
 
-class LayoutBuilder;
-class LayoutItem;
-using LayoutItems = QList<LayoutItem>;
+//
+// Basic
+//
+
+class QTCREATOR_UTILS_EXPORT Thing
+{
+public:
+    void *ptr; // The product.
+};
+
+class QTCREATOR_UTILS_EXPORT Object : public Thing
+{
+public:
+    using Implementation = QObject;
+    using I = Building::BuilderItem<Object>;
+
+    Object() = default;
+    Object(std::initializer_list<I> ps);
+};
+
+//
+// Layouts
+//
+
+class FlowLayout;
+class Layout;
+using LayoutModifier = std::function<void(Layout *)>;
 
 class QTCREATOR_UTILS_EXPORT LayoutItem
 {
 public:
-    using Setter = std::function<void(QObject *target)>;
-
-    LayoutItem();
     ~LayoutItem();
+    LayoutItem();
+    LayoutItem(QLayout *l);
+    LayoutItem(QWidget *w);
+    LayoutItem(const QString &t);
 
-    LayoutItem(const LayoutItem &t);
-    LayoutItem &operator=(const LayoutItem &t) = default;
-
-    template <class T> LayoutItem(const T &t)
-    {
-        if constexpr (std::is_base_of_v<LayoutItem, T>)
-            LayoutItem::operator=(t);
-        else
-            createItem(this, t);
-    }
-
-    void attachTo(QWidget *w) const;
-    QWidget *emerge();
-
-    void addItem(const LayoutItem &item);
-    void addItems(const LayoutItems &items);
-    void addRow(const LayoutItems &items);
-
-    std::function<void(LayoutBuilder &)> onAdd;
-    std::function<void(LayoutBuilder &)> onExit;
-    std::function<void(QObject *target)> setter;
-    LayoutItems subItems;
+    QString text;
+    QLayout *layout = nullptr;
+    QWidget *widget = nullptr;
+    int stretch = -1;
+    int spanCols = 1;
+    int spanRows = 1;
+    bool empty = false;
 };
 
-// Special items
-
-class QTCREATOR_UTILS_EXPORT Space
+class QTCREATOR_UTILS_EXPORT Layout : public Object
 {
 public:
-    explicit Space(int space) : space(space) {}
-    const int space;
+    using Implementation = QLayout;
+    using I = Building::BuilderItem<Layout>;
+
+    Layout() = default;
+    Layout(Implementation *w) { ptr = w; }
+
+    void span(int cols, int rows);
+
+    void setNoMargins();
+    void setNormalMargins();
+    void setContentsMargins(int left, int top, int right, int bottom);
+    void setColumnStretch(int cols, int rows);
+    void setSpacing(int space);
+    void setFieldGrowthPolicy(int policy);
+
+    void attachTo(QWidget *);
+
+    void addItem(I item);
+    void addItems(std::initializer_list<I> items);
+    void addRow(std::initializer_list<I> items);
+    void addLayoutItem(const LayoutItem &item);
+
+    void flush();
+    void flush_() const;
+
+    QWidget *emerge() const;
+    void show() const;
+
+    QFormLayout *asForm();
+    QGridLayout *asGrid();
+    QBoxLayout *asBox();
+    FlowLayout *asFlow();
+
+    // Grid-only
+    int currentGridColumn = 0;
+    int currentGridRow = 0;
+    //Qt::Alignment align = {};
+    bool useFormAlignment = false;
+
+    std::vector<LayoutItem> pendingItems;
+};
+
+class QTCREATOR_UTILS_EXPORT Column : public Layout
+{
+public:
+    using Implementation = QVBoxLayout;
+    using I = Building::BuilderItem<Column>;
+
+    Column(std::initializer_list<I> ps);
+};
+
+class QTCREATOR_UTILS_EXPORT Row : public Layout
+{
+public:
+    using Implementation = QHBoxLayout;
+    using I = Building::BuilderItem<Row>;
+
+    Row(std::initializer_list<I> ps);
+};
+
+class QTCREATOR_UTILS_EXPORT Form : public Layout
+{
+public:
+    using Implementation = QFormLayout;
+    using I = Building::BuilderItem<Form>;
+
+    Form();
+    Form(std::initializer_list<I> ps);
+};
+
+class QTCREATOR_UTILS_EXPORT Grid : public Layout
+{
+public:
+    using Implementation = QGridLayout;
+    using I = Building::BuilderItem<Grid>;
+
+    Grid();
+    Grid(std::initializer_list<I> ps);
+};
+
+class QTCREATOR_UTILS_EXPORT Flow : public Layout
+{
+public:
+    Flow(std::initializer_list<I> ps);
 };
 
 class QTCREATOR_UTILS_EXPORT Stretch
 {
 public:
-    explicit Stretch(int stretch = 1) : stretch(stretch) {}
-    const int stretch;
+    explicit Stretch(int stretch)
+        : stretch(stretch)
+    {}
+
+    int stretch;
+};
+
+class QTCREATOR_UTILS_EXPORT Space
+{
+public:
+    explicit Space(int space)
+        : space(space)
+    {}
+
+    int space;
 };
 
 class QTCREATOR_UTILS_EXPORT Span
 {
 public:
-    Span(int span, const LayoutItem &item) : span(span), item(item) {}
-    const int span;
-    LayoutItem item;
+    Span(int cols, const Layout::I &item);
+    Span(int cols, int rows, const Layout::I &item);
+
+    Layout::I item;
+    int spanCols = 1;
+    int spanRows = 1;
 };
 
-class QTCREATOR_UTILS_EXPORT Column : public LayoutItem
+//
+// Widgets
+//
+
+class QTCREATOR_UTILS_EXPORT Widget : public Object
 {
 public:
-    Column(std::initializer_list<LayoutItem> items);
+    using Implementation = QWidget;
+    using I = Building::BuilderItem<Widget>;
+
+    Widget() = default;
+    Widget(std::initializer_list<I> ps);
+    Widget(Implementation *w) { ptr = w; }
+
+    QWidget *emerge() const;
+    void show();
+
+    bool isVisible() const;
+    bool isEnabled() const;
+
+    void setVisible(bool);
+    void setEnabled(bool);
+
+    void setAutoFillBackground(bool);
+    void setLayout(const Layout &layout);
+    void setSize(int, int);
+    void setSizePolicy(const QSizePolicy &policy);
+    void setFixedSize(const QSize &);
+    void setWindowTitle(const QString &);
+    void setWindowFlags(Qt::WindowFlags);
+    void setWidgetAttribute(Qt::WidgetAttribute, bool on);
+    void setToolTip(const QString &);
+    void setNoMargins(int = 0);
+    void setNormalMargins(int = 0);
+    void setContentsMargins(int left, int top, int right, int bottom);
+    void setCursor(Qt::CursorShape shape);
+
+    void activateWindow();
+    void close();
 };
 
-class QTCREATOR_UTILS_EXPORT Row : public LayoutItem
+class QTCREATOR_UTILS_EXPORT Label : public Widget
 {
 public:
-    Row(std::initializer_list<LayoutItem> items);
+    using Implementation = QLabel;
+    using I = Building::BuilderItem<Label>;
+
+    Label(std::initializer_list<I> ps);
+    Label(const QString &text);
+
+    QString text() const;
+    void setText(const QString &);
+    void setTextFormat(Qt::TextFormat);
+    void setWordWrap(bool);
+    void setTextInteractionFlags(Qt::TextInteractionFlags);
+    void setOpenExternalLinks(bool);
+    void onLinkHovered(const std::function<void(const QString &)> &, QObject *guard);
 };
 
-class QTCREATOR_UTILS_EXPORT Flow : public LayoutItem
+class QTCREATOR_UTILS_EXPORT Group : public Widget
 {
 public:
-    Flow(std::initializer_list<LayoutItem> items);
+    using Implementation = QGroupBox;
+    using I = Building::BuilderItem<Group>;
+
+    Group(std::initializer_list<I> ps);
+
+    void setTitle(const QString &);
+    void setGroupChecker(const std::function<void(QObject *)> &);
 };
 
-class QTCREATOR_UTILS_EXPORT Grid : public LayoutItem
+class QTCREATOR_UTILS_EXPORT SpinBox : public Widget
 {
 public:
-    Grid() : Grid({}) {}
-    Grid(std::initializer_list<LayoutItem> items);
+    using Implementation = QSpinBox;
+    using I = Building::BuilderItem<SpinBox>;
+
+    SpinBox(std::initializer_list<I> ps);
+
+    void setValue(int);
+    void onTextChanged(const std::function<void(QString)> &, QObject *guard);
 };
 
-class QTCREATOR_UTILS_EXPORT Form : public LayoutItem
+class QTCREATOR_UTILS_EXPORT PushButton : public Widget
 {
 public:
-    Form() : Form({}) {}
-    Form(std::initializer_list<LayoutItem> items);
+    using Implementation = QPushButton;
+    using I = Building::BuilderItem<PushButton>;
+
+    PushButton(std::initializer_list<I> ps);
+
+    void setText(const QString &);
+    void setIconPath(const Utils::FilePath &);
+    void setIconSize(const QSize &);
+    void setFlat(bool);
+    void onClicked(const std::function<void()> &, QObject *guard);
 };
 
-class QTCREATOR_UTILS_EXPORT Widget : public LayoutItem
+class QTCREATOR_UTILS_EXPORT TextEdit : public Widget
 {
 public:
-    Widget(std::initializer_list<LayoutItem> items);
+    using Implementation = QTextEdit;
+    using I = Building::BuilderItem<TextEdit>;
+    using Id = Implementation *;
+
+    TextEdit(std::initializer_list<I> ps);
+
+    void setText(const QString &);
+    void setMarkdown(const QString &);
+    void setReadOnly(bool);
 };
 
-class QTCREATOR_UTILS_EXPORT Stack : public LayoutItem
+class QTCREATOR_UTILS_EXPORT LineEdit : public Widget
 {
 public:
-    Stack() : Stack({}) {}
-    Stack(std::initializer_list<LayoutItem> items);
+    using Implementation = Utils::FancyLineEdit;
+    using I = Building::BuilderItem<LineEdit>;
+    using Id = Implementation *;
+
+    LineEdit(std::initializer_list<I> ps);
+
+    QString text() const;
+    void setText(const QString &);
+    void setRightSideIconPath(const Utils::FilePath &path);
+    void setPlaceHolderText(const QString &text);
+    void setCompleter(QCompleter *completer);
+    void setMinimumHeight(int height);
+    void onReturnPressed(const std::function<void()> &, QObject *guard);
+    void onRightSideIconClicked(const std::function<void()> &, QObject *guard);
 };
 
-class QTCREATOR_UTILS_EXPORT Tab : public LayoutItem
+class QTCREATOR_UTILS_EXPORT Splitter : public Widget
 {
 public:
-    Tab(const QString &tabName, const LayoutItem &item);
+    using Implementation = QSplitter;
+    using I = Building::BuilderItem<Splitter>;
+
+    Splitter(std::initializer_list<I> items);
+    void setOrientation(Qt::Orientation);
+    void setStretchFactor(int index, int stretch);
+    void setChildrenCollapsible(bool collapsible);
 };
 
-class QTCREATOR_UTILS_EXPORT If : public LayoutItem
+class QTCREATOR_UTILS_EXPORT IconDisplay : public Widget
 {
 public:
-    If(bool condition, const LayoutItems &item, const LayoutItems &other = {});
+    using Implementation = Utils::IconDisplay;
+    using I = Building::BuilderItem<IconDisplay>;
+
+    IconDisplay(std::initializer_list<I> ps);
+    void setIcon(const Utils::Icon &icon);
 };
 
-class QTCREATOR_UTILS_EXPORT Group : public LayoutItem
+class QTCREATOR_UTILS_EXPORT ScrollArea : public Widget
 {
 public:
-    Group(std::initializer_list<LayoutItem> items);
+    using Implementation = QScrollArea;
+
+    ScrollArea(const Layout &inner);
+
+    void setLayout(const Layout &inner);
 };
 
-class QTCREATOR_UTILS_EXPORT TextEdit : public LayoutItem
+class QTCREATOR_UTILS_EXPORT Stack : public Widget
 {
 public:
-    TextEdit(std::initializer_list<LayoutItem> items);
+    using Implementation = QStackedWidget;
+    using I = Building::BuilderItem<Stack>;
+
+    Stack()
+        : Stack({})
+    {}
+    Stack(std::initializer_list<I> items);
 };
 
-class QTCREATOR_UTILS_EXPORT PushButton : public LayoutItem
+class QTCREATOR_UTILS_EXPORT Tab : public Widget
 {
 public:
-    PushButton(std::initializer_list<LayoutItem> items);
+    using Implementation = QWidget;
+
+    Tab(const QString &tabName, const Layout &inner);
+
+    const QString tabName;
+    const Layout inner;
 };
 
-class QTCREATOR_UTILS_EXPORT SpinBox : public LayoutItem
+class QTCREATOR_UTILS_EXPORT TabWidget : public Widget
 {
 public:
-    SpinBox(std::initializer_list<LayoutItem> items);
+    using Implementation = QTabWidget;
+    using I = Building::BuilderItem<TabWidget>;
+
+    TabWidget(std::initializer_list<I> items);
 };
 
-class QTCREATOR_UTILS_EXPORT Splitter : public LayoutItem
+class QTCREATOR_UTILS_EXPORT ToolBar : public Widget
 {
 public:
-    Splitter(std::initializer_list<LayoutItem> items);
+    using Implementation = QToolBar;
+    using I = Building::BuilderItem<ToolBar>;
+
+    ToolBar(std::initializer_list<I> items);
 };
 
-class QTCREATOR_UTILS_EXPORT ToolBar : public LayoutItem
+class QTCREATOR_UTILS_EXPORT Spinner : public Widget
 {
 public:
-    ToolBar(std::initializer_list<LayoutItem> items);
+    using Implementation = SpinnerSolution::SpinnerWidget;
+    using I = Building::BuilderItem<Spinner>;
+    using Id = Implementation *;
+
+    Spinner(std::initializer_list<I> ps);
+
+    void setRunning(bool running);
+    void setDecorated(bool on);
 };
 
-class QTCREATOR_UTILS_EXPORT TabWidget : public LayoutItem
+class QTCREATOR_UTILS_EXPORT MarkdownBrowser : public Widget
 {
 public:
-    TabWidget(std::initializer_list<LayoutItem> items);
+    using Implementation = Utils::MarkdownBrowser;
+    using I = Building::BuilderItem<MarkdownBrowser>;
+
+    MarkdownBrowser(std::initializer_list<I> items);
+
+    void setMarkdown(const QString &);
+    void setBasePath(const Utils::FilePath &);
 };
 
-class QTCREATOR_UTILS_EXPORT Application : public LayoutItem
+// Special
+
+class QTCREATOR_UTILS_EXPORT If
 {
 public:
-    Application(std::initializer_list<LayoutItem> items);
+    If(bool condition,
+       const std::initializer_list<Layout::I> ifcase,
+       const std::initializer_list<Layout::I> thencase = {});
 
-    int exec(int &argc, char *argv[]);
+    const std::initializer_list<Layout::I> used;
 };
 
+//
+// Dispatchers
+//
 
-void QTCREATOR_UTILS_EXPORT createItem(LayoutItem *item, const std::function<void(QObject *target)> &t);
-void QTCREATOR_UTILS_EXPORT createItem(LayoutItem *item, QWidget *t);
-void QTCREATOR_UTILS_EXPORT createItem(LayoutItem *item, QLayout *t);
-void QTCREATOR_UTILS_EXPORT createItem(LayoutItem *item, LayoutItem(*t)());
-void QTCREATOR_UTILS_EXPORT createItem(LayoutItem *item, const QString &t);
-void QTCREATOR_UTILS_EXPORT createItem(LayoutItem *item, const Span &t);
-void QTCREATOR_UTILS_EXPORT createItem(LayoutItem *item, const Space &t);
-void QTCREATOR_UTILS_EXPORT createItem(LayoutItem *item, const Stretch &t);
+// We need one 'Id' (and a corresponding function wrapping arguments into a
+// tuple marked by this id) per 'name' of "backend" setter member function,
+// i.e. one 'text' is sufficient for QLabel::setText, QLineEdit::setText.
+// The name of the Id does not have to match the backend names as it
+// is mapped per-backend-type in the respective setter implementation
+// but we assume that it generally makes sense to stay close to the
+// wrapped API name-wise.
 
+// These are free functions overloaded on the type of builder object
+// and setter id. The function implementations are independent, but
+// the base expectation is that they will forwards to the backend
+// type's setter.
 
-// "Singletons"
+// Special dispatchers
 
-QTCREATOR_UTILS_EXPORT LayoutItem br();
-QTCREATOR_UTILS_EXPORT LayoutItem st();
-QTCREATOR_UTILS_EXPORT LayoutItem empty();
-QTCREATOR_UTILS_EXPORT LayoutItem hr();
-QTCREATOR_UTILS_EXPORT LayoutItem noMargin();
-QTCREATOR_UTILS_EXPORT LayoutItem normalMargin();
-QTCREATOR_UTILS_EXPORT LayoutItem customMargin(const QMargins &margin);
-QTCREATOR_UTILS_EXPORT LayoutItem withFormAlignment();
+class BindToId
+{};
 
-// "Setters"
-
-QTCREATOR_UTILS_EXPORT LayoutItem title(const QString &title);
-QTCREATOR_UTILS_EXPORT LayoutItem text(const QString &text);
-QTCREATOR_UTILS_EXPORT LayoutItem tooltip(const QString &toolTip);
-QTCREATOR_UTILS_EXPORT LayoutItem resize(int, int);
-QTCREATOR_UTILS_EXPORT LayoutItem columnStretch(int column, int stretch);
-QTCREATOR_UTILS_EXPORT LayoutItem spacing(int);
-QTCREATOR_UTILS_EXPORT LayoutItem windowTitle(const QString &windowTitle);
-QTCREATOR_UTILS_EXPORT LayoutItem fieldGrowthPolicy(QFormLayout::FieldGrowthPolicy policy);
-
-
-// "Getters"
-
-class ID
+template <typename T>
+auto bindTo(T **p)
 {
-public:
-    QObject *ob = nullptr;
-};
+    return Building::IdAndArg{BindToId{}, p};
+}
 
-QTCREATOR_UTILS_EXPORT LayoutItem id(ID &out);
+template <typename Interface>
+void doit(Interface *x, BindToId, auto p)
+{
+    *p = static_cast<typename Interface::Implementation *>(x->ptr);
+}
 
-QTCREATOR_UTILS_EXPORT void setText(ID id, const QString &text);
+class IdId
+{};
 
+auto id(auto p)
+{
+    return Building::IdAndArg{IdId{}, p};
+}
 
-// "Signals"
+template <typename Interface>
+void doit(Interface *x, IdId, auto p)
+{
+    **p = static_cast<typename Interface::Implementation *>(x->ptr);
+}
 
-QTCREATOR_UTILS_EXPORT LayoutItem onClicked(const std::function<void()> &,
-                                            QObject *guard = nullptr);
-QTCREATOR_UTILS_EXPORT LayoutItem onTextChanged(const std::function<void(const QString &)> &,
-                                                QObject *guard = nullptr);
-QTCREATOR_UTILS_EXPORT LayoutItem onValueChanged(const std::function<void(int)> &,
-                                                QObject *guard = nullptr);
+// Setter dispatchers
 
-QTCREATOR_UTILS_EXPORT LayoutItem onTextChanged(ID &id, QVariant(*sig)(QObject *));
+QTC_DEFINE_BUILDER_SETTER(childrenCollapsible, setChildrenCollapsible)
+QTC_DEFINE_BUILDER_SETTER(columnStretch, setColumnStretch)
+QTC_DEFINE_BUILDER_SETTER(customMargins, setContentsMargins)
+QTC_DEFINE_BUILDER_SETTER(fieldGrowthPolicy, setFieldGrowthPolicy)
+QTC_DEFINE_BUILDER_SETTER(groupChecker, setGroupChecker)
+QTC_DEFINE_BUILDER_SETTER(onClicked, onClicked)
+QTC_DEFINE_BUILDER_SETTER(onLinkHovered, onLinkHovered)
+QTC_DEFINE_BUILDER_SETTER(onTextChanged, onTextChanged)
+QTC_DEFINE_BUILDER_SETTER(openExternalLinks, setOpenExternalLinks)
+QTC_DEFINE_BUILDER_SETTER(orientation, setOrientation);
+QTC_DEFINE_BUILDER_SETTER(size, setSize)
+QTC_DEFINE_BUILDER_SETTER(text, setText)
+QTC_DEFINE_BUILDER_SETTER(textFormat, setTextFormat)
+QTC_DEFINE_BUILDER_SETTER(textInteractionFlags, setTextInteractionFlags)
+QTC_DEFINE_BUILDER_SETTER(title, setTitle)
+QTC_DEFINE_BUILDER_SETTER(toolTip, setToolTip)
+QTC_DEFINE_BUILDER_SETTER(windowTitle, setWindowTitle)
+QTC_DEFINE_BUILDER_SETTER(wordWrap, setWordWrap);
+QTC_DEFINE_BUILDER_SETTER(windowFlags, setWindowFlags);
+QTC_DEFINE_BUILDER_SETTER(widgetAttribute, setWidgetAttribute);
+QTC_DEFINE_BUILDER_SETTER(autoFillBackground, setAutoFillBackground);
+QTC_DEFINE_BUILDER_SETTER(readOnly, setReadOnly);
+QTC_DEFINE_BUILDER_SETTER(markdown, setMarkdown);
+QTC_DEFINE_BUILDER_SETTER(sizePolicy, setSizePolicy);
+QTC_DEFINE_BUILDER_SETTER(basePath, setBasePath);
+QTC_DEFINE_BUILDER_SETTER(fixedSize, setFixedSize);
+
+// Nesting dispatchers
+
+QTCREATOR_UTILS_EXPORT void addToLayout(Layout *layout, const Layout &inner);
+QTCREATOR_UTILS_EXPORT void addToLayout(Layout *layout, const Widget &inner);
+QTCREATOR_UTILS_EXPORT void addToLayout(Layout *layout, QWidget *inner);
+QTCREATOR_UTILS_EXPORT void addToLayout(Layout *layout, QLayout *inner);
+QTCREATOR_UTILS_EXPORT void addToLayout(Layout *layout, const LayoutModifier &inner);
+QTCREATOR_UTILS_EXPORT void addToLayout(Layout *layout, const QString &inner);
+QTCREATOR_UTILS_EXPORT void addToLayout(Layout *layout, const Space &inner);
+QTCREATOR_UTILS_EXPORT void addToLayout(Layout *layout, const Stretch &inner);
+QTCREATOR_UTILS_EXPORT void addToLayout(Layout *layout, const If &inner);
+QTCREATOR_UTILS_EXPORT void addToLayout(Layout *layout, const Span &inner);
+// ... can be added to anywhere later to support "user types"
+
+QTCREATOR_UTILS_EXPORT void addToWidget(Widget *widget, const Layout &layout);
+
+QTCREATOR_UTILS_EXPORT void addToTabWidget(TabWidget *tabWidget, const Tab &inner);
+
+QTCREATOR_UTILS_EXPORT void addToSplitter(Splitter *splitter, QWidget *inner);
+QTCREATOR_UTILS_EXPORT void addToSplitter(Splitter *splitter, const Widget &inner);
+QTCREATOR_UTILS_EXPORT void addToSplitter(Splitter *splitter, const Layout &inner);
+
+QTCREATOR_UTILS_EXPORT void addToStack(Stack *stack, QWidget *inner);
+QTCREATOR_UTILS_EXPORT void addToStack(Stack *stack, const Widget &inner);
+QTCREATOR_UTILS_EXPORT void addToStack(Stack *stack, const Layout &inner);
+
+template <class Inner>
+void doit_nested(Layout *outer, Inner && inner)
+{
+    addToLayout(outer, std::forward<Inner>(inner));
+}
+
+void doit_nested(Widget *outer, auto inner)
+{
+    addToWidget(outer, inner);
+}
+
+void doit_nested(TabWidget *outer, auto inner)
+{
+    addToTabWidget(outer, inner);
+}
+
+void doit_nested(Stack *outer, auto inner)
+{
+    addToStack(outer, inner);
+}
+
+void doit_nested(Splitter *outer, auto inner)
+{
+    addToSplitter(outer, inner);
+}
+
+template <class Inner>
+void doit(auto outer, Building::NestId, Inner && inner)
+{
+    doit_nested(outer, std::forward<Inner>(inner));
+}
+
+// Special layout items
+
+QTCREATOR_UTILS_EXPORT void empty(Layout *);
+QTCREATOR_UTILS_EXPORT void br(Layout *);
+QTCREATOR_UTILS_EXPORT void st(Layout *);
+QTCREATOR_UTILS_EXPORT void noMargin(Layout *);
+QTCREATOR_UTILS_EXPORT void normalMargin(Layout *);
+QTCREATOR_UTILS_EXPORT void withFormAlignment(Layout *);
+QTCREATOR_UTILS_EXPORT void hr(Layout *);
+QTCREATOR_UTILS_EXPORT void tight(Layout *); // noMargin + spacing(0)
+
+QTCREATOR_UTILS_EXPORT LayoutModifier spacing(int space);
 
 // Convenience
 
 QTCREATOR_UTILS_EXPORT QWidget *createHr(QWidget *parent = nullptr);
 
-template <class T>
-LayoutItem bindTo(T **out)
-{
-    return [out](QObject *target) { *out = qobject_cast<T *>(target); };
-}
-
-
-} // Layouting
+} // namespace Layouting

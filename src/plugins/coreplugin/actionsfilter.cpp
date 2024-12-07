@@ -10,8 +10,6 @@
 #include "icore.h"
 #include "locator/locatormanager.h"
 
-#include <extensionsystem/pluginmanager.h>
-
 #include <utils/algorithm.h>
 #include <utils/async.h>
 #include <utils/fuzzymatcher.h>
@@ -26,6 +24,7 @@
 #include <QtConcurrent>
 #include <QTextDocument>
 
+using namespace Tasking;
 using namespace Utils;
 
 static const char lastTriggeredC[] = "LastTriggeredActions";
@@ -176,11 +175,7 @@ static void matches(QPromise<void> &promise, const LocatorStorage &storage,
 
 LocatorMatcherTasks ActionsFilter::matchers()
 {
-    using namespace Tasking;
-
-    Storage<LocatorStorage> storage;
-
-    const auto onSetup = [this, storage](Async<void> &async) {
+    const auto onSetup = [this](Async<void> &async) {
         m_entries.clear();
         m_indexes.clear();
         QList<const QMenu *> processedMenus;
@@ -188,16 +183,16 @@ LocatorMatcherTasks ActionsFilter::matchers()
         for (QAction* action : menuBarActions())
             collectEntriesForAction(action, {}, processedMenus);
         collectEntriesForCommands();
-        if (storage->input().simplified().isEmpty()) {
-            storage->reportOutput(m_entries);
+        const LocatorStorage &storage = *LocatorStorage::storage();
+        if (storage.input().simplified().isEmpty()) {
+            storage.reportOutput(m_entries);
             return SetupResult::StopWithSuccess;
         }
-        async.setFutureSynchronizer(ExtensionSystem::PluginManager::futureSynchronizer());
-        async.setConcurrentCallData(matches, *storage, m_entries);
+        async.setConcurrentCallData(matches, storage, m_entries);
         return SetupResult::Continue;
     };
 
-    return {{AsyncTask<void>(onSetup), storage}};
+    return {AsyncTask<void>(onSetup)};
 }
 
 LocatorFilterEntry::Acceptor ActionsFilter::acceptor(const ActionFilterEntryData &data) const

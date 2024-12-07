@@ -3,32 +3,32 @@
 
 #include "qmlproject.h"
 
-#include <qtsupport/baseqtversion.h>
-#include <qtsupport/qtkitaspect.h>
-#include <qtsupport/qtsupportconstants.h>
-
-#include <QTimer>
-
-#include <projectexplorer/projectexplorerconstants.h>
-#include <projectexplorer/projectmanager.h>
-#include <projectexplorer/target.h>
+#include "qmlprojectconstants.h"
+#include "qmlprojectmanagertr.h"
 
 #include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/icontext.h>
 #include <coreplugin/icore.h>
 
-#include "projectexplorer/devicesupport/idevice.h"
-#include "qmlprojectconstants.h"
-#include "qmlprojectmanagertr.h"
-#include "utils/algorithm.h"
+#include <projectexplorer/devicesupport/idevice.h>
+#include <projectexplorer/kitaspects.h>
+#include <projectexplorer/kitmanager.h>
+#include <projectexplorer/projectexplorerconstants.h>
+#include <projectexplorer/projectmanager.h>
+#include <projectexplorer/target.h>
+
 #include <qmljs/qmljsmodelmanagerinterface.h>
+
+#include <qtsupport/baseqtversion.h>
+#include <qtsupport/qtkitaspect.h>
+#include <qtsupport/qtsupportconstants.h>
 
 #include <texteditor/textdocument.h>
 
 #include <utils/algorithm.h>
 #include <utils/infobar.h>
 #include <utils/mimeconstants.h>
-#include <utils/process.h>
+#include <utils/qtcprocess.h>
 #include <utils/qtcassert.h>
 
 #include <QDebug>
@@ -51,13 +51,21 @@ QmlProject::QmlProject(const Utils::FilePath &fileName)
     setDisplayName(fileName.completeBaseName());
 
     setNeedsBuildConfigurations(false);
-    setBuildSystemCreator([](Target *t) { return new QmlBuildSystem(t); });
+    setBuildSystemCreator<QmlBuildSystem>();
 
     if (Core::ICore::isQtDesignStudio()) {
-        if (allowOnlySingleProject()) {
+        if (allowOnlySingleProject() && !fileName.endsWith(Constants::fakeProjectName)) {
             EditorManager::closeAllDocuments();
             ProjectManager::closeAllProjects();
         }
+    }
+
+    if (fileName.endsWith(Constants::fakeProjectName)) {
+        auto uiFile = fileName.toString();
+        uiFile.remove(Constants::fakeProjectName);
+        auto parentDir = Utils::FilePath::fromString(uiFile).parentDir();
+
+        setDisplayName(parentDir.completeBaseName());
     }
 
     connect(this, &QmlProject::anyParsingFinished, this, &QmlProject::parsingFinished);

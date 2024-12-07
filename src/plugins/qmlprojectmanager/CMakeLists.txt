@@ -39,29 +39,31 @@ extend_qtc_plugin(QmlProjectManager
 )
 
 extend_qtc_plugin(QmlProjectManager
-  PUBLIC_INCLUDES ${CMAKE_CURRENT_LIST_DIR}/cmakegen
-  SOURCES_PREFIX ${CMAKE_CURRENT_LIST_DIR}/cmakegen
+  PUBLIC_INCLUDES ${CMAKE_CURRENT_LIST_DIR}/qmlprojectexporter
+  SOURCES_PREFIX ${CMAKE_CURRENT_LIST_DIR}/qmlprojectexporter
   SOURCES
-      checkablefiletreeitem.cpp checkablefiletreeitem.h
-      cmakegeneratordialog.cpp cmakegeneratordialog.h
-      cmakegeneratordialogtreemodel.cpp cmakegeneratordialogtreemodel.h
-      cmakeprojectconverter.cpp cmakeprojectconverter.h
-      cmakeprojectconverterdialog.cpp cmakeprojectconverterdialog.h
-      generatecmakelists.cpp generatecmakelists.h
-      generatecmakelistsconstants.h
+      pythongenerator.cpp pythongenerator.h
+      cmakegenerator.cpp cmakegenerator.h
+      cmakewriter.cpp cmakewriter.h
+      cmakewriterv0.cpp cmakewriterv0.h
+      cmakewriterv1.cpp cmakewriterv1.h
+      exporter.cpp exporter.h
+      filegenerator.cpp filegenerator.h
+      filetypes.cpp filetypes.h
       boilerplate.qrc
 )
 
 add_qtc_library(QmlProjectManagerLib OBJECT
-    CONDITION Qt6_VERSION VERSION_GREATER_EQUAL 6.4.3
+    CONDITION WITH_TESTS AND Qt6_VERSION VERSION_GREATER_EQUAL 6.4.3
     EXCLUDE_FROM_INSTALL
+    DEFINES QMLPROJECTMANAGER_STATIC_LIBRARY
     DEPENDS
         QmlJS Utils
     INCLUDES
         ${CMAKE_CURRENT_LIST_DIR}
-    SOURCES_PREFIX ${CMAKE_CURRENT_LIST_DIR}/buildsystem
     SOURCES
-        projectitem/filefilteritems.cpp projectitem/filefilteritems.h
-        projectitem/qmlprojectitem.cpp projectitem/qmlprojectitem.h
-        projectitem/converters.cpp projectitem/converters.h
+        buildsystem/projectitem/filefilteritems.cpp buildsystem/projectitem/filefilteritems.h
+        buildsystem/projectitem/qmlprojectitem.cpp buildsystem/projectitem/qmlprojectitem.h
+        buildsystem/projectitem/converters.cpp buildsystem/projectitem/converters.h
+        qmlprojectexporter/filetypes.cpp qmlprojectexporter/filetypes.h
 )

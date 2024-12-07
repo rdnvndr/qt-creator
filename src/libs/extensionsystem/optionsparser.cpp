@@ -6,7 +6,6 @@
 #include "extensionsystemtr.h"
 #include "pluginmanager.h"
 #include "pluginmanager_p.h"
-#include "pluginspec_p.h"
 
 #include <utils/algorithm.h>
 
@@ -65,7 +64,7 @@ bool OptionsParser::parse()
             continue;
         if (checkForNoCrashcheckOption())
             continue;
-#ifdef WITH_TESTS
+#ifdef EXTENSIONSYSTEM_WITH_TESTOPTION
         if (checkForTestOptions())
             continue;
         if (checkForScenarioOption())
@@ -110,18 +109,18 @@ bool OptionsParser::checkForTestOptions()
                       });
             } else {
                 QStringList args = m_currentArg.split(QLatin1Char(','));
-                const QString pluginName = args.takeFirst();
-                if (PluginSpec *spec = m_pmPrivate->pluginByName(pluginName)) {
+                const QString pluginId = args.takeFirst();
+                if (PluginSpec *spec = m_pmPrivate->pluginById(pluginId.toLower())) {
                     if (m_pmPrivate->containsTestSpec(spec)) {
                         if (m_errorString)
-                            *m_errorString = Tr::tr("The plugin \"%1\" is specified twice for testing.").arg(pluginName);
+                            *m_errorString = Tr::tr("The plugin \"%1\" is specified twice for testing.").arg(pluginId);
                         m_hasError = true;
                     } else {
                         m_pmPrivate->testSpecs.emplace_back(spec, args);
                     }
-                } else  {
+                } else {
                     if (m_errorString)
-                        *m_errorString = Tr::tr("The plugin \"%1\" does not exist.").arg(pluginName);
+                        *m_errorString = Tr::tr("The plugin \"%1\" does not exist.").arg(pluginId);
                     m_hasError = true;
                 }
             }
@@ -129,7 +128,7 @@ bool OptionsParser::checkForTestOptions()
         return true;
     } else if (m_currentArg == QLatin1String(NOTEST_OPTION)) {
         if (nextToken(RequiredToken)) {
-            if (PluginSpec *spec = m_pmPrivate->pluginByName(m_currentArg)) {
+            if (PluginSpec *spec = m_pmPrivate->pluginById(m_currentArg.toLower())) {
                 if (!m_pmPrivate->containsTestSpec(spec)) {
                     if (m_errorString)
                         *m_errorString = Tr::tr("The plugin \"%1\" is not tested.").arg(m_currentArg);
@@ -177,16 +176,16 @@ bool OptionsParser::checkForLoadOption()
     if (nextToken(RequiredToken)) {
         if (m_currentArg == QLatin1String("all")) {
             for (PluginSpec *spec : std::as_const(m_pmPrivate->pluginSpecs))
-                spec->d->setForceEnabled(true);
+                spec->setForceEnabled(true);
             m_isDependencyRefreshNeeded = true;
         } else {
-            PluginSpec *spec = m_pmPrivate->pluginByName(m_currentArg);
+            PluginSpec *spec = m_pmPrivate->pluginById(m_currentArg.toLower());
             if (!spec) {
                 if (m_errorString)
                     *m_errorString = Tr::tr("The plugin \"%1\" does not exist.").arg(m_currentArg);
                 m_hasError = true;
             } else {
-                spec->d->setForceEnabled(true);
+                spec->setForceEnabled(true);
                 m_isDependencyRefreshNeeded = true;
             }
         }
@@ -202,19 +201,19 @@ bool OptionsParser::checkForNoLoadOption()
     if (nextToken(RequiredToken)) {
         if (m_currentArg == QLatin1String("all")) {
             for (PluginSpec *spec : std::as_const(m_pmPrivate->pluginSpecs))
-                spec->d->setForceDisabled(true);
+                spec->setForceDisabled(true);
             m_isDependencyRefreshNeeded = true;
         } else {
-            PluginSpec *spec = m_pmPrivate->pluginByName(m_currentArg);
+            PluginSpec *spec = m_pmPrivate->pluginById(m_currentArg.toLower());
             if (!spec) {
                 if (m_errorString)
                     *m_errorString = Tr::tr("The plugin \"%1\" does not exist.").arg(m_currentArg);
                 m_hasError = true;
             } else {
-                spec->d->setForceDisabled(true);
+                spec->setForceDisabled(true);
                 // recursively disable all plugins that require this plugin
                 for (PluginSpec *dependantSpec : PluginManager::pluginsRequiringPlugin(spec))
-                    dependantSpec->d->setForceDisabled(true);
+                    dependantSpec->setForceDisabled(true);
                 m_isDependencyRefreshNeeded = true;
             }
         }
@@ -292,10 +291,10 @@ bool OptionsParser::checkForUnknownOption()
 void OptionsParser::forceDisableAllPluginsExceptTestedAndForceEnabled()
 {
     for (const PluginManagerPrivate::TestSpec &testSpec : m_pmPrivate->testSpecs)
-        testSpec.pluginSpec->d->setForceEnabled(true);
+        testSpec.pluginSpec->setForceEnabled(true);
     for (PluginSpec *spec : std::as_const(m_pmPrivate->pluginSpecs)) {
         if (!spec->isForceEnabled() && !spec->isRequired())
-            spec->d->setForceDisabled(true);
+            spec->setForceDisabled(true);
     }
 }
 

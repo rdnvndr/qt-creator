@@ -135,7 +135,7 @@ QString EBlinkGdbServerProvider::defaultResetCommands()
 QString EBlinkGdbServerProvider::scriptFileWoExt() const
 {
     // Server starts only without extension in scriptname
-    return m_deviceScript.absolutePath().pathAppended(m_deviceScript.baseName()).toString();
+    return m_deviceScript.absolutePath().pathAppended(m_deviceScript.baseName()).path();
 }
 
 QString EBlinkGdbServerProvider::channelString() const
@@ -151,7 +151,7 @@ QString EBlinkGdbServerProvider::channelString() const
 
 CommandLine EBlinkGdbServerProvider::command() const
 {
-    CommandLine cmd{m_executableFile, {}};
+    CommandLine cmd{m_executableFile};
     QStringList interFaceTypeStrings = {"swd", "jtag"};
 
     // Obligatorily -I

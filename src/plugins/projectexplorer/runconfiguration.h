@@ -28,6 +28,51 @@ class RunConfigurationFactory;
 class RunConfiguration;
 class RunConfigurationCreationInfo;
 class Target;
+class BuildTargetInfo;
+
+/**
+ * Contains start program entries that are retrieved
+ * from the cmake file api
+ */
+class LauncherInfo
+{
+public:
+    QString type;
+    Utils::FilePath command;
+    QStringList arguments;
+};
+
+/**
+ * Contains a start program entry that is displayed in the run configuration interface.
+ *
+ * This follows the design for the use of "Test Launcher", the
+ * Wrappers for running executables on the host system and "Emulator",
+ * wrappers for cross-compiled applications, which are supported for
+ * example by the cmake build system.
+ */
+class PROJECTEXPLORER_EXPORT Launcher
+{
+public:
+    Launcher() = default;
+
+    /// Create a single launcher from the \p launcherInfo parameter, which can be of type "Test launcher" or "Emulator"
+    Launcher(const LauncherInfo &launcherInfo,  const Utils::FilePath &sourceDirectory);
+
+    /// Create a combined launcher from the passed info parameters, with \p testLauncherInfo
+    /// as first and \p emulatorLauncherInfo appended
+    Launcher(const LauncherInfo &testLauncherInfo, const LauncherInfo &emulatorlauncherInfo, const Utils::FilePath &sourceDirectory);
+
+    bool operator==(const Launcher &other) const
+    {
+        return id == other.id && displayName == other.displayName && command == other.command
+               && arguments == other.arguments;
+    }
+
+    QString id;
+    QString displayName;
+    Utils::FilePath command;
+    QStringList arguments;
+};
 
 /**
  * An interface to facilitate switching between hunks of
@@ -127,10 +172,7 @@ public:
 
     void update();
 
-    const Utils::MacroExpander *macroExpander() const { return &m_expander; }
-
-signals:
-    void enabledChanged();
+    virtual RunConfiguration *clone(Target *parent);
 
 protected:
     RunConfiguration(Target *target, Utils::Id id);
@@ -142,6 +184,8 @@ protected:
     void setUpdater(const Updater &updater);
 
     Task createConfigurationIssue(const QString &description) const;
+
+    void setUsesEmptyBuildKeys() { m_usesEmptyBuildKeys = true; }
 
 private:
     // Any additional data should be handled by aspects.
@@ -159,9 +203,9 @@ private:
     CommandLineGetter m_commandLineGetter;
     RunnableModifier m_runnableModifier;
     Updater m_updater;
-    Utils::MacroExpander m_expander;
     Utils::Store m_pristineState;
     bool m_customized = false;
+    bool m_usesEmptyBuildKeys = false;
 };
 
 class RunConfigurationCreationInfo
@@ -188,7 +232,6 @@ public:
     virtual ~RunConfigurationFactory();
 
     static RunConfiguration *restore(Target *parent, const Utils::Store &map);
-    static RunConfiguration *clone(Target *parent, RunConfiguration *source);
     static const QList<RunConfigurationCreationInfo> creatorsForTarget(Target *parent);
 
     Utils::Id runConfigurationId() const { return m_runConfigurationId; }

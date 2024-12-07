@@ -86,9 +86,9 @@ BazaarClient::BazaarClient() : VcsBaseClient(&Internal::settings())
 
 BranchInfo BazaarClient::synchronousBranchQuery(const FilePath &repositoryRoot) const
 {
-    QFile branchConfFile(repositoryRoot.toString() + QLatin1Char('/') +
-                         QLatin1String(Constants::BAZAARREPO) +
-                         QLatin1String("/branch/branch.conf"));
+    QFile branchConfFile(repositoryRoot.pathAppended(Constants::BAZAARREPO)
+                             .pathAppended("branch/branch.conf")
+                             .toFSPathString());
     if (!branchConfFile.open(QIODevice::ReadOnly))
         return BranchInfo(QString(), false);
 
@@ -110,7 +110,7 @@ BranchInfo BazaarClient::synchronousBranchQuery(const FilePath &repositoryRoot) 
     }
     if (isBranchBound.simplified().toLower() == QLatin1String("true"))
         return BranchInfo(branchLocation, true);
-    return BranchInfo(repositoryRoot.toString(), false);
+    return BranchInfo(repositoryRoot.path(), false);
 }
 
 //! Removes the last committed revision(s)
@@ -147,8 +147,8 @@ void BazaarClient::annotate(const Utils::FilePath &workingDir, const QString &fi
 
 bool BazaarClient::isVcsDirectory(const FilePath &filePath) const
 {
-    return filePath.isDir()
-            && !filePath.fileName().compare(Constants::BAZAARREPO, HostOsInfo::fileNameCaseSensitivity());
+    return !filePath.fileName().compare(Constants::BAZAARREPO, HostOsInfo::fileNameCaseSensitivity())
+           && filePath.isDir();
 }
 
 FilePath BazaarClient::findTopLevelForFile(const FilePath &file) const

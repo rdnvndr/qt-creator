@@ -86,8 +86,7 @@ public:
     {
         setObjectName("HelpMode");
         setContext(Core::Context(Constants::C_MODE_HELP));
-        setIcon(Icon::modeIcon(Icons::MODE_HELP_CLASSIC,
-                               Icons::MODE_HELP_FLAT, Icons::MODE_HELP_FLAT_ACTIVE));
+        setIcon(Icon::sideBarIcon(Icons::MODE_HELP_CLASSIC, Icons::MODE_HELP_FLAT));
         setDisplayName(Tr::tr("Help"));
         setPriority(Constants::P_MODE_HELP);
         setId(Constants::ID_MODE_HELP);
@@ -102,6 +101,7 @@ public:
     void modeChanged(Id mode, Id old);
 
     void requestContextHelp();
+    void requestContextHelpFor(QList<QPointer<IContext>> contexts);
     void showContextHelp(const HelpItem &contextHelp);
     void activateIndex();
     void activateContents();
@@ -340,9 +340,7 @@ HelpViewer *createHelpViewer()
                      viewer, &HelpViewer::setScrollWheelZoomingEnabled);
 
     // add find support
-    auto agg = new Aggregation::Aggregate;
-    agg->add(viewer);
-    agg->add(new HelpViewerFindSupport(viewer));
+    Aggregation::aggregate({viewer, new HelpViewerFindSupport(viewer)});
 
     return viewer;
 }
@@ -464,11 +462,32 @@ void HelpPluginPrivate::requestContextHelp()
     const HelpItem tipHelp = tipHelpValue.canConvert<HelpItem>()
                                  ? tipHelpValue.value<HelpItem>()
                                  : HelpItem(tipHelpValue.toString());
-    IContext *context = ICore::currentContextObject();
-    if (tipHelp.isEmpty() && context)
-        context->contextHelp([this](const HelpItem &item) { showContextHelp(item); });
-    else
+    const QList<IContext *> contexts = ICore::currentContextObjects();
+    if (contexts.isEmpty() && !tipHelp.isEmpty()) {
         showContextHelp(tipHelp);
+    } else {
+        requestContextHelpFor(Utils::transform(contexts, [](IContext *context) {
+            return QPointer<IContext>(context);
+        }));
+    }
+}
+
+void HelpPluginPrivate::requestContextHelpFor(QList<QPointer<IContext>> contexts)
+{
+    if (contexts.isEmpty())
+        return;
+    QPointer<IContext> context = contexts.takeFirst();
+    while (!context) {
+        if (contexts.isEmpty())
+            return;
+        context = contexts.takeFirst();
+    }
+    context->contextHelp([contexts, this](const HelpItem &item) {
+        if (!item.isEmpty())
+            showContextHelp(item);
+        else
+            requestContextHelpFor(contexts);
+    });
 }
 
 void HelpPluginPrivate::showContextHelp(const HelpItem &contextHelp)
@@ -485,8 +504,8 @@ void HelpPluginPrivate::showContextHelp(const HelpItem &contextHelp)
                                     "<font color=\"%3\">%5</font>"
                                     "</center></body></html>")
                                 .arg(Tr::tr("No Documentation"))
-                                .arg(creatorTheme()->color(Theme::BackgroundColorNormal).name())
-                                .arg(creatorTheme()->color(Theme::TextColorNormal).name())
+                                .arg(creatorColor(Theme::BackgroundColorNormal).name())
+                                .arg(creatorColor(Theme::TextColorNormal).name())
                                 .arg(contextHelp.helpIds().join(", "))
                                 .arg(Tr::tr("No documentation available.")));
         }

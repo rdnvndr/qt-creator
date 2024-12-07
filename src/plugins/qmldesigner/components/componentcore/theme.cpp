@@ -10,6 +10,7 @@
 
 #include <utils/stylehelper.h>
 
+#include <qqml.h>
 #include <QApplication>
 #include <QMainWindow>
 #include <QPointer>
@@ -18,7 +19,7 @@
 #include <QQmlProperty>
 #include <QRegularExpression>
 #include <QScreen>
-#include <qqml.h>
+#include <QWindow>
 
 static Q_LOGGING_CATEGORY(themeLog, "qtc.qmldesigner.theme", QtWarningMsg)
 
@@ -33,7 +34,8 @@ Theme::Theme(Utils::Theme *originTheme, QObject *parent)
                   "qmldesigner/propertyEditorQmlSources/imports/StudioTheme/InternalConstants.qml")
               .toString();
 
-    QQmlEngine* engine = new QQmlEngine(this);
+    QQmlEngine *engine = new QQmlEngine(this);
+    setupTheme(engine);
     QQmlComponent component(engine, QUrl::fromLocalFile(constantsPath));
 
     if (component.status() == QQmlComponent::Ready) {
@@ -140,7 +142,9 @@ bool Theme::highPixelDensity() const
 
 QWindow *Theme::mainWindowHandle() const
 {
-    return Core::ICore::mainWindow()->windowHandle();
+    QWindow *handle = Core::ICore::mainWindow()->windowHandle();
+    QQmlEngine::setObjectOwnership(handle, QJSEngine::CppOwnership);
+    return handle;
 }
 
 QPixmap Theme::getPixmap(const QString &id)
@@ -150,8 +154,7 @@ QPixmap Theme::getPixmap(const QString &id)
 
 QString Theme::getIconUnicode(Theme::Icon i)
 {
-    if (!instance()->m_constants)
-        return QString();
+    QTC_ASSERT(instance()->m_constants, return {});
 
     const QMetaObject *m = instance()->metaObject();
     const char *enumName = "Icon";
@@ -169,6 +172,7 @@ QString Theme::getIconUnicode(Theme::Icon i)
 
 QString Theme::getIconUnicode(const QString &name)
 {
+    QTC_ASSERT(instance()->m_constants, return {});
     return instance()->m_constants->property(name.toStdString().data()).toString();
 }
 

@@ -2,31 +2,35 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 #include "navigatortreemodel.h"
+
+#include "assetslibrarywidget.h"
+#include "choosefrompropertylistdialog.h"
+#include "createtexture.h"
 #include "navigatorview.h"
 #include "navigatorwidget.h"
-#include "choosefrompropertylistdialog.h"
 #include "qmldesignerconstants.h"
 #include "qmldesignerplugin.h"
-#include "assetslibrarywidget.h"
 
 #include <abstractview.h>
 #include <bindingproperty.h>
 #include <coreplugin/icore.h>
 #include <designeractionmanager.h>
 #include <designersettings.h>
+#include <designmodewidget.h>
 #include <import.h>
 #include <invalididexception.h>
 #include <itemlibraryentry.h>
 #include <materialutils.h>
-#include <model/modelutils.h>
+#include <modelutils.h>
 #include <nodeabstractproperty.h>
 #include <nodehints.h>
 #include <nodelistproperty.h>
 #include <nodeproperty.h>
-#include <rewritingexception.h>
-#include <variantproperty.h>
 #include <qmldesignerconstants.h>
 #include <qmlitemnode.h>
+#include <rewritingexception.h>
+#include <utils3d.h>
+#include <variantproperty.h>
 
 #include <qmlprojectmanager/qmlproject.h>
 
@@ -91,7 +95,7 @@ static void removePosition(const ModelNode &node)
 static void setScenePosition(const QmlDesigner::ModelNode &modelNode,const QPointF &positionInSceneSpace)
 {
     if (modelNode.hasParentProperty() && QmlDesigner::QmlItemNode::isValidQmlItemNode(modelNode.parentProperty().parentModelNode())) {
-        QmlDesigner::QmlItemNode parentNode = modelNode.parentProperty().parentQmlObjectNode().toQmlItemNode();
+        QmlDesigner::QmlItemNode parentNode = modelNode.parentProperty().parentModelNode();
         QPointF positionInLocalSpace = parentNode.instanceSceneContentItemTransform().inverted().map(positionInSceneSpace);
         modelNode.variantProperty("x").setValue(positionInLocalSpace.toPoint().x());
         modelNode.variantProperty("y").setValue(positionInLocalSpace.toPoint().y());
@@ -174,6 +178,7 @@ static void reparentModelNodeToNodeProperty(NodeAbstractProperty &parentProperty
 }
 
 NavigatorTreeModel::NavigatorTreeModel(QObject *parent) : QAbstractItemModel(parent)
+    , m_createTextures(Utils::makeUniqueObjectPtr<CreateTextures>(m_view))
 {
     m_actionManager = &QmlDesignerPlugin::instance()->viewManager().designerActionManager();
 }
@@ -454,7 +459,7 @@ QStringList NavigatorTreeModel::mimeTypes() const
                                     Constants::MIME_TYPE_MATERIAL,
                                     Constants::MIME_TYPE_BUNDLE_TEXTURE,
                                     Constants::MIME_TYPE_BUNDLE_MATERIAL,
-                                    Constants::MIME_TYPE_BUNDLE_EFFECT,
+                                    Constants::MIME_TYPE_BUNDLE_ITEM,
                                     Constants::MIME_TYPE_ASSETS});
 
     return types;
@@ -564,14 +569,40 @@ bool NavigatorTreeModel::dropMimeData(const QMimeData *mimeData,
             ModelNodeOperations::handleMaterialDrop(mimeData, targetNode);
         } else if (mimeData->hasFormat(Constants::MIME_TYPE_BUNDLE_TEXTURE)) {
             QByteArray filePath = mimeData->data(Constants::MIME_TYPE_BUNDLE_TEXTURE);
-            if (targetNode.metaInfo().isQtQuick3DModel())
+            if (targetNode.metaInfo().isQtQuick3DModel()) {
+                QmlDesignerPlugin::instance()->mainWidget()->showDockWidget("MaterialBrowser");
                 m_view->emitCustomNotification("apply_asset_to_model3D", {targetNode}, {filePath}); // To MaterialBrowserView
+            } else {
+                QString texturePath = QString::fromUtf8(mimeData->data(Constants::MIME_TYPE_BUNDLE_TEXTURE));
+                NodeAbstractProperty targetProperty;
+
+                const QModelIndex rowModelIndex = dropModelIndex.sibling(dropModelIndex.row(), 0);
+                int targetRowNumber = rowNumber;
+                bool foundTarget = findTargetProperty(rowModelIndex, this, &targetProperty, &targetRowNumber);
+                if (foundTarget) {
+                    bool moveNodesAfter = false;
+
+                    m_view->executeInTransaction(__FUNCTION__, [&] {
+                        m_createTextures->execute(QStringList{texturePath},
+                                                 AddTextureMode::Image,
+                                                 Utils3D::active3DSceneId(m_view->model()));
+                        QString textureName = Utils::FilePath::fromString(texturePath).fileName();
+                        QString textureAbsolutePath = DocumentManager::currentResourcePath()
+                                                        .pathAppended("images/" + textureName).toString();
+                        ModelNodeOperations::handleItemLibraryImageDrop(textureAbsolutePath,
+                                                                        targetProperty,
+                                                                        modelNodeForIndex(
+                                                                            rowModelIndex),
+                                                                        moveNodesAfter);
+                    });
+                }
+            }
         } else if (mimeData->hasFormat(Constants::MIME_TYPE_BUNDLE_MATERIAL)) {
             if (targetNode.isValid())
                 m_view->emitCustomNotification("drop_bundle_material", {targetNode}); // To ContentLibraryView
-        } else if (mimeData->hasFormat(Constants::MIME_TYPE_BUNDLE_EFFECT)) {
+        } else if (mimeData->hasFormat(Constants::MIME_TYPE_BUNDLE_ITEM)) {
             if (targetNode.isValid())
-                m_view->emitCustomNotification("drop_bundle_effect", {targetNode}); // To ContentLibraryView
+                m_view->emitCustomNotification("drop_bundle_item", {targetNode}); // To ContentLibraryView
         } else if (mimeData->hasFormat(Constants::MIME_TYPE_ASSETS)) {
             const QStringList assetsPaths = QString::fromUtf8(mimeData->data(Constants::MIME_TYPE_ASSETS)).split(',');
             NodeAbstractProperty targetProperty;
@@ -704,7 +735,7 @@ void NavigatorTreeModel::handleItemLibraryItemDrop(const QMimeData *mimeData, in
     const ItemLibraryEntry itemLibraryEntry =
         createItemLibraryEntryFromMimeData(mimeData->data(Constants::MIME_TYPE_ITEM_LIBRARY_INFO));
 
-    const NodeHints hints = NodeHints::fromItemLibraryEntry(itemLibraryEntry);
+    const NodeHints hints = NodeHints::fromItemLibraryEntry(itemLibraryEntry, m_view->model());
 
     const QString targetPropertyName = hints.forceNonDefaultProperty();
 
@@ -796,8 +827,10 @@ void NavigatorTreeModel::handleItemLibraryItemDrop(const QMimeData *mimeData, in
                 moveNodesInteractive(targetProperty, newModelNodeList, targetRowNumber);
             }
 
-            if (newQmlObjectNode.isValid())
+            if (newQmlObjectNode.isValid()) {
                 m_view->setSelectedModelNode(newQmlObjectNode.modelNode());
+                m_view->emitCustomNotification("item_library_created_by_drop", {newQmlObjectNode});
+            }
         }
     }
 }
@@ -933,11 +966,11 @@ bool NavigatorTreeModel::setData(const QModelIndex &index, const QVariant &value
     if (index.column() == ColumnType::Alias && role == Qt::CheckStateRole) {
         m_view->handleChangedExport(modelNode, value.toInt() != 0);
     } else if (index.column() == ColumnType::Visibility && role == Qt::CheckStateRole) {
-        if (m_view->isPartOfMaterialLibrary(modelNode))
+        if (Utils3D::isPartOfMaterialLibrary(modelNode) || QmlItemNode(modelNode).isEffectItem())
             return false;
         QmlVisualNode(modelNode).setVisibilityOverride(value.toInt() == 0);
     } else if (index.column() == ColumnType::Lock && role == Qt::CheckStateRole) {
-        if (m_view->isPartOfMaterialLibrary(modelNode))
+        if (Utils3D::isPartOfMaterialLibrary(modelNode))
             return false;
         modelNode.setLocked(value.toInt() != 0);
     }
@@ -968,9 +1001,8 @@ static QList<ModelNode> collectParents(const QList<ModelNode> &modelNodes)
 
 QList<QPersistentModelIndex> NavigatorTreeModel::nodesToPersistentIndex(const QList<ModelNode> &modelNodes)
 {
-    return ::Utils::transform(modelNodes, [this](const ModelNode &modelNode) {
-        return QPersistentModelIndex(indexForModelNode(modelNode));
-    });
+    return ::Utils::transform<QList<QPersistentModelIndex>>(
+        modelNodes, std::bind_front(&NavigatorTreeModel::indexForModelNode, this));
 }
 
 void NavigatorTreeModel::notifyModelNodesRemoved(const QList<ModelNode> &modelNodes)

@@ -1,27 +1,28 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
+#include "clangdsettings.h"
 #include "cppautocompleter.h"
 #include "cppcodemodelinspectordialog.h"
 #include "cppcodemodelsettings.h"
-#include "cppcodemodelsettingspage.h"
 #include "cppcodestylesettingspage.h"
 #include "cppeditorconstants.h"
 #include "cppeditordocument.h"
 #include "cppeditortr.h"
 #include "cppeditorwidget.h"
 #include "cppfilesettingspage.h"
+#include "cpphighlighter.h"
 #include "cppincludehierarchy.h"
 #include "cppheadersource.h"
 #include "cppmodelmanager.h"
 #include "cppoutline.h"
 #include "cppprojectupdater.h"
-#include "cppquickfixes.h"
-#include "cppquickfixprojectsettingswidget.h"
-#include "cppquickfixsettingspage.h"
 #include "cpptoolsreuse.h"
 #include "cpptoolssettings.h"
 #include "cpptypehierarchy.h"
+#include "quickfixes/cppquickfix.h"
+#include "quickfixes/cppquickfixprojectsettingswidget.h"
+#include "quickfixes/cppquickfixsettingspage.h"
 #include "resourcepreviewhoverhandler.h"
 
 #ifdef WITH_TESTS
@@ -29,14 +30,11 @@
 #include "cppcodegen_test.h"
 #include "cppcompletion_test.h"
 #include "cppdoxygen_test.h"
-#include "cpphighlighter.h"
 #include "cppincludehierarchy_test.h"
-#include "cppinsertvirtualmethods.h"
 #include "cpplocalsymbols_test.h"
 #include "cpplocatorfilter_test.h"
 #include "cppmodelmanager_test.h"
 #include "cpppointerdeclarationformatter_test.h"
-#include "cppquickfix_test.h"
 #include "cpprenaming_test.h"
 #include "cppsourceprocessor_test.h"
 #include "cppuseselections_test.h"
@@ -70,12 +68,13 @@
 #include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/projectmanager.h>
 #include <projectexplorer/projecttree.h>
+#include <projectexplorer/rawprojectpart.h>
 
 #include <texteditor/colorpreviewhoverhandler.h>
 #include <texteditor/snippets/snippetprovider.h>
 #include <texteditor/texteditor.h>
-#include <texteditor/texteditoractionhandler.h>
 #include <texteditor/texteditorconstants.h>
+#include <texteditor/texteditorsettings.h>
 
 #include <utils/algorithm.h>
 #include <utils/fileutils.h>
@@ -138,13 +137,14 @@ public:
         setCodeFoldingSupported(true);
         setParenthesesMatchingEnabled(true);
 
-        setEditorActionHandlers(TextEditorActionHandler::Format
-                                | TextEditorActionHandler::UnCommentSelection
-                                | TextEditorActionHandler::UnCollapseAll
-                                | TextEditorActionHandler::FollowSymbolUnderCursor
-                                | TextEditorActionHandler::FollowTypeUnderCursor
-                                | TextEditorActionHandler::RenameSymbol
-                                | TextEditorActionHandler::FindUsage);
+        setOptionalActionMask(OptionalActions::Format
+                                | OptionalActions::UnCommentSelection
+                                | OptionalActions::UnCollapseAll
+                                | OptionalActions::FollowSymbolUnderCursor
+                                | OptionalActions::FollowTypeUnderCursor
+                                | OptionalActions::RenameSymbol
+                                | OptionalActions::TypeHierarchy
+                                | OptionalActions::FindUsage);
     }
 };
 
@@ -155,12 +155,9 @@ class CppEditorPluginPrivate : public QObject
 public:
     void onTaskStarted(Utils::Id type);
     void onAllTasksFinished(Utils::Id type);
-    void inspectCppCodeModel();
 
     QAction *m_reparseExternallyChangedFiles = nullptr;
     QAction *m_findRefsCategorizedAction = nullptr;
-
-    QPointer<CppCodeModelInspectorDialog> m_cppCodeModelInspectorDialog;
 
     CppEditorFactory m_cppEditorFactory;
 
@@ -176,7 +173,7 @@ class CppEditorPlugin final : public ExtensionSystem::IPlugin
 public:
     ~CppEditorPlugin() final
     {
-        destroyCppQuickFixes();
+        destroyCppQuickFixFactories();
         delete d;
         d = nullptr;
     }
@@ -196,12 +193,46 @@ private:
     CppEditorPluginPrivate *d = nullptr;
 };
 
+QFuture<QTextDocument *> highlightCode(const QString &code, const QString &mimeType)
+{
+    QTextDocument *document = new QTextDocument;
+    document->setPlainText(code);
+
+    std::shared_ptr<QPromise<QTextDocument *>> promise
+        = std::make_shared<QPromise<QTextDocument *>>();
+
+    promise->start();
+
+    CppHighlighter *highlighter = new CppHighlighter(document);
+
+    QObject::connect(highlighter, &CppHighlighter::finished, document, [document, promise]() {
+        promise->addResult(document);
+        promise->finish();
+    });
+
+    QFutureWatcher<QTextDocument *> *watcher = new QFutureWatcher<QTextDocument *>(document);
+    QObject::connect(watcher, &QFutureWatcher<QTextDocument *>::canceled, document, [document]() {
+        document->deleteLater();
+    });
+    watcher->setFuture(promise->future());
+
+    highlighter->setParent(document);
+    highlighter->setFontSettings(TextEditorSettings::fontSettings());
+    highlighter->setMimeType(mimeType);
+    highlighter->rehighlight();
+
+    return promise->future();
+}
+
 void CppEditorPlugin::initialize()
 {
     d = new CppEditorPluginPrivate;
 
     setupCppQuickFixSettings();
-    setupCppCodeModelSettings();
+    setupCppCodeModelSettingsPage();
+    provideCppSettingsRetriever([](const Project *p) {
+        return CppCodeModelSettings::settingsForProject(p).toMap();
+    });
     setupCppOutline();
     setupCppCodeStyleSettings();
     setupCppProjectUpdater();
@@ -210,7 +241,7 @@ void CppEditorPlugin::initialize()
 
     setupMenus();
     registerVariables();
-    createCppQuickFixes();
+    createCppQuickFixFactories();
     registerTests();
 
     SnippetProvider::registerGroup(Constants::CPP_SNIPPETS_GROUP_ID, Tr::tr("C++", "SnippetProvider"),
@@ -220,12 +251,24 @@ void CppEditorPlugin::initialize()
             d, &CppEditorPluginPrivate::onTaskStarted);
     connect(ProgressManager::instance(), &ProgressManager::allTasksFinished,
             d, &CppEditorPluginPrivate::onAllTasksFinished);
+
+    auto oldHighlighter = Utils::Text::codeHighlighter();
+    Utils::Text::setCodeHighlighter(
+        [oldHighlighter](const QString &code, const QString &mimeType) -> QFuture<QTextDocument *> {
+            if (mimeType == "text/x-c++src" || mimeType == "text/x-c++hdr"
+                || mimeType == "text/x-csrc" || mimeType == "text/x-chdr") {
+                return highlightCode(code, mimeType);
+            }
+
+            return oldHighlighter(code, mimeType);
+        });
 }
 
 void CppEditorPlugin::extensionsInitialized()
 {
     setupCppQuickFixProjectPanel();
-    setupCppFileSettings();
+    setupCppFileSettings(*this);
+    setupCppCodeModelProjectSettingsPanel();
 
     if (CppModelManager::isClangCodeModelActive()) {
         setupClangdProjectSettingsPanel();
@@ -294,7 +337,7 @@ void CppEditorPlugin::setupMenus()
     inspectCppCodeModel.setText(Tr::tr("Inspect C++ Code Model..."));
     inspectCppCodeModel.setDefaultKeySequence(Tr::tr("Meta+Shift+F12"), Tr::tr("Ctrl+Shift+F12"));
     inspectCppCodeModel.addToContainer(Core::Constants::M_TOOLS_DEBUG);
-    inspectCppCodeModel.addOnTriggered(d, &CppEditorPluginPrivate::inspectCppCodeModel);
+    inspectCppCodeModel.addOnTriggered(d, &Internal::inspectCppCodeModel);
 }
 
 void CppEditorPlugin::addPerSymbolActions()
@@ -348,9 +391,9 @@ void CppEditorPlugin::addPerSymbolActions()
     findRefsCategorized.addToContainers(menus, Constants::G_SYMBOL);
     findRefsCategorized.addOnTriggered(this, [] {
         if (const auto w = currentCppEditorWidget()) {
-            codeModelSettings()->setCategorizeFindReferences(true);
+            CppCodeModelSettings::setCategorizeFindReferences(true);
             w->findUsages();
-            codeModelSettings()->setCategorizeFindReferences(false);
+            CppCodeModelSettings::setCategorizeFindReferences(false);
         }
     });
 
@@ -358,6 +401,7 @@ void CppEditorPlugin::addPerSymbolActions()
 
     setupCppTypeHierarchy();
 
+    addSymbolActionToMenus(TextEditor::Constants::OPEN_TYPE_HIERARCHY);
     addSymbolActionToMenus(TextEditor::Constants::OPEN_CALL_HIERARCHY);
 
     // Refactoring sub-menu
@@ -484,11 +528,11 @@ void CppEditorPlugin::registerVariables()
 
 void CppEditorPlugin::registerTests()
 {
+    registerHighlighterTests(*this);
 #ifdef WITH_TESTS
     addTest<CodegenTest>();
     addTest<CompilerOptionsBuilderTest>();
     addTest<CompletionTest>();
-    addTest<CppHighlighterTest>();
     addTest<FunctionUtilsTest>();
     addTest<HeaderPathFilterTest>();
     addTestCreator(createCppHeaderSourceTest);
@@ -508,8 +552,6 @@ void CppEditorPlugin::registerTests()
     addTest<Tests::FileAndTokenActionsTest>();
     addTest<Tests::FollowSymbolTest>();
     addTest<Tests::IncludeHierarchyTest>();
-    addTest<Tests::InsertVirtualMethodsTest>();
-    addTest<Tests::QuickfixTest>();
     addTest<Tests::GlobalRenamingTest>();
     addTest<Tests::SelectionsTest>();
 #endif
@@ -530,17 +572,6 @@ void CppEditorPluginPrivate::onAllTasksFinished(Id type)
         ActionManager::command(TextEditor::Constants::FIND_USAGES)->action()->setEnabled(true);
         ActionManager::command(TextEditor::Constants::RENAME_SYMBOL)->action()->setEnabled(true);
         m_reparseExternallyChangedFiles->setEnabled(true);
-    }
-}
-
-void CppEditorPluginPrivate::inspectCppCodeModel()
-{
-    if (m_cppCodeModelInspectorDialog) {
-        ICore::raiseWindow(m_cppCodeModelInspectorDialog);
-    } else {
-        m_cppCodeModelInspectorDialog = new CppCodeModelInspectorDialog(ICore::dialogParent());
-        ICore::registerWindow(m_cppCodeModelInspectorDialog, Context("CppEditor.Inspector"));
-        m_cppCodeModelInspectorDialog->show();
     }
 }
 
