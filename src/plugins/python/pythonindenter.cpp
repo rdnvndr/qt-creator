@@ -41,6 +41,10 @@ private:
                   const TextEditor::TabSettings &tabSettings,
                   int cursorPositionInEditor = -1) override;
 
+    void autoIndent(const QTextCursor &cursor,
+                    const TextEditor::TabSettings &tabSettings,
+                    int cursorPositionInEditor = -1) { }
+                  
     bool isElectricLine(const QString &line) const;
     int getIndentDiff(const QString &previousLine,
                       const TextEditor::TabSettings &tabSettings) const;
