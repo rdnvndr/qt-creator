@@ -169,14 +169,14 @@ void PythonBuildSystem::triggerParsing()
 
     const FilePath python = static_cast<PythonBuildConfiguration *>(buildConfiguration())->python();
     const FilePath projectFile = projectFilePath();
-    const QString displayName = projectFile.relativePathFromDir(projectDirectory()).toUserOutput();
+    const QString displayName = projectFilePath().fileName();
     newRoot->addNestedNode(
         std::make_unique<PythonFileNode>(projectFile, displayName, FileType::Project));
 
     bool hasQmlFiles = false;
 
     for (const FileEntry &entry : std::as_const(m_files)) {
-        const QString displayName = entry.filePath.relativePathFromDir(projectDirectory()).toUserOutput();
+        const QString displayName = entry.filePath.fileName();
         const FileType fileType = getFileType(entry.filePath);
 
         hasQmlFiles |= fileType == FileType::QML;

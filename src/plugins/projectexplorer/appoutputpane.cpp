@@ -43,6 +43,8 @@
 #include <QSpinBox>
 #include <QTabBar>
 #include <QTabWidget>
+#include <QStackedWidget>
+#include <QComboBox>
 #include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -78,48 +80,6 @@ static QString msgAttachDebuggerTooltip(const QString &handleDescription = QStri
            Tr::tr("Attach debugger to %1").arg(handleDescription);
 }
 
-class TabWidget : public QTabWidget
-{
-public:
-    TabWidget(QWidget *parent = nullptr);
-
-private:
-    bool eventFilter(QObject *object, QEvent *event) override;
-    int m_tabIndexForMiddleClick = -1;
-};
-
-TabWidget::TabWidget(QWidget *parent)
-    : QTabWidget(parent)
-{
-    tabBar()->installEventFilter(this);
-    setContextMenuPolicy(Qt::CustomContextMenu);
-}
-
-bool TabWidget::eventFilter(QObject *object, QEvent *event)
-{
-    if (object == tabBar()) {
-        if (event->type() == QEvent::MouseButtonPress) {
-            auto *me = static_cast<QMouseEvent *>(event);
-            if (me->button() == Qt::MiddleButton) {
-                m_tabIndexForMiddleClick = tabBar()->tabAt(me->pos());
-                event->accept();
-                return true;
-            }
-        } else if (event->type() == QEvent::MouseButtonRelease) {
-            auto *me = static_cast<QMouseEvent *>(event);
-            if (me->button() == Qt::MiddleButton) {
-                int tab = tabBar()->tabAt(me->pos());
-                if (tab != -1 && tab == m_tabIndexForMiddleClick)
-                    emit tabCloseRequested(tab);
-                m_tabIndexForMiddleClick = -1;
-                event->accept();
-                return true;
-            }
-        }
-    }
-    return QTabWidget::eventFilter(object, event);
-}
-
 AppOutputPane::RunControlTab::RunControlTab(RunControl *runControl, Core::OutputWindow *w) :
     runControl(runControl), window(w)
 {
@@ -130,16 +90,15 @@ AppOutputPane::RunControlTab::RunControlTab(RunControl *runControl, Core::Output
 }
 
 AppOutputPane::AppOutputPane() :
-    m_tabWidget(new TabWidget),
+    m_tabWidget(new QStackedWidget),
     m_stopAction(new QAction(Tr::tr("Stop"), this)),
-    m_closeCurrentTabAction(new QAction(Tr::tr("Close Tab"), this)),
-    m_closeAllTabsAction(new QAction(Tr::tr("Close All Tabs"), this)),
-    m_closeOtherTabsAction(new QAction(Tr::tr("Close Other Tabs"), this)),
     m_reRunButton(new QToolButton),
     m_stopButton(new QToolButton),
     m_attachButton(new QToolButton),
     m_settingsButton(new QToolButton),
     m_formatterWidget(new QWidget),
+    m_tabComboBox(new QComboBox),
+    m_closeCurrentTabButton(new QToolButton),
     m_handler(new ShowOutputTaskHandler(this,
         Tr::tr("Show &App Output"),
         Tr::tr("Show the output that generated this issue in Application Output."),
@@ -196,18 +155,23 @@ AppOutputPane::AppOutputPane() :
     formatterWidgetsLayout->setContentsMargins(QMargins());
     m_formatterWidget->setLayout(formatterWidgetsLayout);
 
-    // Spacer (?)
+    m_closeCurrentTabButton->setToolTip(Tr::tr("Close output configuration."));
+    m_closeCurrentTabButton->setIcon(Utils::Icons::CLOSE_TOOLBAR.icon());
+    m_closeCurrentTabButton->setEnabled(false);
+    connect(m_closeCurrentTabButton, &QToolButton::clicked, this, [this] {
+        closeTab(m_tabWidget->currentIndex());
+    });
+    
+    m_tabComboBox->setSizeAdjustPolicy(QComboBox::AdjustToContents);
+    m_tabComboBox->addItem(Tr::tr("<no configuration>"));
+    connect(m_tabComboBox, &QComboBox::activated,
+            m_tabWidget, &QStackedWidget::setCurrentIndex);
+    connect(m_tabWidget, &QStackedWidget::currentChanged,
+            m_tabComboBox, &QComboBox::setCurrentIndex);
 
-    m_tabWidget->setDocumentMode(true);
-    m_tabWidget->setTabsClosable(true);
-    m_tabWidget->setMovable(true);
-    connect(m_tabWidget, &QTabWidget::tabCloseRequested,
-            this, [this](int index) { closeTab(index); });
 
-    connect(m_tabWidget, &QTabWidget::currentChanged,
+    connect(m_tabWidget, &QStackedWidget::currentChanged,
             this, &AppOutputPane::tabChanged);
-    connect(m_tabWidget, &QWidget::customContextMenuRequested,
-            this, &AppOutputPane::contextMenuRequested);
 
     connect(SessionManager::instance(), &SessionManager::aboutToUnloadSession,
             this, &AppOutputPane::aboutToUnloadSession);
@@ -276,9 +240,7 @@ const AppOutputPane::RunControlTab *AppOutputPane::tabFor(const QWidget *outputW
 void AppOutputPane::updateCloseActions()
 {
     const int tabCount = m_tabWidget->count();
-    m_closeCurrentTabAction->setEnabled(tabCount > 0);
-    m_closeAllTabsAction->setEnabled(tabCount > 0);
-    m_closeOtherTabsAction->setEnabled(tabCount > 1);
+    m_closeCurrentTabButton->setEnabled(tabCount > 0);
 }
 
 bool AppOutputPane::aboutToClose() const
@@ -300,8 +262,8 @@ QWidget *AppOutputPane::outputWidget(QWidget *)
 
 QList<QWidget *> AppOutputPane::toolBarWidgets() const
 {
-    return QList<QWidget *>{m_reRunButton, m_stopButton, m_attachButton, m_settingsButton,
-                m_formatterWidget} + IOutputPane::toolBarWidgets();
+    return QList<QWidget *>{m_tabComboBox, m_closeCurrentTabButton, m_reRunButton, m_stopButton, 
+      m_attachButton, m_settingsButton, m_formatterWidget} + IOutputPane::toolBarWidgets();
 }
 
 void AppOutputPane::clearContents()
@@ -414,7 +376,7 @@ void AppOutputPane::createNewOutputWindow(RunControl *rc)
         // Update the title.
         const int tabIndex = m_tabWidget->indexOf(tab->window);
         QTC_ASSERT(tabIndex != -1, return);
-        m_tabWidget->setTabText(tabIndex, rc->displayName());
+        m_tabComboBox->setItemText(tabIndex, rc->displayName());
         updateOutputFileName(tabIndex, rc);
 
         tab->window->scrollToBottom();
@@ -456,7 +418,12 @@ void AppOutputPane::createNewOutputWindow(RunControl *rc)
             ow, updateBehaviorSettings);
 
     m_runControlTabs.push_back(RunControlTab(rc, ow));
-    m_tabWidget->addTab(ow, rc->displayName());
+    if (m_tabWidget->count() > 0) {
+        m_tabComboBox->addItem(rc->displayName());
+    } else {
+        m_tabComboBox->setItemText(0, rc->displayName());
+    }
+    m_tabWidget->addWidget(ow);
     updateOutputFileName(m_tabWidget->count() - 1, rc);
     qCDebug(appOutputLog) << "AppOutputPane::createNewOutputWindow: Adding tab for" << rc;
     updateCloseActions();
@@ -669,7 +636,13 @@ void AppOutputPane::closeTab(int tabIndex, CloseTabMode closeTabMode)
             return;
     }
 
-    m_tabWidget->removeTab(tabIndex);
+    m_tabWidget->removeWidget(tabWidget);
+    if (m_tabWidget->count() > 0) {
+        m_tabComboBox->removeItem(tabIndex);
+    } else {
+        m_tabComboBox->setItemText(tabIndex, Tr::tr("<no configuration>"));
+        m_tabComboBox->setCurrentIndex(0);
+    }
     delete window;
 
     Utils::erase(m_runControlTabs, [runControl](const RunControlTab &t) {
@@ -763,27 +736,6 @@ void AppOutputPane::tabChanged(int i)
         enableButtons(controlTab->runControl);
     } else {
         enableDefaultButtons();
-    }
-}
-
-void AppOutputPane::contextMenuRequested(const QPoint &pos)
-{
-    const int index = m_tabWidget->tabBar()->tabAt(pos);
-    const QList<QAction *> actions = {m_closeCurrentTabAction, m_closeAllTabsAction, m_closeOtherTabsAction};
-    QAction *action = QMenu::exec(actions, m_tabWidget->mapToGlobal(pos), nullptr, m_tabWidget);
-    if (action == m_closeAllTabsAction) {
-        closeTabs(AppOutputPane::CloseTabWithPrompt);
-        return;
-    }
-
-    const int currentIdx = index != -1 ? index : m_tabWidget->currentIndex();
-    if (action == m_closeCurrentTabAction) {
-        if (currentIdx >= 0)
-            closeTab(currentIdx);
-    } else if (action == m_closeOtherTabsAction) {
-        for (int t = m_tabWidget->count() - 1; t >= 0; t--)
-            if (t != currentIdx)
-                closeTab(t);
     }
 }
 

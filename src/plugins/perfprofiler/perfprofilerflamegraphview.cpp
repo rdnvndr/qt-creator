@@ -44,7 +44,7 @@ PerfProfilerFlameGraphView::~PerfProfilerFlameGraphView()
 
 void PerfProfilerFlameGraphView::selectByTypeId(int typeId)
 {
-    rootObject()->setProperty("selectedTypeId", typeId);
+//    rootObject()->setProperty("selectedTypeId", typeId);
 }
 
 void PerfProfilerFlameGraphView::resetRoot()

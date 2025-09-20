@@ -116,8 +116,10 @@ QString DoxygenGenerator::generate(QTextCursor cursor, DeclarationAST *decl)
     assignCommentOffset(cursor);
 
     QString comment;
-    writeNewLine(&comment);
-    writeContinuation(&comment);
+    if (m_style != CppStyleA) {
+        writeNewLine(&comment);
+        writeContinuation(&comment);
+    }
 
     if (decltr
             && decltr->core_declarator
@@ -226,7 +228,7 @@ QString DoxygenGenerator::commandSpelling(Command command)
 void DoxygenGenerator::writeEnd(QString *comment) const
 {
     if (m_style == CppStyleA)
-        comment->append(QLatin1String("///"));
+        comment->chop(1);
     else if (m_style == CppStyleB)
         comment->append(QLatin1String("//!"));
     else

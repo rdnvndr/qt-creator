@@ -1133,6 +1133,11 @@ void PlainTextEditPrivate::adjustScrollbars()
     }
     if (!centerOnScroll)
         vmax -= qMax(0, viewport()->height());
+    else
+    {
+        QFontMetrics fm(doc->defaultFont());
+        vmax -=  fm.height();
+    }
     QSizeF documentSize = documentLayout->documentSize();
     vbar()->setRange(0, qMax(0, vmax));
     vbar()->setPageStep(viewport()->height());

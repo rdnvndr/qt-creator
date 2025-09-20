@@ -545,14 +545,12 @@ void FlatModel::addFolderNode(WrapperNode *parent, FolderNode *folderNode, QSet<
         if (m_filterDisabledFiles && !node->isEnabled())
             continue;
         if (FolderNode *subFolderNode = node->asFolderNode()) {
-            bool isHidden = m_filterProjects && !subFolderNode->showInSimpleTree();
+            bool isHidden = m_filterProjects && (!subFolderNode->showInSimpleTree() || 
+                subFolderNode->displayName() == "..");
             if (m_hideSourceGroups) {
                 if (subFolderNode->isVirtualFolderType()) {
-                    auto vnode = static_cast<VirtualFolderNode *>(subFolderNode);
-                    if (vnode->isSourcesOrHeaders()) {
                         isHidden = true;
                         hasHiddenSourcesOrHeaders = true;
-                    }
                 }
             }
             if (!isHidden && Utils::insert(*seen, subFolderNode)) {
@@ -564,7 +562,8 @@ void FlatModel::addFolderNode(WrapperNode *parent, FolderNode *folderNode, QSet<
                 addFolderNode(parent, subFolderNode, seen);
             }
         } else if (FileNode *fileNode = node->asFileNode()) {
-            if (Utils::insert(*seen, fileNode))
+            if (!(m_filterProjects && fileNode->fileType() == FileType::Project) && 
+                Utils::insert(*seen, fileNode))
                 parent->appendChild(new WrapperNode(fileNode));
         }
     }
