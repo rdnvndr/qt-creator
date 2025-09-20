@@ -26,34 +26,44 @@ const char *NoSourcePathForInvalidSourceId::what() const noexcept
     return "You cannot get a file path for an invalid file path id!";
 }
 
-NoSourceContextPathForInvalidSourceContextId::NoSourceContextPathForInvalidSourceContextId()
+NoDirectoryPathForInvalidDirectoryPathId::NoDirectoryPathForInvalidDirectoryPathId()
 {
-    category().threadEvent("NoSourceContextPathForInvalidSourceContextId");
+    category().threadEvent("NoDirectoryPathForInvalidDirectoryPathId");
 }
 
-const char *NoSourceContextPathForInvalidSourceContextId::what() const noexcept
+const char *NoDirectoryPathForInvalidDirectoryPathId::what() const noexcept
 {
     return "You cannot get a directory path for an invalid directory path id!";
 }
 
-SourceContextIdDoesNotExists::SourceContextIdDoesNotExists()
+DirectoryPathIdDoesNotExists::DirectoryPathIdDoesNotExists()
 {
-    category().threadEvent("SourceContextIdDoesNotExists");
+    category().threadEvent("DirectoryPathIdDoesNotExists");
 }
 
-const char *SourceContextIdDoesNotExists::what() const noexcept
+const char *DirectoryPathIdDoesNotExists::what() const noexcept
 {
     return "The source context id does not exist in the database!";
 }
 
-SourceNameIdDoesNotExists::SourceNameIdDoesNotExists()
+FileNameIdDoesNotExists::FileNameIdDoesNotExists()
 {
-    category().threadEvent("SourceNameIdDoesNotExists");
+    category().threadEvent("FileNameIdDoesNotExists");
 }
 
-const char *SourceNameIdDoesNotExists::what() const noexcept
+const char *FileNameIdDoesNotExists::what() const noexcept
 {
     return "The source id does not exist in the database!";
+}
+
+NoFileNameForInvalidFileNameId::NoFileNameForInvalidFileNameId()
+{
+    category().threadEvent("NoFileNameForInvalidFileNameId");
+}
+
+const char *NoFileNameForInvalidFileNameId::what() const noexcept
+{
+    return "You cannot get a source name for an invalid source name id!";
 }
 
 } // namespace QmlDesigner

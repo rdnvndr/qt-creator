@@ -59,10 +59,10 @@
                 "*.svgz",
                 "*.tif",
                 "*.tiff",
-                "*.ttf",
                 "*.webp",
                 "*.xbm",
-                "*.xpm"
+                "*.xpm",
+                "*.tga"
             ],
             "mcuProperties": {
             },
@@ -213,6 +213,11 @@
     },
     "mcu": {
         "config": {
+            "ResourceStorageSections": {
+                "majorVersion": 1,
+                "minorVersion": 1,
+                "name": "QulResources"
+            },
             "defaultFontFamily": "Roboto",
             "fontEngine": "Spark",
             "maxResourceCacheSize": [

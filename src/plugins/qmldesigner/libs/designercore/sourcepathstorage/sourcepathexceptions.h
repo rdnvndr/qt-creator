@@ -27,24 +27,31 @@ public:
     const char *what() const noexcept override;
 };
 
-class QMLDESIGNERCORE_EXPORT NoSourceContextPathForInvalidSourceContextId : public SourcePathError
+class QMLDESIGNERCORE_EXPORT NoFileNameForInvalidFileNameId : public SourcePathError
 {
 public:
-    NoSourceContextPathForInvalidSourceContextId();
+    NoFileNameForInvalidFileNameId();
     const char *what() const noexcept override;
 };
 
-class QMLDESIGNERCORE_EXPORT SourceContextIdDoesNotExists : public SourcePathError
+class QMLDESIGNERCORE_EXPORT NoDirectoryPathForInvalidDirectoryPathId : public SourcePathError
 {
 public:
-    SourceContextIdDoesNotExists();
+    NoDirectoryPathForInvalidDirectoryPathId();
     const char *what() const noexcept override;
 };
 
-class QMLDESIGNERCORE_EXPORT SourceNameIdDoesNotExists : public SourcePathError
+class QMLDESIGNERCORE_EXPORT DirectoryPathIdDoesNotExists : public SourcePathError
 {
 public:
-    SourceNameIdDoesNotExists();
+    DirectoryPathIdDoesNotExists();
+    const char *what() const noexcept override;
+};
+
+class QMLDESIGNERCORE_EXPORT FileNameIdDoesNotExists : public SourcePathError
+{
+public:
+    FileNameIdDoesNotExists();
     const char *what() const noexcept override;
 };
 

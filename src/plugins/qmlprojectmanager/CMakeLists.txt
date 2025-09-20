@@ -2,7 +2,7 @@ add_qtc_plugin(QmlProjectManager
   CONDITION TARGET Qt::QuickWidgets
   PLUGIN_CLASS QmlProjectPlugin
   DEPENDS QmlJS Qt::QuickWidgets Utils
-  PLUGIN_DEPENDS Core ProjectExplorer QtSupport QmlDesignerBase
+  PLUGIN_DEPENDS Core ProjectExplorer QtSupport QmlDesignerBase QmlJSEditor
   SOURCES
     qmlprojectgen/qmlprojectgenerator.cpp qmlprojectgen/qmlprojectgenerator.h
     qmlprojectgen/templates.qrc
@@ -43,10 +43,12 @@ extend_qtc_plugin(QmlProjectManager
   SOURCES_PREFIX ${CMAKE_CURRENT_LIST_DIR}/qmlprojectexporter
   SOURCES
       pythongenerator.cpp pythongenerator.h
+      resourcegenerator.cpp resourcegenerator.h
       cmakegenerator.cpp cmakegenerator.h
       cmakewriter.cpp cmakewriter.h
       cmakewriterv0.cpp cmakewriterv0.h
       cmakewriterv1.cpp cmakewriterv1.h
+      cmakewriterlib.cpp cmakewriterlib.h
       exporter.cpp exporter.h
       filegenerator.cpp filegenerator.h
       filetypes.cpp filetypes.h

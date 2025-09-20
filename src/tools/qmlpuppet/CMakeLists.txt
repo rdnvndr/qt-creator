@@ -97,7 +97,7 @@ extend_qtc_executable(qmlpuppet
 )
 
 find_package(Qt6 COMPONENTS Quick3DAssetImport QUIET)
-if (QT_VERSION VERSION_GREATER_EQUAL 6.9.0)
+if (Qt6_VERSION VERSION_GREATER_EQUAL 6.9.0)
   find_package(Qt6 COMPONENTS Quick3DAssetImportPrivate QUIET)
 endif()
 extend_qtc_executable(qmlpuppet
@@ -108,7 +108,7 @@ extend_qtc_executable(qmlpuppet
 )
 
 find_package(Qt6 COMPONENTS Quick3DParticles QUIET)
-if (QT_VERSION VERSION_GREATER_EQUAL 6.9.0)
+if (Qt6_VERSION VERSION_GREATER_EQUAL 6.9.0)
   find_package(Qt6 COMPONENTS Quick3DParticlesPrivate QUIET)
 endif()
 extend_qtc_executable(qmlpuppet
@@ -120,7 +120,7 @@ extend_qtc_executable(qmlpuppet
 
 # Quick3DAssetUtils optionally depends on QuickTimeline, so find also it to make the CI build work
 find_package(Qt6 COMPONENTS Quick3DAssetUtils QuickTimeline QUIET)
-if (QT_VERSION VERSION_GREATER_EQUAL 6.9.0)
+if (Qt6_VERSION VERSION_GREATER_EQUAL 6.9.0)
   find_package(Qt6 COMPONENTS Quick3DAssetUtilsPrivate QUIET)
 endif()
 extend_qtc_executable(qmlpuppet
@@ -134,6 +134,12 @@ extend_qtc_executable(qmlpuppet
   SOURCES_PREFIX qmlpuppet/import3d
   SOURCES
     import3d.cpp import3d.h
+)
+
+extend_qtc_executable(qmlpuppet
+  SOURCES_PREFIX qmlpuppet/renderer
+  SOURCES
+    qmlrenderer.cpp qmlrenderer.h
 )
 
 extend_qtc_executable(qmlpuppet
@@ -171,7 +177,6 @@ extend_qtc_executable(qmlpuppet
     qt5capturepreviewnodeinstanceserver.cpp qt5capturepreviewnodeinstanceserver.h
     nodeinstanceserverdispatcher.cpp nodeinstanceserverdispatcher.h
     capturenodeinstanceserverdispatcher.cpp capturenodeinstanceserverdispatcher.h
-    qt5captureimagenodeinstanceserver.cpp qt5captureimagenodeinstanceserver.h
     viewconfig.cpp viewconfig.h
     animationdriver.cpp animationdriver.h
 )

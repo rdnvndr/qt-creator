@@ -40,11 +40,11 @@ QString filterInvalidLettersAndCapitalizeAfterInvalidLetter(QStringView id)
     return result;
 }
 
-void trimNonAsciifromFront(QString &str)
+void trimNonAsciifromFront(QString &text)
 {
-    static const QRegularExpression lettersRegEx("[a-zA-Z]");
-    const int letterIndex = str.indexOf(lettersRegEx);
-    str = letterIndex == -1 ? QString() : str.sliced(letterIndex).trimmed();
+    auto found = std::ranges::find_if(text, isAsciiLetter);
+
+    text.erase(text.begin(), found);
 }
 
 void lowerFirstLetter(QString &id)
@@ -59,10 +59,16 @@ void capitalizeFirstLetter(QString &str)
         str.front() = str.front().toUpper();
 }
 
-void prependUnderscoreIfBanned(QString &id)
+void prependUnderscoreIfDigit(QString &id)
 {
-    if (id.size() && (id.front().isDigit() || ModelUtils::isBannedQmlId(id)))
+    if (id.size() && id.front().isDigit())
         id.prepend(u'_');
+}
+
+void appendDigitIfBannedQmlId(QString &id)
+{
+    if (ModelUtils::isBannedQmlId(id))
+        id.append(u'1');
 }
 
 QString toValidId(QStringView id)
@@ -71,7 +77,9 @@ QString toValidId(QStringView id)
 
     lowerFirstLetter(validId);
 
-    prependUnderscoreIfBanned(validId);
+    prependUnderscoreIfDigit(validId);
+
+    appendDigitIfBannedQmlId(validId);
 
     return validId;
 }

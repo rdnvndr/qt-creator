@@ -39,6 +39,8 @@ inline constexpr char resetPositionCommandId[] = "ResetPosition";
 inline constexpr char copyFormatCommandId[] = "CopyFormat";
 inline constexpr char applyFormatCommandId[] = "ApplyFormat";
 inline constexpr char visiblityCommandId[] = "ToggleVisiblity";
+inline constexpr char isolateSelectionCommandId[] = "IsolateSelection";
+inline constexpr char showAllCommandId[] = "ShowAll";
 inline constexpr char anchorsFillCommandId[] = "AnchorsFill";
 inline constexpr char anchorsResetCommandId[] = "AnchorsReset";
 
@@ -48,6 +50,8 @@ inline constexpr char anchorParentTopCommandId[] = "AnchorParentTop";
 inline constexpr char anchorParentRightCommandId[] = "AnchorParentRight";
 inline constexpr char anchorParentBottomCommandId[] = "AnchorParentBottom";
 inline constexpr char anchorParentLeftCommandId[] = "AnchorParentLeft";
+inline constexpr char anchorParentVerticalCenterCommandId[] = "AnchorParentVerticalCenter";
+inline constexpr char anchorParentHorizontalCenterCommandId[] = "AnchorParentHorizontalCenter";
 
 inline constexpr char removePositionerCommandId[] = "RemovePositioner";
 inline constexpr char createFlowActionAreaCommandId[] = "CreateFlowActionArea";
@@ -68,6 +72,7 @@ inline constexpr char jumpToCodeCommandId[] = "JumpToCode";
 inline constexpr char mergeTemplateCommandId[] = "MergeTemplate";
 inline constexpr char goToImplementationCommandId[] = "GoToImplementation";
 inline constexpr char makeComponentCommandId[] = "MakeComponent";
+inline constexpr char extractComponentCommandId[] = "ExtractComponent";
 inline constexpr char importComponentCommandId[] = "ImportComponent";
 inline constexpr char exportComponentCommandId[] = "ExportComponent";
 inline constexpr char editMaterialCommandId[] = "EditMaterial";
@@ -140,7 +145,10 @@ inline constexpr char redoDisplayName[] = QT_TRANSLATE_NOOP("QmlDesignerContextM
 
 inline constexpr char visibilityDisplayName[] = QT_TRANSLATE_NOOP("QmlDesignerContextMenu",
                                                                   "Visibility");
-
+inline constexpr char isolateSelectionDisplayName[] = QT_TRANSLATE_NOOP("QmlDesignerContextMenu",
+                                                                  "Isolate Selection");
+inline constexpr char showAllDisplayName[] = QT_TRANSLATE_NOOP("QmlDesignerContextMenu",
+                                                               "Show All Nodes");
 inline constexpr char resetSizeDisplayName[] = QT_TRANSLATE_NOOP("QmlDesignerContextMenu",
                                                                  "Reset Size");
 inline constexpr char resetPositionDisplayName[] = QT_TRANSLATE_NOOP("QmlDesignerContextMenu",
@@ -160,14 +168,16 @@ inline constexpr char goToImplementationDisplayName[] = QT_TRANSLATE_NOOP("QmlDe
                                                                           "Go to Implementation");
 inline constexpr char makeComponentDisplayName[] = QT_TRANSLATE_NOOP("QmlDesignerContextMenu",
                                                                      "Create Component");
+inline constexpr char extractComponentDisplayName[] = QT_TRANSLATE_NOOP("QmlDesignerContextMenu",
+                                                                        "Extract Component");
 inline constexpr char editMaterialDisplayName[] = QT_TRANSLATE_NOOP("QmlDesignerContextMenu",
                                                                     "Edit Material");
 inline constexpr char addToContentLibraryDisplayName[] = QT_TRANSLATE_NOOP(
     "QmlDesignerContextMenu", "Add to Content Library");
 inline constexpr char importComponentDisplayName[] = QT_TRANSLATE_NOOP("QmlDesignerContextMenu",
-                                                                        "Import Component");
+                                                                        "Import Bundle");
 inline constexpr char exportComponentDisplayName[] = QT_TRANSLATE_NOOP("QmlDesignerContextMenu",
-                                                                        "Export Component");
+                                                                        "Export Bundle");
 inline constexpr char editAnnotationsDisplayName[] = QT_TRANSLATE_NOOP("QmlDesignerContextMenu",
                                                                        "Edit Annotations");
 inline constexpr char addMouseAreaFillDisplayName[] = QT_TRANSLATE_NOOP("QmlDesignerContextMenu",
@@ -180,7 +190,7 @@ inline constexpr char editInEffectComposerDisplayName[] = QT_TRANSLATE_NOOP("Qml
 inline constexpr char openSignalDialogDisplayName[] = QT_TRANSLATE_NOOP("QmlDesignerContextMenu",
                                                                         "Open Signal Dialog");
 inline constexpr char update3DAssetDisplayName[] = QT_TRANSLATE_NOOP("QmlDesignerContextMenu",
-                                                                     "Update 3D Asset");
+                                                                     "Reimport 3D Asset");
 
 inline constexpr char setIdDisplayName[] = QT_TRANSLATE_NOOP("QmlDesignerContextMenu", "Set Id");
 
@@ -206,6 +216,10 @@ inline constexpr char anchorParentBottomDisplayName[] = QT_TRANSLATE_NOOP("QmlDe
                                                                           "Bottom");
 inline constexpr char anchorParentLeftDisplayName[] = QT_TRANSLATE_NOOP("QmlDesignerContextMenu",
                                                                         "Left");
+inline constexpr char anchorParentVerticalCenterDisplayName[] = QT_TRANSLATE_NOOP(
+    "QmlDesignerContextMenu", "Vertical Center");
+inline constexpr char anchorParentHorizontalCenterDisplayName[] = QT_TRANSLATE_NOOP(
+    "QmlDesignerContextMenu", "Horizontal Center");
 
 inline constexpr char layoutColumnPositionerDisplayName[] = QT_TRANSLATE_NOOP(
     "QmlDesignerContextMenu", "Column Positioner");
@@ -260,6 +274,10 @@ inline constexpr char lowerToolTip[] = QT_TRANSLATE_NOOP("QmlDesignerContextMenu
 
 inline constexpr char resetSizeToolTip[] = QT_TRANSLATE_NOOP("QmlDesignerContextMenu",
                                                              "Reset size and use implicit size.");
+inline constexpr char isolateNodesToolTip[] = QT_TRANSLATE_NOOP("QmlDesignerContextMenu",
+                                                             "Show selected nodes only.");
+inline constexpr char showAllToolTip[] = QT_TRANSLATE_NOOP("QmlDesignerContextMenu",
+                                                                "Show all nodes.");
 inline constexpr char resetPositionTooltip[] = QT_TRANSLATE_NOOP(
     "QmlDesignerContextMenu", "Reset position and use implicit position.");
 inline constexpr char copyFormatTooltip[] = QT_TRANSLATE_NOOP("QmlDesignerContextMenu",
@@ -324,6 +342,8 @@ enum PrioritiesEnum : int {
     ResetView,
     Group,
     Visibility,
+    IsolateSelection,
+    ShowAllNodes,
     ShowBoundingRect,
     /******** Section *****************************/
     CustomActionsSection = 6000,

@@ -1,6 +1,6 @@
 if (IS_SUPPORTED_PROJECTSTORAGE_QT)
   find_package(Qt6 COMPONENTS QmlDomPrivate QmlCompiler REQUIRED)
-  if (QT_VERSION VERSION_GREATER_EQUAL 6.9.0)
+  if (Qt6_VERSION VERSION_GREATER_EQUAL 6.9.0)
     find_package(Qt6 COMPONENTS QmlCompilerPrivate REQUIRED)
   endif()
 endif()
@@ -49,16 +49,14 @@ extend_qtc_library(QmlDesignerCore
 )
 
 extend_qtc_library(QmlDesignerCore
-  CONDITION ENABLE_PROJECT_STORAGE_TRACING OR ENABLE_SOURCE_PATH_STORAGE_TRACING OR ENABLE_IMAGE_CACHE_TRACING OR ENABLE_MODEL_TRACING OR ENABLE_METAINFO_TRACING
+  CONDITION ENABLE_PROJECT_STORAGE_TRACING OR ENABLE_SOURCE_PATH_STORAGE_TRACING OR ENABLE_IMAGE_CACHE_TRACING OR ENABLE_MODEL_TRACING
   PUBLIC_DEPENDS Nanotrace
   PUBLIC_DEFINES
     ENABLE_QMLDESIGNER_TRACING
-  DEFINES
     $<$<BOOL:${ENABLE_PROJECT_STORAGE_TRACING}>:ENABLE_PROJECT_STORAGE_TRACING>
     $<$<BOOL:${ENABLE_SOURCE_PATH_STORAGE_TRACING}>:ENABLE_SOURCE_PATH_STORAGE_TRACING>
     $<$<BOOL:${ENABLE_IMAGE_CACHE_TRACING}>:ENABLE_IMAGE_CACHE_TRACING>
     $<$<BOOL:${ENABLE_MODEL_TRACING}>:ENABLE_MODEL_TRACING>
-    $<$<BOOL:${ENABLE_METAINFO_TRACING}>:ENABLE_METAINFO_TRACING>
 )
 
 extend_qtc_library(QmlDesignerCore
@@ -83,17 +81,15 @@ extend_qtc_library(QmlDesignerCore
   SOURCES
     exception.cpp
     invalidargumentexception.cpp
-    invalididexception.cpp
-    invalidmetainfoexception.cpp
-    invalidmodelnodeexception.cpp
-    invalidmodelstateexception.cpp
-    invalidpropertyexception.cpp
-    invalidqmlsourceexception.cpp
-    invalidreparentingexception.cpp
-    invalidslideindexexception.cpp
-    notimplementedexception.cpp
-    removebasestateexception.cpp
     rewritingexception.cpp
+)
+
+extend_qtc_library(QmlDesignerCore
+  CONDITION NOT USE_PROJECTSTORAGE
+  INCLUDES exceptions
+  SOURCES_PREFIX exceptions
+  SOURCES
+    invalidmetainfoexception.cpp
 )
 
 extend_qtc_library(QmlDesignerCore
@@ -166,6 +162,7 @@ extend_qtc_library(QmlDesignerCore
   SOURCES_PREFIX tracing
   SOURCES
     qmldesignertracing.cpp qmldesignertracing.h
+    qmldesignertracingsourcelocation.h
 )
 
 extend_qtc_library(QmlDesignerCore
@@ -189,6 +186,7 @@ extend_qtc_library(QmlDesignerCore
   CONDITION NOT USE_PROJECTSTORAGE
   SOURCES_PREFIX include
   SOURCES
+    invalidmetainfoexception.h
     itemlibraryinfo.h
     metainforeader.h
     subcomponentmanager.h
@@ -217,14 +215,6 @@ extend_qtc_library(QmlDesignerCore
     imagecacheauxiliarydata.h
     import.h
     invalidargumentexception.h
-    invalididexception.h
-    invalidmetainfoexception.h
-    invalidmodelnodeexception.h
-    invalidmodelstateexception.h
-    invalidpropertyexception.h
-    invalidqmlsourceexception.h
-    invalidreparentingexception.h
-    invalidslideindexexception.h
     iwidgetplugin.h
     mathutils.h
     modelfwd.h
@@ -236,7 +226,6 @@ extend_qtc_library(QmlDesignerCore
     nodelistproperty.h
     nodemetainfo.h
     nodeproperty.h
-    notimplementedexception.h
     objectpropertybinding.h
     projectstorageids.h
     propertybinding.h
@@ -247,7 +236,6 @@ extend_qtc_library(QmlDesignerCore
     qmldesignercorelib_exports.h
     qmldesignercorelib_global.h
     qmldesignercoreconstants.h
-    removebasestateexception.h
     rewritertransaction.h
     rewritingexception.h
     signalhandlerproperty.h
@@ -255,6 +243,8 @@ extend_qtc_library(QmlDesignerCore
     stringutils.h
     synchronousimagecache.h
     variantproperty.h
+    widgetregistration.h
+    widgetinfo.h
 )
 
 extend_qtc_library(QmlDesignerCore
@@ -404,6 +394,7 @@ extend_qtc_library(QmlDesignerCore
     projectstorageinfotypes.h
     projectstorageobserver.h
     projectstoragepathwatcher.h
+    projectstoragetriggerupdateinterface.h
     projectstoragepathwatcherinterface.h
     projectstoragepathwatchernotifierinterface.h
     projectstoragepathwatcher.h
@@ -413,7 +404,6 @@ extend_qtc_library(QmlDesignerCore
     projectstorageupdater.cpp projectstorageupdater.h
     projectstorage.cpp projectstorage.h
     projectstorageerrornotifierinterface.h
-    projectstorageerrornotifier.cpp projectstorageerrornotifier.h
     typeannotationreader.cpp typeannotationreader.h
     qmldocumentparserinterface.h
     qmltypesparserinterface.h

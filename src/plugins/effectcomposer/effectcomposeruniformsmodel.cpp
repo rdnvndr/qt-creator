@@ -68,10 +68,10 @@ bool EffectComposerUniformsModel::setData(const QModelIndex &index, const QVaria
             updatedValue = QUrl::fromLocalFile(path).toString();
 
         uniform->setValue(updatedValue);
-        g_propertyData.insert(uniform->name(), updatedValue);
+        g_propertyData()->insert(uniform->name(), updatedValue);
     } else {
         uniform->setValue(value);
-        g_propertyData.insert(uniform->name(), value);
+        g_propertyData()->insert(uniform->name(), value);
     }
 
     emit dataChanged(index, index, {role});
@@ -130,11 +130,15 @@ void EffectComposerUniformsModel::updateUniform(int uniformIndex, Uniform *unifo
     QTC_ASSERT(uniformIndex < m_uniforms.size() && uniformIndex >= 0, return);
 
     Uniform *oldUniform = m_uniforms.at(uniformIndex);
-    m_uniforms.replace(uniformIndex, uniform);
 
-    const QModelIndex idx = index(uniformIndex, 0);
-    static const QList<int> allRoles = roleNames().keys();
-    emit dataChanged(idx, idx, allRoles);
+    // Do full row remove + insert to make sure UI updates the type controls properly
+    beginRemoveRows({}, uniformIndex, uniformIndex);
+    m_uniforms.removeAt(uniformIndex);
+    endRemoveRows();
+
+    beginInsertRows({}, uniformIndex, uniformIndex);
+    m_uniforms.insert(uniformIndex, uniform);
+    endInsertRows();
 
     const QString &oldName = oldUniform->name();
     const QString &newName = uniform->name();

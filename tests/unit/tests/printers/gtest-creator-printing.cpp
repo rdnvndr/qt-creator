@@ -29,7 +29,7 @@
 #include <designsystem/dsconstants.h>
 
 namespace std {
-template <typename T> ostream &operator<<(ostream &out, const QVector<T> &vector)
+template <typename T> ostream &operator<<(ostream &out, const QList<T> &vector)
 {
     out << "[";
     copy(vector.cbegin(), vector.cend(), ostream_iterator<T>(out, ", "));
@@ -489,7 +489,7 @@ std::ostream &operator<<(std::ostream &out, const IdPaths &idPaths)
 
 std::ostream &operator<<(std::ostream &out, const WatcherEntry &entry)
 {
-    return out << "(" << entry.sourceId << ", " << entry.sourceContextId << ", " << entry.id << ", "
+    return out << "(" << entry.sourceId << ", " << entry.directoryPathId << ", " << entry.id << ", "
                << entry.lastModified << ")";
 }
 
@@ -598,11 +598,17 @@ std::ostream &operator<<(std::ostream &out, AuxiliaryDataType type)
     return out;
 }
 
+std::ostream &operator<<(std::ostream &out, SourceId sourceId)
+{
+    return out << "id=(" << sourceId.fileNameId().internalId() << ", "
+               << sourceId.directoryPathId().internalId() << ")";
+}
+
 namespace Cache {
 
-std::ostream &operator<<(std::ostream &out, const SourceContext &sourceContext)
+std::ostream &operator<<(std::ostream &out, const DirectoryPath &directoryPath)
 {
-    return out << "(" << sourceContext.id << ", " << sourceContext.value << ")";
+    return out << "(" << directoryPath.id << ", " << directoryPath.value << ")";
 }
 } // namespace Cache
 
@@ -709,6 +715,17 @@ std::ostream &operator<<(std::ostream &out, PropertyDeclarationTraits traits)
     return out << ")";
 }
 
+std::ostream &operator<<(std::ostream &out, IsInsideProject isInsideProject)
+{
+    switch (isInsideProject) {
+    case IsInsideProject::No:
+        return out << "IsInsideProject::No";
+    case IsInsideProject::Yes:
+        return out << "IsInsideProject::Yes";
+    }
+    return out;
+}
+
 std::ostream &operator<<(std::ostream &out, VersionNumber versionNumber)
 {
     return out << versionNumber.value;
@@ -740,7 +757,8 @@ std::ostream &operator<<(std::ostream &out, const Type &type)
 
 std::ostream &operator<<(std::ostream &out, const ExportedTypeName &name)
 {
-    return out << "(\"" << name.name << "\", " << name.moduleId << ", " << name.version << ")";
+    return out << "(\"" << name.name << "\", " << name.moduleId << ", " << name.version << ", "
+               << name.typeId << ")";
 }
 
 std::ostream &operator<<(std::ostream &out, const TypeHint &hint)
@@ -853,11 +871,11 @@ std::ostream &operator<<(std::ostream &out, const SynchronizationPackage &packag
                << ", updatedSourceIds: " << package.updatedSourceIds
                << ", fileStatuses: " << package.fileStatuses
                << ", updatedFileStatusSourceIds: " << package.updatedFileStatusSourceIds
-               << ", updatedDirectoryInfoSourceIds: " << package.updatedDirectoryInfoSourceIds
                << ", directoryInfos: " << package.directoryInfos
+               << ", updatedDirectoryInfoDirectoryIds: " << package.updatedDirectoryInfoDirectoryIds
                << ", propertyEditorQmlPaths: " << package.propertyEditorQmlPaths
                << ", updatedPropertyEditorQmlPathSourceIds: "
-               << package.updatedPropertyEditorQmlPathSourceIds
+               << package.updatedPropertyEditorQmlPathDirectoryIds
                << ", typeAnnotations: " << package.typeAnnotations
                << ", updatedTypeAnnotationSourceIds: " << package.updatedTypeAnnotationSourceIds
                << ")";
@@ -865,8 +883,8 @@ std::ostream &operator<<(std::ostream &out, const SynchronizationPackage &packag
 
 std::ostream &operator<<(std::ostream &out, const DirectoryInfo &data)
 {
-    return out << "(" << data.directorySourceId << ", " << data.sourceId << ", " << data.moduleId
-               << ", " << data.fileType << ")";
+    return out << "(" << data.directoryId << ", " << data.sourceId << ", " << data.moduleId << ", "
+               << data.fileType << ")";
 }
 
 std::ostream &operator<<(std::ostream &out, IsQualified isQualified)
@@ -963,7 +981,8 @@ std::ostream &operator<<(std::ostream &out, const ModuleExportedImport &import)
 
 std::ostream &operator<<(std::ostream &out, const PropertyEditorQmlPath &path)
 {
-    return out << "(" << path.moduleId << ", " << path.typeName << ", " << path.pathId << ")";
+    return out << "(" << path.moduleId << ", " << path.typeName << ", " << path.pathId << ", "
+               << path.directoryId << ", " << path.typeId << ")";
 }
 
 std::ostream &operator<<(std::ostream &out, const TypeAnnotation &annotation)

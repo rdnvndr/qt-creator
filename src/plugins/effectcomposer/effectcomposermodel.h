@@ -29,6 +29,7 @@ class Process;
 namespace EffectComposer {
 
 class CompositionNode;
+class EffectComposerNodesModel;
 class EffectShadersCodeEditor;
 struct ShaderEditorData;
 class Uniform;
@@ -67,6 +68,8 @@ class EffectComposerModel : public QAbstractListModel
 
 public:
     EffectComposerModel(QObject *parent = nullptr);
+
+    EffectComposerNodesModel *effectComposerNodesModel() const;
 
     QHash<int, QByteArray> roleNames() const override;
     int rowCount(const QModelIndex & parent = QModelIndex()) const override;
@@ -129,6 +132,10 @@ public:
 
     Q_INVOKABLE void openCodeEditor(int idx);
     Q_INVOKABLE void openMainCodeEditor();
+
+    Q_INVOKABLE bool canAddNodeToLibrary(int idx);
+    Q_INVOKABLE bool nodeExists(int idx);
+    Q_INVOKABLE QString addNodeToLibraryNode(int idx);
 
     Q_INVOKABLE QVariant valueLimit(const QString &type, bool max) const;
 
@@ -221,8 +228,14 @@ private:
     QString getCustomShaderVaryings(bool outState);
     QString generateVertexShader(bool includeUniforms = true);
     QString generateFragmentShader(bool includeUniforms = true);
-    void handleQsbProcessExit(Utils::Process *qsbProcess, const QString &shader, bool preview,
-                              int bakeCounter);
+    void handleQsbProcessExit(
+        Utils::Process *qsbProcess,
+        const QString &shader,
+        bool preview,
+        int bakeCounter);
+
+    void copyProcessTargetToEffectDir(Utils::Process *qsbProcess);
+
     QString stripFileFromURL(const QString &urlString) const;
     QString getQmlEffectString();
 
@@ -231,6 +244,7 @@ private:
     void updateCustomUniforms();
     void initShaderDir();
     void bakeShaders();
+    void writeComposition(const QString &name);
     void saveResources(const QString &name);
     void openNearestAvailableCodeEditor(int idx);
 
@@ -258,6 +272,7 @@ private:
     bool writeToFile(const QByteArray &buf, const QString &filename, FileType fileType);
 
     QList<CompositionNode *> m_nodes;
+    QPointer<EffectComposerNodesModel> m_effectComposerNodesModel;
 
     int m_selectedIndex = -1;
     int m_codeEditorIndex = -1;
@@ -302,6 +317,8 @@ private:
     QList<QUrl> m_customPreviewImages;
     int m_currentBakeCounter = 0;
     bool m_advancedMode = false;
+    bool m_qsbFirstProcessIsDone = false;
+    int m_pendingSaveBakeCounter = -1;
 
     const QRegularExpression m_spaceReg = QRegularExpression("\\s+");
 };

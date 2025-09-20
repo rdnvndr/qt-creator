@@ -3,6 +3,7 @@
 #pragma once
 
 #include <bundlehelper.h>
+#include <import.h>
 #include <itemlibraryentry.h>
 #include <modelnode.h>
 
@@ -57,6 +58,9 @@ public:
     QMenu *backgroundColorMenu() const;
     void showBackgroundColorMenu(bool show, const QPoint &pos);
 
+    QMenu *viewportPresetsMenu() const;
+    void showViewportPresetsMenu(bool show, const QPoint &pos);
+
     void showContextMenu(const QPoint &pos, const ModelNode &modelNode, const QVector3D &pos3d);
     void updateCreateSubMenu(const QList<ItemLibraryDetails> &entriesList);
 
@@ -90,6 +94,7 @@ private:
     Core::IContext *m_context = nullptr;
     QPointer<QMenu> m_visibilityTogglesMenu;
     QPointer<QMenu> m_backgroundColorMenu;
+    QPointer<QMenu> m_viewportPresetsMenu;
     QPointer<QMenu> m_contextMenu;
     QPointer<QAction> m_bakeLightsAction;
     QPointer<QAction> m_editComponentAction;
@@ -111,6 +116,7 @@ private:
     QPointer<QMenu> m_createSubMenu;
     ModelNode m_contextMenuTarget;
     QVector3D m_contextMenuPos3d;
+    QHash<QString, Import> m_nameToImport;
     QHash<QString, ItemLibraryEntry> m_nameToEntry;
     ItemLibraryEntry m_draggedEntry;
     QHash<QAction *, Core::Command *> m_actionToCommandHash;

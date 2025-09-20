@@ -7,8 +7,12 @@
 #include <projectexplorer/projectexplorer.h>
 
 #include <qmldesigner/qmldesignerplugin.h>
+#include <qmldesignertr.h>
 
 #include <devicesharing/device.h>
+
+#include <coreplugin/icore.h>
+#include <utils/checkablemessagebox.h>
 
 namespace QmlDesigner {
 
@@ -171,6 +175,9 @@ RunManager::RunManager(DeviceShare::DeviceManager &deviceManager)
             [this](ProjectExplorer::RunControl *runControl) {
                 qCDebug(runManagerLog) << "Run Control started.";
 
+                if (m_currentTargetId != runControl->runMode())
+                    selectRunTarget(runControl->runMode());
+
                 m_runningTargets.append(QPointer(runControl));
 
                 setState(TargetState::Running);
@@ -273,6 +280,11 @@ int RunManager::currentTargetIndex() const
     return runTargetIndex(m_currentTargetId);
 }
 
+RunManager::TargetType RunManager::currentTargetType() const
+{
+    return m_currentTargetType;
+}
+
 bool RunManager::selectRunTarget(Utils::Id id)
 {
     if (m_currentTargetId == id)
@@ -287,6 +299,20 @@ bool RunManager::selectRunTarget(Utils::Id id)
 
     m_currentTargetId = id;
     emit runTargetChanged();
+
+    TargetType type;
+
+    if (m_currentTargetId == ProjectExplorer::Constants::NORMAL_RUN_MODE)
+        type = TargetType::Normal;
+    else if (m_currentTargetId == ProjectExplorer::Constants::QML_PREVIEW_RUN_MODE)
+        type = TargetType::LivePreview;
+    else
+        type = TargetType::Android;
+
+    if (m_currentTargetType != type) {
+        m_currentTargetType = type;
+        emit runTargetTypeChanged();
+    }
 
     return true;
 }
@@ -374,7 +400,7 @@ void RunManager::handleError(const QString &deviceId, const QString &error)
 
 QString NormalTarget::name() const
 {
-    return "Default";
+    return Tr::tr("Run App");
 }
 
 Utils::Id NormalTarget::id() const
@@ -394,7 +420,7 @@ void NormalTarget::run() const
 
 QString LivePreviewTarget::name() const
 {
-    return "Live Preview";
+    return Tr::tr("Live Preview");
 }
 
 Utils::Id LivePreviewTarget::id() const
@@ -441,6 +467,13 @@ void AndroidTarget::run() const
 {
     if (!ProjectExplorer::ProjectExplorerPlugin::saveModifiedFiles())
         return;
+
+    Utils::CheckableDecider decider(Utils::Key("WarnAboutQtUIViewerStyleIncompatiblity"));
+    Utils::CheckableMessageBox::information(
+        Tr::tr("Style Incompatibility"),
+        Tr::tr("Qt UI Viewer only supports the default Android style (Material). "
+               "Different styles may not be displayed correctly."),
+        decider);
 
     deviceManager()->runProject(m_deviceId);
 }

@@ -1082,15 +1082,12 @@ bool isNotInLayout(const SelectionContext &context)
 
 bool selectionCanBeLayouted(const SelectionContext &context)
 {
-    return  multiSelection(context)
-            && selectionHasSameParentAndInBaseState(context)
-            && inBaseState(context)
-            && isNotInLayout(context);
+    return multiSelection(context) && selectionHasSameParentAndInBaseState(context);
 }
 
 bool selectionCanBeLayoutedAndQtQuickLayoutPossible(const SelectionContext &context)
 {
-    return selectionCanBeLayouted(context) && context.view()->majorQtQuickVersion() > 1;
+    return selectionCanBeLayouted(context);
 }
 
 bool selectionCanBeLayoutedAndQtQuickLayoutPossibleAndNotMCU(const SelectionContext &context)
@@ -1113,6 +1110,12 @@ bool singleSelectionItemIsNotAnchoredAndSingleSelectionNotRoot(const SelectionCo
 {
     return singleSelectionItemIsNotAnchored(context)
             && singleSelectionNotRoot(context);
+}
+
+bool singleSelectionItemHasNoFillAnchorAndSingleSelectionNotRoot(const SelectionContext &context)
+{
+    return singleSelection(context) && !singleSelectionItemHasAnchor(context, AnchorLineFill)
+           && singleSelectionNotRoot(context);
 }
 
 bool selectionNotEmptyAndHasXorYProperty(const SelectionContext &context)
@@ -1512,6 +1515,28 @@ void DesignerActionManager::createDefaultDesignerActions()
                           &resetSize,
                           &selectionNotEmptyAndHasWidthOrHeightProperty));
 
+    addDesignerAction(new ModelNodeAction(
+                          isolateSelectionCommandId,
+                          isolateSelectionDisplayName,
+                          contextIcon(DesignerIcons::VisibilityIcon), // TODO: placeholder icon
+                          isolateNodesToolTip,
+                          rootCategory,
+                          QKeySequence("shift+h"),
+                          Priorities::IsolateSelection,
+                          &isolateSelectedNodes,
+                          &selectionNot2D3DMix));
+
+    addDesignerAction(new ModelNodeAction(
+                          showAllCommandId,
+                          showAllDisplayName,
+                          contextIcon(DesignerIcons::VisibilityIcon), // TODO: placeholder icon
+                          showAllToolTip,
+                          rootCategory,
+                          QKeySequence("alt+h"),
+                          Priorities::ShowAllNodes,
+                          &showAllNodes,
+                          &always));
+
     addDesignerAction(new SeparatorDesignerAction(editCategory, 40));
 
     addDesignerAction(new VisiblityModelNodeAction(
@@ -1531,15 +1556,15 @@ void DesignerActionManager::createDefaultDesignerActions()
                                       &anchorsMenuEnabled));
 
     addDesignerAction(new ModelNodeAction(
-                          anchorsFillCommandId,
-                          anchorsFillDisplayName,
-                          Utils::Icon({{":/qmldesigner/images/anchor_fill.png", Utils::Theme::IconsBaseColor}}).icon(),
-                          anchorsFillToolTip,
-                          anchorsCategory,
-                          QKeySequence(QKeySequence("shift+f")),
-                          2,
-                          &anchorsFill,
-                          &singleSelectionItemIsNotAnchoredAndSingleSelectionNotRoot));
+        anchorsFillCommandId,
+        anchorsFillDisplayName,
+        Utils::Icon({{":/qmldesigner/images/anchor_fill.png", Utils::Theme::IconsBaseColor}}).icon(),
+        anchorsFillToolTip,
+        anchorsCategory,
+        QKeySequence(QKeySequence("shift+f")),
+        2,
+        &anchorsFill,
+        &singleSelectionItemHasNoFillAnchorAndSingleSelectionNotRoot));
 
     addDesignerAction(new ModelNodeAction(
                           anchorsResetCommandId,
@@ -1618,6 +1643,28 @@ void DesignerActionManager::createDefaultDesignerActions()
                           QKeySequence(),
                           24,
                           AnchorLineRight));
+
+    addDesignerAction(new SeparatorDesignerAction(anchorsCategory, 30));
+
+    addDesignerAction(
+        new ParentAnchorAction(anchorParentVerticalCenterCommandId,
+                               anchorParentVerticalCenterDisplayName,
+                               createResetIcon({":/qmldesigner/images/anchor_vertical.png"}),
+                               {},
+                               anchorsCategory,
+                               QKeySequence(),
+                               31,
+                               AnchorLineVerticalCenter));
+
+    addDesignerAction(
+        new ParentAnchorAction(anchorParentHorizontalCenterCommandId,
+                               anchorParentHorizontalCenterDisplayName,
+                               createResetIcon({":/qmldesigner/images/anchor_horizontal.png"}),
+                               {},
+                               anchorsCategory,
+                               QKeySequence(),
+                               32,
+                               AnchorLineHorizontalCenter));
 
     addDesignerAction(new ActionGroup(
                           positionerCategoryDisplayName,
@@ -1911,7 +1958,7 @@ void DesignerActionManager::createDefaultDesignerActions()
                                                      contextIcon(DesignerIcons::EnterComponentIcon),
                                                      rootCategory,
                                                      QKeySequence(Qt::Key_F2),
-                                                     Priorities::ComponentActions + 4,
+                                                     Priorities::ComponentActions + 5,
                                                      &goIntoComponentOperation,
                                                      &selectionIsEditableComponent));
 
@@ -1981,12 +2028,23 @@ void DesignerActionManager::createDefaultDesignerActions()
                           &singleSelection));
 
     addDesignerAction(new ModelNodeContextMenuAction(
+        extractComponentCommandId,
+        extractComponentDisplayName,
+        contextIcon(DesignerIcons::MakeComponentIcon),
+        rootCategory,
+        QKeySequence(),
+        Priorities::ComponentActions + 3,
+        &extractComponent,
+        &singleSelection,
+        &isFileComponent));
+
+    addDesignerAction(new ModelNodeContextMenuAction(
         editInEffectComposerCommandId,
         editInEffectComposerDisplayName,
         contextIcon(DesignerIcons::EditIcon),
         rootCategory,
         QKeySequence(),
-        Priorities::ComponentActions + 3,
+        Priorities::ComponentActions + 4,
         &editInEffectComposer,
         &SelectionContextFunctors::always, // If action is visible, it is usable
         &singleSelectionEffectComposer));
@@ -2008,10 +2066,10 @@ void DesignerActionManager::createDefaultDesignerActions()
         QKeySequence(),
         Priorities::ExportComponent,
         [&](const SelectionContext &context) {
-            m_bundleHelper->exportBundle(context.currentSingleSelectedNode());
+            m_bundleHelper->exportBundle(context.selectedModelNodes());
         },
-        &is3DNode,
-        &is3DNode));
+        &are3DNodes,
+        &are3DNodes));
 
     addDesignerAction(new ModelNodeContextMenuAction(
                           editMaterialCommandId,

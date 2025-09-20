@@ -5,6 +5,7 @@
 
 #include "effectcomposertr.h"
 #include "effectsautocomplete.h"
+#include "syntaxhighlighter.h"
 
 #include <qmldesigner/textmodifier/indentingtexteditormodifier.h>
 
@@ -85,14 +86,14 @@ void EffectCodeEditorWidget::setEditorTextWithIndentation(const QString &text)
     auto *doc = document();
     doc->setPlainText(text);
 
-    if (Utils::Result result = textDocument()->save(); !result)
+    if (Utils::Result<> result = textDocument()->save(); !result)
         qWarning() << __FUNCTION__ << result.error();
 
     // We don't need to indent an empty text but is also needed for safer text.length()-1 below
     if (text.isEmpty())
         return;
 
-    auto modifier = std::make_unique<QmlDesigner::IndentingTextEditModifier>(doc, QTextCursor{doc});
+    auto modifier = std::make_unique<QmlDesigner::IndentingTextEditModifier>(doc);
     modifier->indent(0, text.length()-1);
 }
 
@@ -162,6 +163,7 @@ EffectCodeEditorFactory::EffectCodeEditorFactory()
     setCommentDefinition(Utils::CommentDefinition::CppStyle);
     setParenthesesMatchingEnabled(true);
     setCodeFoldingSupported(true);
+    setSyntaxHighlighterCreator([] { return new SyntaxHighlighter; });
 
     addHoverHandler(new QmlJSEditor::QmlJSHoverHandler);
     setCompletionAssistProvider(new EffectsCompeletionAssistProvider);
@@ -169,8 +171,6 @@ EffectCodeEditorFactory::EffectCodeEditorFactory()
 
 void EffectCodeEditorFactory::decorateEditor(TextEditor::TextEditorWidget *editor)
 {
-    editor->textDocument()->resetSyntaxHighlighter(
-        [] { return new QmlJSEditor::QmlJSHighlighter(); });
     editor->textDocument()->setIndenter(QmlJSEditor::createQmlJsIndenter(
                                             editor->textDocument()->document()));
 

@@ -49,7 +49,7 @@ Project {
 } // namespace Constants
 
 namespace {
-Q_LOGGING_CATEGORY(log, "QmlProjectManager.McuModuleProjectItem")
+Q_LOGGING_CATEGORY(log, "QmlProjectManager.McuModuleProjectItem", QtCriticalMsg)
 
 bool isValidQmlProjectPath(const Utils::FilePath &path)
 {
@@ -62,15 +62,15 @@ QJsonObject parseQmlProjectFile(const Utils::FilePath &qmlproject)
     auto qmlprojectPathStr = qmlproject.toFSPathString();
 
     if (!qmlproject.exists()) {
-        qCCritical(log) << "qmlproject file not found:" << qmlprojectPathStr;
+        qCWarning(log) << "qmlproject file not found:" << qmlprojectPathStr;
         return {};
     }
 
     QmlJS::SimpleReader reader;
     QmlJS::SimpleReaderNode::Ptr rootNode = reader.readFile(qmlprojectPathStr);
     if (!reader.errors().isEmpty() || !rootNode->isValid()) {
-        qCCritical(log) << "Unable to parse:" << qmlprojectPathStr;
-        qCCritical(log) << reader.errors();
+        qCWarning(log) << "Unable to parse:" << qmlprojectPathStr;
+        qCWarning(log) << reader.errors();
         return {};
     }
 
@@ -164,7 +164,7 @@ std::optional<McuModuleProjectItem> McuModuleProjectItem::fromQmldirModule(const
         return {};
     }
     auto qmlFiles = Utils::transform<QStringList>(qmlDirEntries, [qmldirParent](const Utils::FilePath &path) {
-        return path.relativePathFrom(qmldirParent).toFSPathString();
+        return path.relativePathFromDir(qmldirParent).toFSPathString();
     });
 
     // build mcu module project
@@ -233,7 +233,7 @@ bool McuModuleProjectItem::saveQmlProjectFile() const
         }
     }
 
-    QTC_ASSERT_EXPECTED(path.writeFileContents(jsonToQmlproject()), return false);
+    QTC_ASSERT_RESULT(path.writeFileContents(jsonToQmlproject()), return false);
     return true;
 }
 

@@ -139,6 +139,7 @@ struct CompoundPropertyMetaInfo;
 enum class FlagIs : unsigned int;
 template<typename NameType>
 class BasicAuxiliaryDataKey;
+class SourceId;
 
 void PrintTo(const ThemeProperty &prop, std::ostream *os);
 std::ostream &operator<<(std::ostream &out, const ThemeProperty &prop);
@@ -162,11 +163,12 @@ std::ostream &operator<<(std::ostream &out, FlagIs flagIs);
 std::ostream &operator<<(std::ostream &out, const BasicAuxiliaryDataKey<Utils::SmallStringView> &key);
 std::ostream &operator<<(std::ostream &out, const BasicAuxiliaryDataKey<Utils::SmallString> &key);
 std::ostream &operator<<(std::ostream &out, AuxiliaryDataType type);
+std::ostream &operator<<(std::ostream &out, SourceId sourceId);
 
 namespace Cache {
-class SourceContext;
+class DirectoryPath;
 
-std::ostream &operator<<(std::ostream &out, const SourceContext &sourceContext);
+std::ostream &operator<<(std::ostream &out, const DirectoryPath &directoryPath);
 } // namespace Cache
 
 namespace ImageCache {
@@ -175,13 +177,14 @@ class FontCollectorSizeAuxiliaryData;
 class FontCollectorSizesAuxiliaryData;
 
 std::ostream &operator<<(std::ostream &out, const LibraryIconAuxiliaryData &date);
-std::ostream &operator<<(std::ostream &out, const FontCollectorSizeAuxiliaryData &sourceContext);
-std::ostream &operator<<(std::ostream &out, const FontCollectorSizesAuxiliaryData &sourceContext);
+std::ostream &operator<<(std::ostream &out, const FontCollectorSizeAuxiliaryData &directoryPath);
+std::ostream &operator<<(std::ostream &out, const FontCollectorSizesAuxiliaryData &directoryPath);
 } // namespace ImageCache
 
 namespace Storage {
 enum class PropertyDeclarationTraits : int;
 enum class TypeTraitsKind : unsigned int;
+enum class IsInsideProject : char;
 struct TypeTraits;
 class Import;
 class Version;
@@ -190,6 +193,7 @@ class VersionNumber;
 std::ostream &operator<<(std::ostream &out, PropertyDeclarationTraits traits);
 std::ostream &operator<<(std::ostream &out, TypeTraitsKind kind);
 std::ostream &operator<<(std::ostream &out, TypeTraits traits);
+std::ostream &operator<<(std::ostream &out, IsInsideProject isInsideProject);
 std::ostream &operator<<(std::ostream &out, const Import &import);
 std::ostream &operator<<(std::ostream &out, VersionNumber versionNumber);
 std::ostream &operator<<(std::ostream &out, Version version);

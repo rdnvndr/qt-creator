@@ -7,6 +7,7 @@
 #include <modelnode.h>
 
 #include <QStringList>
+#include <QTimer>
 
 QT_BEGIN_NAMESPACE
 class QStandardItemModel;
@@ -39,7 +40,7 @@ public:
     void nodeReparented(const ModelNode &node, const NodeAbstractProperty &newPropertyParent,
                         const NodeAbstractProperty &oldPropertyParent,
                         AbstractView::PropertyChangeFlags propertyChange) override;
-    void nodeIdChanged(const ModelNode& node, const QString& newId, const QString& oldId) override;
+    void nodeIdChanged(const ModelNode &node, const QString &newId, const QString &oldId) override;
     void nodeSourceChanged(const ModelNode &node, const QString &newNodeSource) override;
     void customNotification(const AbstractView *view, const QString &identifier, const QList<ModelNode> &nodeList, const QList<QVariant> &data) override;
     void updateImport3DSupport(const QVariantMap &supportMap) override;
@@ -71,6 +72,7 @@ private: //functions
     QString descriptionForNode(const ModelNode &node) const;
     void updateDescription(const ModelNode &node);
     bool isSubComponentNode(const ModelNode &node) const;
+    void ensureMatLibTriggered();
 
 private:
     QStandardItemModel *m_standardItemModel;
@@ -78,6 +80,7 @@ private:
 
     QVariantMap m_importableExtensions3DMap;
     QVariantMap m_importOptions3DMap;
+    QTimer m_ensureMatLibTimer;
 };
 
 } // namespace QmlDesigner

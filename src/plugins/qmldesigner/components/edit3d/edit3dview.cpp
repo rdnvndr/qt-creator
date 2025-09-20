@@ -17,7 +17,6 @@
 #include <designericons.h>
 #include <designersettings.h>
 #include <designmodewidget.h>
-#include <materialutils.h>
 #include <metainfo.h>
 #include <modelutils.h>
 #include <nodeabstractproperty.h>
@@ -33,7 +32,8 @@
 #include <variantproperty.h>
 
 #include <coreplugin/icore.h>
-#include <coreplugin/messagebox.h>
+
+#include <qmldesignerutils/asset.h>
 
 #include <projectexplorer/target.h>
 #include <projectexplorer/kit.h>
@@ -73,7 +73,7 @@ Edit3DView::Edit3DView(ExternalDependenciesInterface &externalDependencies)
     connect(&m_compressionTimer, &QTimer::timeout, this, &Edit3DView::handleEntriesChanged);
 
     for (int i = 0; i < 4; ++i)
-        m_splitToolStates.append({0, false});
+        m_viewportToolStates.append({0, false, i == 0});
 }
 
 void Edit3DView::createEdit3DWidget()
@@ -120,16 +120,15 @@ void Edit3DView::renderImage3DChanged(const QImage &img)
 
 void Edit3DView::updateActiveScene3D(const QVariantMap &sceneState)
 {
-    const QString activeSplitKey = QStringLiteral("activeSplit");
-    if (sceneState.contains(activeSplitKey)) {
-        m_activeSplit = sceneState[activeSplitKey].toInt();
-
-        // If the sceneState contained just activeSplit key, then this is simply an active split
+    const QString activeViewportKey = QStringLiteral("activeViewport");
+    if (sceneState.contains(activeViewportKey)) {
+        setActiveViewport(sceneState[activeViewportKey].toInt());
+        // If the sceneState contained just activeViewport key, then this is simply an active Viewport
         // change rather than entire active scene change, and we don't need to process further.
         if (sceneState.size() == 1)
             return;
     } else {
-        m_activeSplit = 0;
+        setActiveViewport(0);
     }
 
     const QString sceneKey              = QStringLiteral("sceneInstanceId");
@@ -147,7 +146,7 @@ void Edit3DView::updateActiveScene3D(const QVariantMap &sceneState)
     const QString particleEmitterKey    = QStringLiteral("showParticleEmitter");
     const QString particlesPlayKey      = QStringLiteral("particlePlay");
     const QString syncEnvBgKey          = QStringLiteral("syncEnvBackground");
-    const QString splitViewKey          = QStringLiteral("splitView");
+    const QString activePresetKey       = QStringLiteral("activePreset");
     const QString matOverrideKey        = QStringLiteral("matOverride");
     const QString showWireframeKey      = QStringLiteral("showWireframe");
 
@@ -175,10 +174,16 @@ void Edit3DView::updateActiveScene3D(const QVariantMap &sceneState)
         m_moveToolAction->action()->setChecked(true);
     }
 
-    if (sceneState.contains(perspectiveKey))
-        m_cameraModeAction->action()->setChecked(sceneState[perspectiveKey].toBool());
-    else
-        m_cameraModeAction->action()->setChecked(false);
+    if (sceneState.contains(perspectiveKey)) {
+        const QVariantList showList = sceneState[perspectiveKey].toList();
+        for (int i = 0; i < 4; ++i)
+            m_viewportToolStates[i].isPerspective = i < showList.size() ? showList[i].toBool() : i == 0;
+    } else {
+        for (int i = 0; i < 4; ++i) {
+            ViewportToolState &state = m_viewportToolStates[i];
+            state.isPerspective = i == 0;
+        }
+    }
 
     if (sceneState.contains(orientationKey))
         m_orientationModeAction->action()->setChecked(sceneState[orientationKey].toBool());
@@ -230,26 +235,21 @@ void Edit3DView::updateActiveScene3D(const QVariantMap &sceneState)
     else
         m_particlesPlayAction->action()->setChecked(true);
 
-    if (sceneState.contains(splitViewKey))
-        m_splitViewAction->action()->setChecked(sceneState[splitViewKey].toBool());
-    else
-        m_splitViewAction->action()->setChecked(false);
-
     if (sceneState.contains(matOverrideKey)) {
         const QVariantList overrides = sceneState[matOverrideKey].toList();
         for (int i = 0; i < 4; ++i)
-            m_splitToolStates[i].matOverride = i < overrides.size() ? overrides[i].toInt() : 0;
+            m_viewportToolStates[i].matOverride = i < overrides.size() ? overrides[i].toInt() : 0;
     } else {
-        for (SplitToolState &state : m_splitToolStates)
+        for (ViewportToolState &state : m_viewportToolStates)
             state.matOverride = 0;
     }
 
     if (sceneState.contains(showWireframeKey)) {
         const QVariantList showList = sceneState[showWireframeKey].toList();
         for (int i = 0; i < 4; ++i)
-            m_splitToolStates[i].showWireframe = i < showList.size() ? showList[i].toBool() : false;
+            m_viewportToolStates[i].showWireframe = i < showList.size() ? showList[i].toBool() : false;
     } else {
-        for (SplitToolState &state : m_splitToolStates)
+        for (ViewportToolState &state : m_viewportToolStates)
             state.showWireframe = false;
     }
 
@@ -267,6 +267,12 @@ void Edit3DView::updateActiveScene3D(const QVariantMap &sceneState)
     syncCameraSpeedToNewView();
 
     storeCurrentSceneEnvironment();
+}
+
+void Edit3DView::setActiveViewport(int viewport)
+{
+    m_activeViewport = viewport;
+    m_cameraModeAction->action()->setChecked(m_viewportToolStates[m_activeViewport].isPerspective);
 }
 
 void Edit3DView::modelAttached(Model *model)
@@ -305,7 +311,9 @@ void Edit3DView::modelAttached(Model *model)
         if (QtSupport::QtVersion *qtVer = QtSupport::QtKitAspect::qtVersion(target->kit()))
             m_isBakingLightsSupported = qtVer->qtVersion() >= QVersionNumber(6, 5, 0);
     }
-#ifndef QDS_USE_PROJECTSTORAGE
+#ifdef QDS_USE_PROJECTSTORAGE
+    onEntriesChanged();
+#else
     connect(model->metaInfo().itemLibraryInfo(),
             &ItemLibraryInfo::entriesChanged,
             this,
@@ -333,15 +341,14 @@ void Edit3DView::handleEntriesChanged()
     enum ItemLibraryEntryKeys : int { // used to maintain order
         EK_cameras,
         EK_lights,
-        EK_primitives,
-        EK_importedModels
+        EK_primitives
     };
 
     QMap<ItemLibraryEntryKeys, ItemLibraryDetails> entriesMap{
         {EK_cameras, {tr("Cameras"), contextIcon(DesignerIcons::CameraIcon)}},
         {EK_lights, {tr("Lights"), contextIcon(DesignerIcons::LightIcon)}},
-        {EK_primitives, {tr("Primitives"), contextIcon(DesignerIcons::PrimitivesIcon)}},
-        {EK_importedModels, {tr("Imported Models"), contextIcon(DesignerIcons::ImportedModelsIcon)}}};
+        {EK_primitives, {tr("Primitives"), contextIcon(DesignerIcons::PrimitivesIcon)}}
+    };
 
 #ifdef QDS_USE_PROJECTSTORAGE
     auto append = [&](const NodeMetaInfo &metaInfo, ItemLibraryEntryKeys key) {
@@ -356,16 +363,6 @@ void Edit3DView::handleEntriesChanged()
     append(model()->qtQuick3DPointLightMetaInfo(), EK_lights);
     append(model()->qtQuick3DOrthographicCameraMetaInfo(), EK_cameras);
     append(model()->qtQuick3DPerspectiveCameraMetaInfo(), EK_cameras);
-
-    Utils::PathString import3dTypePrefix = QmlDesignerPlugin::instance()
-                                               ->documentManager()
-                                               .generatedComponentUtils()
-                                               .import3dTypePrefix();
-
-    auto assetsModule = model()->module(import3dTypePrefix, Storage::ModuleKind::QmlLibrary);
-
-    for (const auto &metaInfo : model()->metaInfosForModule(assetsModule))
-        append(metaInfo, EK_importedModels);
 #else
     const QList<ItemLibraryEntry> itemLibEntries = model()->metaInfo().itemLibraryInfo()->entries();
     for (const ItemLibraryEntry &entry : itemLibEntries) {
@@ -379,13 +376,6 @@ void Edit3DView::handleEntriesChanged()
         } else if (entry.typeName() == "QtQuick3D.OrthographicCamera"
                    || entry.typeName() == "QtQuick3D.PerspectiveCamera") {
             entryKey = EK_cameras;
-        } else if (entry.typeName().startsWith(QmlDesignerPlugin::instance()
-                                                   ->documentManager()
-                                                   .generatedComponentUtils()
-                                                   .import3dTypePrefix()
-                                                   .toUtf8())
-                   && NodeHints::fromItemLibraryEntry(entry, model()).canBeDroppedInView3D()) {
-            entryKey = EK_importedModels;
         } else {
             continue;
         }
@@ -464,6 +454,10 @@ void Edit3DView::customNotification([[maybe_unused]] const AbstractView *view,
             self->m_nodeAtPosReqType = NodeAtPosReqType::MainScenePick;
             self->m_pickView3dNode = self->modelNodeForInternalId(qint32(data[1].toInt()));
         });
+    } else if (identifier == "asset_import_finished" || identifier == "assets_deleted") {
+        // TODO: These custom notifications should be removed once QDS-15163 is fixed and
+        //       exportedTypeNamesChanged notification is reliable
+        onEntriesChanged();
     }
 }
 
@@ -491,7 +485,7 @@ void Edit3DView::nodeAtPosReady(const ModelNode &modelNode, const QVector3D &pos
             createdNode = QmlVisualNode::createQml3DNode(
                 this, m_droppedEntry, edit3DWidget()->canvas()->activeScene(), pos3d).modelNode();
             if (createdNode.metaInfo().isQtQuick3DModel())
-                MaterialUtils::assignMaterialTo3dModel(this, createdNode);
+                Utils3D::assignMaterialTo3dModel(this, createdNode);
         });
         if (createdNode.isValid())
             setSelectedModelNode(createdNode);
@@ -499,7 +493,7 @@ void Edit3DView::nodeAtPosReady(const ModelNode &modelNode, const QVector3D &pos
         bool isModel = modelNode.metaInfo().isQtQuick3DModel();
         if (m_droppedModelNode.isValid() && isModel) {
             executeInTransaction(__FUNCTION__, [&] {
-                MaterialUtils::assignMaterialTo3dModel(this, modelNode, m_droppedModelNode);
+                Utils3D::assignMaterialTo3dModel(this, modelNode, m_droppedModelNode);
             });
         }
     } else if (m_nodeAtPosReqType == NodeAtPosReqType::BundleMaterialDrop) {
@@ -511,9 +505,22 @@ void Edit3DView::nodeAtPosReady(const ModelNode &modelNode, const QVector3D &pos
         emitCustomNotification("apply_texture_to_model3D", {modelNode, m_droppedModelNode});
     } else if (m_nodeAtPosReqType == NodeAtPosReqType::AssetDrop) {
         bool isModel = modelNode.metaInfo().isQtQuick3DModel();
-        if (!m_droppedFile.isEmpty() && isModel) {
+        if (!m_droppedTexture.isEmpty() && isModel) {
             QmlDesignerPlugin::instance()->mainWidget()->showDockWidget("MaterialBrowser");
-            emitCustomNotification("apply_asset_to_model3D", {modelNode}, {m_droppedFile}); // To MaterialBrowserView
+            emitCustomNotification("apply_asset_to_model3D", {modelNode}, {m_droppedTexture}); // To MaterialBrowserView
+        } else if (!m_dropped3dImports.isEmpty()) {
+            ModelNode sceneNode = Utils3D::active3DSceneNode(this);
+            if (!sceneNode.isValid())
+                sceneNode = rootModelNode();
+            ModelNode createdNode;
+            executeInTransaction(__FUNCTION__, [&] {
+                for (const QString &asset : std::as_const(m_dropped3dImports)) {
+                    createdNode = ModelNodeOperations::handleImported3dAssetDrop(
+                        asset, sceneNode, pos3d);
+                }
+            });
+            if (createdNode.isValid())
+                setSelectedModelNode(createdNode);
         }
     } else if (m_nodeAtPosReqType == NodeAtPosReqType::MainScenePick) {
         if (modelNode.isValid())
@@ -524,7 +531,8 @@ void Edit3DView::nodeAtPosReady(const ModelNode &modelNode, const QVector3D &pos
     }
 
     m_droppedModelNode = {};
-    m_droppedFile.clear();
+    m_dropped3dImports.clear();
+    m_droppedTexture.clear();
     m_nodeAtPosReqType = NodeAtPosReqType::None;
 }
 
@@ -556,6 +564,13 @@ void Edit3DView::bindingPropertiesChanged(const QList<BindingProperty> &property
 void Edit3DView::variantPropertiesChanged(const QList<VariantProperty> &propertyList, PropertyChangeFlags)
 {
     maybeStoreCurrentSceneEnvironment(propertyList);
+}
+
+void Edit3DView::exportedTypeNamesChanged(const ExportedTypeNames &added,
+                                          const ExportedTypeNames &removed)
+{
+    if (Utils3D::hasImported3dType(this, added, removed))
+        onEntriesChanged();
 }
 
 void Edit3DView::sendInputEvent(QEvent *e) const
@@ -687,6 +702,45 @@ void Edit3DView::createSyncEnvBackgroundAction()
         this,
         nullptr,
         tooltip);
+}
+
+void Edit3DView::createViewportPresetActions()
+{
+    auto createViewportPresetAction = [this](std::unique_ptr<Edit3DAction> &targetAction,
+                                     const QByteArray &id,
+                                     const QString &label,
+                                     bool isChecked) {
+        auto operation = [this, &targetAction, label](const SelectionContext &) {
+            for (Edit3DAction *action : std::as_const(m_viewportPresetActions)) {
+                if (action->menuId() != targetAction->menuId())
+                    action->action()->setChecked(false);
+            }
+            emitView3DAction(View3DActionType::ViewportPreset, label);
+        };
+
+        targetAction = std::make_unique<Edit3DAction>(
+            id,
+            View3DActionType::Empty,
+            label,
+            QKeySequence(),
+            true,
+            isChecked,
+            QIcon(),
+            this,
+            operation);
+    };
+
+    createViewportPresetAction(m_viewportPresetSingleAction, Constants::EDIT3D_PRESET_SINGLE, "Single", true);
+    createViewportPresetAction(m_viewportPresetQuadAction, Constants::EDIT3D_PRESET_QUAD, "Quad", false);
+    createViewportPresetAction(m_viewportPreset3Left1RightAction, Constants::EDIT3D_PRESET_3LEFT1RIGHT, "3Left1Right", false);
+    createViewportPresetAction(m_viewportPreset2HorizontalAction, Constants::EDIT3D_PRESET_2HORIZONTAL, "2Horizontal", false);
+    createViewportPresetAction(m_viewportPreset2VerticalAction, Constants::EDIT3D_PRESET_2VERTICAL, "2Vertical", false);
+
+    m_viewportPresetActions << m_viewportPresetSingleAction.get();
+    m_viewportPresetActions << m_viewportPresetQuadAction.get();
+    m_viewportPresetActions << m_viewportPreset3Left1RightAction.get();
+    m_viewportPresetActions << m_viewportPreset2HorizontalAction.get();
+    m_viewportPresetActions << m_viewportPreset2VerticalAction.get();
 }
 
 void Edit3DView::createSeekerSliderAction()
@@ -910,27 +964,27 @@ void Edit3DView::storeCurrentSceneEnvironment()
     }
 }
 
-const QList<Edit3DView::SplitToolState> &Edit3DView::splitToolStates() const
+const QList<Edit3DView::ViewportToolState> &Edit3DView::viewportToolStates() const
 {
-    return m_splitToolStates;
+    return m_viewportToolStates;
 }
 
-void Edit3DView::setSplitToolState(int splitIndex, const SplitToolState &state)
+void Edit3DView::setViewportToolState(int viewportIndex, const ViewportToolState &state)
 {
-    if (splitIndex >= m_splitToolStates.size())
+    if (viewportIndex >= m_viewportToolStates.size())
         return;
 
-    m_splitToolStates[splitIndex] = state;
+    m_viewportToolStates[viewportIndex] = state;
 }
 
-int Edit3DView::activeSplit() const
+int Edit3DView::activeViewport() const
 {
-    return m_activeSplit;
+    return m_activeViewport;
 }
 
-bool Edit3DView::isSplitView() const
+bool Edit3DView::isMultiViewportView() const
 {
-    return m_splitViewAction->action()->isChecked();
+    return m_viewportPresetsMenuAction->action()->isChecked();
 }
 
 void Edit3DView::createEdit3DActions()
@@ -1000,15 +1054,32 @@ void Edit3DView::createEdit3DActions()
                                                        toolbarIcon(DesignerIcons::AlignViewToCameraIcon),
                                                        this);
 
+    SelectionContextOperation cameraModeTrigger = [this](const SelectionContext &) {
+        QVariantList list;
+        for (int i = 0; i < m_viewportToolStates.size(); ++i) {
+            Edit3DView::ViewportToolState state = m_viewportToolStates[i];
+            if (i == m_activeViewport) {
+                bool isChecked = m_cameraModeAction->action()->isChecked();
+                state.isPerspective = isChecked;
+                setViewportToolState(i, state);
+                list.append(isChecked);
+            } else {
+                list.append(state.isPerspective);
+            }
+        }
+        emitView3DAction(View3DActionType::CameraToggle, list);
+    };
+
     m_cameraModeAction = std::make_unique<Edit3DAction>(
         QmlDesigner::Constants::EDIT3D_EDIT_CAMERA,
-        View3DActionType::CameraToggle,
+        View3DActionType::Empty,
         Tr::tr("Toggle Perspective/Orthographic Camera Mode"),
         QKeySequence(Qt::Key_T),
         true,
         false,
         toolbarIcon(DesignerIcons::CameraIcon),
-        this);
+        this,
+        cameraModeTrigger);
 
     m_orientationModeAction = std::make_unique<Edit3DAction>(
         QmlDesigner::Constants::EDIT3D_ORIENTATION,
@@ -1099,7 +1170,7 @@ void Edit3DView::createEdit3DActions()
     m_showParticleEmitterAction = std::make_unique<Edit3DAction>(
         QmlDesigner::Constants::EDIT3D_EDIT_SHOW_PARTICLE_EMITTER,
         View3DActionType::ShowParticleEmitter,
-        Tr::tr("Always Show Particle Emitters And Attractors"),
+        Tr::tr("Always Show Particle Emitters and Attractors"),
         QKeySequence(Qt::Key_M),
         true,
         false,
@@ -1149,7 +1220,7 @@ void Edit3DView::createEdit3DActions()
     m_particleViewModeAction = std::make_unique<Edit3DAction>(
         QmlDesigner::Constants::EDIT3D_PARTICLE_MODE,
         View3DActionType::Edit3DParticleModeToggle,
-        Tr::tr("Toggle particle animation On/Off"),
+        Tr::tr("Toggle Particle Animation On/Off"),
         QKeySequence(Qt::Key_V),
         true,
         false,
@@ -1247,7 +1318,7 @@ void Edit3DView::createEdit3DActions()
     m_snapToggleAction = std::make_unique<Edit3DAction>(
         QmlDesigner::Constants::EDIT3D_SNAP_TOGGLE,
         View3DActionType::Empty,
-        Tr::tr("Toggle snapping during node drag"),
+        Tr::tr("Toggle Snapping During Node Drag"),
         QKeySequence(Qt::SHIFT | Qt::Key_Tab),
         true,
         Edit3DViewConfig::load(DesignerSettingsKey::EDIT3DVIEW_SNAP_ENABLED, false).toBool(),
@@ -1270,7 +1341,7 @@ void Edit3DView::createEdit3DActions()
 
     m_snapConfigAction = std::make_unique<Edit3DAction>(QmlDesigner::Constants::EDIT3D_SNAP_CONFIG,
                                                         View3DActionType::Empty,
-                                                        Tr::tr("Open snap configuration dialog"),
+                                                        Tr::tr("Open Snap Configuration"),
                                                         QKeySequence(),
                                                         false,
                                                         false,
@@ -1278,14 +1349,24 @@ void Edit3DView::createEdit3DActions()
                                                         this,
                                                         snapConfigTrigger);
 
-    m_splitViewAction = std::make_unique<Edit3DAction>(QmlDesigner::Constants::EDIT3D_SPLIT_VIEW,
-                                                       View3DActionType::SplitViewToggle,
-                                                       Tr::tr("Toggle Split View On/Off"),
-                                                       QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_Q),
-                                                       true,
+    SelectionContextOperation viewportPresetsActionTrigger = [this](const SelectionContext &) {
+        if (!edit3DWidget()->viewportPresetsMenu())
+            return;
+
+        edit3DWidget()->showViewportPresetsMenu(
+            !edit3DWidget()->viewportPresetsMenu()->isVisible(),
+            resolveToolbarPopupPos(m_viewportPresetsMenuAction.get()));
+    };
+
+    m_viewportPresetsMenuAction = std::make_unique<Edit3DAction>(QmlDesigner::Constants::EDIT3D_PRESETS,
+                                                       View3DActionType::Empty,
+                                                       Tr::tr("Show Viewport Modes"),
+                                                       QKeySequence(),
+                                                       false,
                                                        false,
                                                        toolbarIcon(DesignerIcons::SplitViewIcon),
-                                                       this);
+                                                       this,
+                                                       viewportPresetsActionTrigger);
 
     SelectionContextOperation cameraSpeedConfigTrigger = [this](const SelectionContext &) {
         if (!m_cameraSpeedConfiguration) {
@@ -1306,7 +1387,7 @@ void Edit3DView::createEdit3DActions()
     m_cameraSpeedConfigAction = std::make_unique<Edit3DIndicatorButtonAction>(
         QmlDesigner::Constants::EDIT3D_CAMERA_SPEED_CONFIG,
         View3DActionType::Empty,
-        Tr::tr("Open camera speed configuration dialog"),
+        Tr::tr("Open Camera Speed Configuration"),
         toolbarIcon(DesignerIcons::CameraSpeedConfigIcon),
         cameraSpeedConfigTrigger,
         this);
@@ -1335,7 +1416,7 @@ void Edit3DView::createEdit3DActions()
     m_leftActions << nullptr;
     m_leftActions << m_visibilityTogglesAction.get();
     m_leftActions << m_backgroundColorMenuAction.get();
-    m_leftActions << m_splitViewAction.get();
+    m_leftActions << m_viewportPresetsMenuAction.get();
 
     m_rightActions << m_particleViewModeAction.get();
     m_rightActions << m_particlesPlayAction.get();
@@ -1363,6 +1444,8 @@ void Edit3DView::createEdit3DActions()
     m_backgroundColorActions << m_selectGridColorAction.get();
     m_backgroundColorActions << m_syncEnvBackgroundAction.get();
     m_backgroundColorActions << m_resetColorAction.get();
+
+    createViewportPresetActions();
 }
 
 QVector<Edit3DAction *> Edit3DView::leftActions() const
@@ -1385,6 +1468,10 @@ QVector<Edit3DAction *> Edit3DView::backgroundColorActions() const
     return m_backgroundColorActions;
 }
 
+QVector<Edit3DAction *> Edit3DView::viewportPresetActions() const
+{
+    return m_viewportPresetActions;
+}
 
 Edit3DAction *Edit3DView::edit3DAction(View3DActionType type) const
 {
@@ -1394,20 +1481,6 @@ Edit3DAction *Edit3DView::edit3DAction(View3DActionType type) const
 Edit3DBakeLightsAction *Edit3DView::bakeLightsAction() const
 {
     return m_bakeLightsAction.get();
-}
-
-void Edit3DView::addQuick3DImport()
-{
-    DesignDocument *document = QmlDesignerPlugin::instance()->currentDesignDocument();
-    if (document && !document->inFileComponentModelActive() && model()
-        && ModelUtils::addImportWithCheck(
-            "QtQuick3D",
-            [](const Import &import) { return !import.hasVersion() || import.majorVersion() >= 6; },
-            model())) {
-        return;
-    }
-    Core::AsynchronousMessageBox::warning(tr("Failed to Add Import"),
-                                          tr("Could not add QtQuick3D import to project."));
 }
 
 // This method is called upon right-clicking the view to prepare for context-menu creation. The actual
@@ -1455,10 +1528,22 @@ void Edit3DView::dropComponent(const ItemLibraryEntry &entry, const QPointF &pos
         nodeAtPosReady({}, {}); // No need to actually resolve position for non-node items
 }
 
-void Edit3DView::dropAsset(const QString &file, const QPointF &pos)
+void QmlDesigner::Edit3DView::dropAssets(const QList<QUrl> &urls, const QPointF &pos)
 {
     m_nodeAtPosReqType = NodeAtPosReqType::AssetDrop;
-    m_droppedFile = file;
+    m_dropped3dImports.clear();
+
+    for (const QUrl &url : urls) {
+        Asset asset(url.toLocalFile());
+        // For textures we only support single drops
+        if (m_dropped3dImports.isEmpty() && asset.isTexture3D()) {
+            m_droppedTexture = asset.fileName();
+            break;
+        } else if (asset.isImported3D()) {
+            m_dropped3dImports.append(asset.id());
+        }
+    }
+
     emitView3DAction(View3DActionType::GetNodeAtPos, pos);
 }
 

@@ -4,9 +4,6 @@
 
 #include <abstractview.h>
 #include <bindingproperty.h>
-#include <invalididexception.h>
-#include <invalidmodelnodeexception.h>
-#include <invalidreparentingexception.h>
 #include <modelmerger.h>
 #include <nodeabstractproperty.h>
 #include <nodelistproperty.h>
@@ -250,20 +247,10 @@ void StylesheetMerger::preprocessStyleSheet()
                 newParentProperty.slide(styleParentIndex, templateParentIndex);
         }
         transaction.commit();
-    }catch (InvalidIdException &ide) {
-        qDebug().noquote() << "Invalid id exception while preprocessing the style sheet.";
-        ide.createWarning();
-    } catch (InvalidReparentingException &rpe) {
-        qDebug().noquote() << "Invalid reparenting exception while preprocessing the style sheet.";
-        rpe.createWarning();
-    } catch (InvalidModelNodeException &mne) {
-        qDebug().noquote() << "Invalid model node exception while preprocessing the style sheet.";
-        mne.createWarning();
-    } catch (Exception &e) {
+    } catch (Exception &exception) {
         qDebug().noquote() << "Exception while preprocessing the style sheet.";
-        e.createWarning();
+        qDebug() << exception;
     }
-
 }
 
 void StylesheetMerger::replaceNode(ModelNode &replacedNode, ModelNode &newNode)
@@ -313,18 +300,9 @@ void StylesheetMerger::replaceRootNode(ModelNode& templateRootNode)
         ModelNode newRoot = m_templateView->rootModelNode();
         newRoot.setIdWithoutRefactoring(rootId);
         transaction.commit();
-    }  catch (InvalidIdException &ide) {
-        qDebug().noquote() << "Invalid id exception while replacing root node of template.";
-        ide.createWarning();
-    } catch (InvalidReparentingException &rpe) {
-        qDebug().noquote() << "Invalid reparenting exception while replacing root node of template.";
-        rpe.createWarning();
-    } catch (InvalidModelNodeException &mne) {
-        qDebug().noquote() << "Invalid model node exception while replacing root node of template.";
-        mne.createWarning();
-    } catch (Exception &e) {
+    } catch (Exception &exception) {
         qDebug().noquote() << "Exception while replacing root node of template.";
-        e.createWarning();
+        qDebug() << exception;
     }
 }
 
@@ -350,8 +328,20 @@ void StylesheetMerger::adjustNodeIndex(ModelNode &node)
     parentListProperty.slide(currentIndex, info.parentIndex);
 }
 
-void StylesheetMerger::applyStyleProperties(ModelNode &templateNode, const ModelNode &styleNode)
+void StylesheetMerger::applyStyleProperties(ModelNode &templateNode,
+                                            const ModelNode &styleNode,
+                                            bool isRootNode)
 {
+    // using isRootNode allows transferring custom properties that may have been added in Qt Bridge
+    auto addProperty = [&templateNode, isRootNode](const VariantProperty &variantProperty) {
+        if (isRootNode)
+            templateNode.variantProperty(variantProperty.name())
+                .setDynamicTypeNameAndValue(variantProperty.dynamicTypeName(),
+                                            variantProperty.value());
+        else
+            templateNode.variantProperty(variantProperty.name()).setValue(variantProperty.value());
+    };
+
     const QRegularExpression regEx("[a-z]", QRegularExpression::CaseInsensitiveOption);
     for (const VariantProperty &variantProperty : styleNode.variantProperties()) {
         if (templateNode.hasBindingProperty(variantProperty.name())) {
@@ -359,16 +349,20 @@ void StylesheetMerger::applyStyleProperties(ModelNode &templateNode, const Model
             // replace it with the corresponding variant property.
             if (!templateNode.bindingProperty(variantProperty.name()).expression().contains(regEx)) {
                 templateNode.removeProperty(variantProperty.name());
-                templateNode.variantProperty(variantProperty.name()).setValue(variantProperty.value());
+                addProperty(variantProperty);
             }
         } else {
-            if (variantProperty.holdsEnumeration()) {
-                templateNode.variantProperty(variantProperty.name()).setEnumeration(variantProperty.enumeration().toEnumerationName());
-            } else {
-                templateNode.variantProperty(variantProperty.name()).setValue(variantProperty.value());
-            }
+            if (variantProperty.holdsEnumeration())
+                templateNode.variantProperty(variantProperty.name())
+                    .setEnumeration(variantProperty.enumeration().toEnumerationName());
+            else
+                addProperty(variantProperty);
         }
     }
+
+    if (isRootNode)
+        return;
+
     syncBindingProperties(templateNode, styleNode);
     syncNodeProperties(templateNode, styleNode, true);
     syncNodeListProperties(templateNode, styleNode, true);
@@ -397,18 +391,9 @@ void StylesheetMerger::parseTemplateOptions()
         RewriterTransaction transaction(m_templateView, "remove-options-node");
         optionsNode.destroy();
         transaction.commit();
-    } catch (InvalidIdException &ide) {
-        qDebug().noquote() << "Invalid id exception while removing options from template.";
-        ide.createWarning();
-    } catch (InvalidReparentingException &rpe) {
-        qDebug().noquote() << "Invalid reparenting exception while removing options from template.";
-        rpe.createWarning();
-    } catch (InvalidModelNodeException &mne) {
-        qDebug().noquote() << "Invalid model node exception while removing options from template.";
-        mne.createWarning();
-    } catch (Exception &e) {
+    } catch (Exception &exception) {
         qDebug().noquote() << "Exception while removing options from template.";
-        e.createWarning();
+        qDebug() << exception;
     }
 }
 
@@ -483,9 +468,9 @@ void StylesheetMerger::mergeStates(ModelNode &outputNode, const ModelNode &input
             ModelNode stateClone = merger.insertModel(inputStateNode);
             if (stateClone.isValid())
                 outputNode.nodeListProperty("states").reparentHere(stateClone);
-        } catch (Exception &e) {
+        } catch (Exception &exception) {
             qDebug().noquote() << "Exception while merging states.";
-            e.createWarning();
+            qDebug() << exception;
         }
     }
 }
@@ -503,6 +488,9 @@ void StylesheetMerger::merge()
 
     // build a hash of generated replacement ids
     setupIdRenamingHash();
+
+    // transfer custom root properties
+    applyStyleProperties(templateRootNode, styleRootNode, true);
 
     //in case we are replacing the root node, just do that and exit
     if (m_styleView->hasId(templateRootNode.id())) {
@@ -542,21 +530,9 @@ void StylesheetMerger::merge()
 
                 replaceNode(replacedNode, replacementNode);
                 transaction.commit();
-            } catch (InvalidIdException &ide) {
-                qDebug().noquote() << "Invalid id exception while replacing template node";
-                ide.createWarning();
-                continue;
-            } catch (InvalidReparentingException &rpe) {
-                qDebug().noquote() << "Invalid reparenting exception while replacing template node";
-                rpe.createWarning();
-                continue;
-            } catch (InvalidModelNodeException &mne) {
-                qDebug().noquote() << "Invalid model node exception while replacing template node";
-                mne.createWarning();
-                continue;
-            } catch (Exception &e) {
+            } catch (Exception &exception) {
                 qDebug().noquote() << "Exception while replacing template node.";
-                e.createWarning();
+                qDebug() << exception;
                 continue;
             }
         }
@@ -584,21 +560,9 @@ void StylesheetMerger::merge()
                     }
                 }
                 transaction.commit();
-            } catch (InvalidIdException &ide) {
-                qDebug().noquote() << "Invalid id exception while syncing style properties to template";
-                ide.createWarning();
-                continue;
-            } catch (InvalidReparentingException &rpe) {
-                qDebug().noquote() << "Invalid reparenting exception while syncing style properties to template";
-                rpe.createWarning();
-                continue;
-            } catch (InvalidModelNodeException &mne) {
-                qDebug().noquote() << "Invalid model node exception while syncing style properties to template";
-                mne.createWarning();
-                continue;
-            } catch (Exception &e) {
+            } catch (Exception &exception) {
                 qDebug().noquote() << "Exception while syncing style properties.";
-                e.createWarning();
+                qDebug() << exception;
                 continue;
             }
         }
@@ -609,10 +573,10 @@ void StylesheetMerger::styleMerge(const Utils::FilePath &templateFile,
                                   Model *model,
                                   ExternalDependenciesInterface &externalDependencies)
 {
-    Utils::FileReader reader;
+    const Utils::Result<QByteArray> res = templateFile.fileContents();
 
-    QTC_ASSERT(reader.fetch(templateFile), return );
-    const QString qmlTemplateString = QString::fromUtf8(reader.data());
+    QTC_ASSERT(res, return);
+    const QString qmlTemplateString = QString::fromUtf8(*res);
     StylesheetMerger::styleMerge(qmlTemplateString, model, externalDependencies);
 }
 
@@ -642,7 +606,7 @@ void StylesheetMerger::styleMerge(const QString &qmlTemplateString,
     }
 
     textEditTemplate.setPlainText(imports + qmlTemplateString);
-    NotIndentingTextEditModifier textModifierTemplate(&textEditTemplate);
+    NotIndentingTextEditModifier textModifierTemplate(textEditTemplate.document());
 
     std::unique_ptr<RewriterView> templateRewriterView = std::make_unique<RewriterView>(
         externalDependencies, RewriterView::Amend);
@@ -666,7 +630,7 @@ void StylesheetMerger::styleMerge(const QString &qmlTemplateString,
     RewriterView *parentRewriterView = parentModel->rewriterView();
     QTC_ASSERT(parentRewriterView, return );
     textEditStyle.setPlainText(parentRewriterView->textModifierContent());
-    NotIndentingTextEditModifier textModifierStyle(&textEditStyle);
+    NotIndentingTextEditModifier textModifierStyle(textEditStyle.document());
 
     std::unique_ptr<RewriterView> styleRewriterView = std::make_unique<RewriterView>(
         externalDependencies, RewriterView::Amend);

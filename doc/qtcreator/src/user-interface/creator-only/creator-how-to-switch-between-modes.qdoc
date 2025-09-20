@@ -16,7 +16,7 @@
     To switch between modes:
 
     \list
-        \li Click the icons on the mode selector.
+        \li Select the icons on the mode selector.
         \li Use the \l{keyboard-shortcuts}{corresponding keyboard shortcut}.
     \endlist
 
@@ -27,7 +27,7 @@
         \li Purpose
         \li Read More
     \row
-        \li {1,8} \inlineimage qtcreator-mode-selector.webp {Mode selector}
+        \li {1,8} \inlineimage {qtcreator-mode-selector.webp} {Mode selector}
     \row
         \li \uicontrol Welcome
         \li \key Ctrl+1

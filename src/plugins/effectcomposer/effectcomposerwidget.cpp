@@ -19,6 +19,8 @@
 #include <coreplugin/editormanager/editormanager.h>
 
 #include <qmldesigner/components/componentcore/theme.h>
+#include <qmldesigner/components/propertyeditor/assetimageprovider.h>
+#include <qmldesigner/designermcumanager.h>
 #include <qmldesigner/documentmanager.h>
 #include <qmldesigner/qmldesignerconstants.h>
 #include <qmldesigner/qmldesignerplugin.h>
@@ -73,7 +75,6 @@ static QList<QmlDesigner::ModelNode> modelNodesFromMimeData(const QByteArray &mi
 
 EffectComposerWidget::EffectComposerWidget(EffectComposerView *view)
     : m_effectComposerModel{new EffectComposerModel(this)}
-    , m_effectComposerNodesModel{new EffectComposerNodesModel(this)}
     , m_effectComposerView(view)
     , m_quickWidget{new StudioQuickWidget(this)}
 {
@@ -95,18 +96,19 @@ EffectComposerWidget::EffectComposerWidget(EffectComposerView *view)
     layout->addWidget(m_quickWidget.data());
 
     setStyleSheet(QmlDesigner::Theme::replaceCssColors(
-        QString::fromUtf8(Utils::FileReader::fetchQrc(":/qmldesigner/stylesheet.css"))));
+        Utils::FileUtils::fetchQrc(":/qmldesigner/stylesheet.css")));
 
     QmlDesigner::QmlDesignerPlugin::trackWidgetFocusTime(this, QmlDesigner::Constants::EVENT_EFFECTCOMPOSER_TIME);
 
-    m_quickWidget->rootContext()->setContextProperty("g_propertyData", &g_propertyData);
+    qmlRegisterSingletonInstance<QQmlPropertyMap>(
+        "EffectComposerPropertyData", 1, 0, "GlobalPropertyData", g_propertyData());
 
     QString blurPath = "file:" + EffectUtils::nodesSourcesPath() + "/common/";
-    g_propertyData.insert(QString("blur_vs_path"), QString(blurPath + "bluritems.vert.qsb"));
-    g_propertyData.insert(QString("blur_fs_path"), QString(blurPath + "bluritems.frag.qsb"));
+    g_propertyData()->insert("blur_vs_path", QString(blurPath + "bluritems.vert.qsb"));
+    g_propertyData()->insert("blur_fs_path", QString(blurPath + "bluritems.frag.qsb"));
 
     auto map = m_quickWidget->registerPropertyMap("EffectComposerBackend");
-    map->setProperties({{"effectComposerNodesModel", QVariant::fromValue(m_effectComposerNodesModel.data())},
+    map->setProperties({{"effectComposerNodesModel", QVariant::fromValue(effectComposerNodesModel().data())},
                         {"effectComposerModel", QVariant::fromValue(m_effectComposerModel.data())},
                         {"rootView", QVariant::fromValue(this)}});
 
@@ -172,7 +174,7 @@ QPointer<EffectComposerModel> EffectComposerWidget::effectComposerModel() const
 
 QPointer<EffectComposerNodesModel> EffectComposerWidget::effectComposerNodesModel() const
 {
-    return m_effectComposerNodesModel;
+    return m_effectComposerModel->effectComposerNodesModel();
 }
 
 void EffectComposerWidget::addEffectNode(const QString &nodeQenPath)
@@ -184,6 +186,11 @@ void EffectComposerWidget::addEffectNode(const QString &nodeQenPath)
         QString id = nodeQenPath.split('/').last().chopped(4).prepend('_');
         QmlDesignerPlugin::emitUsageStatistics(Constants::EVENT_EFFECTCOMPOSER_NODE + id);
     }
+}
+
+void EffectComposerWidget::removeEffectNodeFromLibrary(const QString &nodeName)
+{
+    effectComposerNodesModel()->removeEffectNode(nodeName);
 }
 
 void EffectComposerWidget::focusSection(int section)
@@ -207,7 +214,7 @@ QPoint EffectComposerWidget::globalPos(const QPoint &point) const
 
 QString EffectComposerWidget::uniformDefaultImage(const QString &nodeName, const QString &uniformName) const
 {
-    return m_effectComposerNodesModel->defaultImagesForNode(nodeName).value(uniformName);
+    return effectComposerNodesModel()->defaultImagesForNode(nodeName).value(uniformName);
 }
 
 QString EffectComposerWidget::imagesPath() const
@@ -245,8 +252,13 @@ void EffectComposerWidget::dropNode(const QByteArray &mimeData)
 
 void EffectComposerWidget::updateCanBeAdded()
 {
-    m_effectComposerNodesModel->updateCanBeAdded(m_effectComposerModel->uniformNames(),
+    effectComposerNodesModel()->updateCanBeAdded(m_effectComposerModel->uniformNames(),
                                                  m_effectComposerModel->nodeNames());
+}
+
+bool EffectComposerWidget::isMCUProject() const
+{
+    return QmlDesigner::DesignerMcuManager::instance().isMCUProject();
 }
 
 QSize EffectComposerWidget::sizeHint() const
@@ -273,10 +285,9 @@ void EffectComposerWidget::initView()
     m_quickWidget->rootContext()->setContextProperty("modelNodeBackend", &m_backendModelNode);
     m_quickWidget->rootContext()->setContextProperty("activeDragSuffix", "");
 
-    //TODO: Fix crash on macos
-//    m_quickWidget->engine()->addImageProvider("qmldesigner_thumbnails",
-//                                              new QmlDesigner::AssetImageProvider(
-//                                                  QmlDesigner::QmlDesignerPlugin::imageCache()));
+   m_quickWidget->engine()->addImageProvider("qmldesigner_thumbnails",
+                                             new QmlDesigner::AssetImageProvider(
+                                                 QmlDesigner::QmlDesignerPlugin::imageCache()));
 
     // init the first load of the QML UI elements
     reloadQmlSource();

@@ -42,6 +42,7 @@ class ContentLibraryWidget : public QFrame
     Q_PROPERTY(bool isQt6Project READ isQt6Project NOTIFY isQt6ProjectChanged)
     Q_PROPERTY(bool importerRunning READ importerRunning WRITE setImporterRunning NOTIFY importerRunningChanged)
     Q_PROPERTY(bool hasModelSelection READ hasModelSelection NOTIFY hasModelSelectionChanged)
+    Q_PROPERTY(QString showInGraphicalShellMsg MEMBER m_showInGraphicalShellMsg CONSTANT)
 
     // Needed for a workaround for a bug where after drag-n-dropping an item, the ScrollView scrolls to a random position
     Q_PROPERTY(bool isDragging MEMBER m_isDragging NOTIFY isDraggingChanged)
@@ -101,6 +102,11 @@ public:
     Q_INVOKABLE void addLightProbe(QmlDesigner::ContentLibraryTexture *tex);
     Q_INVOKABLE void updateSceneEnvState();
     Q_INVOKABLE void markTextureUpdated(const QString &textureKey);
+    Q_INVOKABLE bool has3DNode(const QByteArray &data) const;
+    Q_INVOKABLE bool hasTexture(const QString &format, const QVariant &data) const;
+    Q_INVOKABLE void addQtQuick3D();
+    Q_INVOKABLE void browseBundleFolder();
+    Q_INVOKABLE void showInGraphicalShell(const QString &path);
 
     QSize sizeHint() const override;
 
@@ -124,8 +130,11 @@ signals:
     void hasModelSelectionChanged();
     void importBundle();
     void requestTab(int tabIndex);
-    void acceptTexturesDrop(const QList<QUrl> &urls);
+    void acceptTexturesDrop(const QList<QUrl> &urls, const QString &bundlePath = {});
+    void acceptTextureDrop(const QString &internalId, const QString &bundlePath = {});
     void acceptMaterialDrop(const QString &internalId);
+    void accept3DDrop(const QByteArray &internalIds);
+    void importQtQuick3D();
 
 protected:
     bool eventFilter(QObject *obj, QEvent *event) override;
@@ -173,6 +182,7 @@ private:
     bool m_hasModelSelection = false;
     QString m_textureBundleUrl;
     QString m_bundlePath;
+    QString m_showInGraphicalShellMsg;
 };
 
 } // namespace QmlDesigner

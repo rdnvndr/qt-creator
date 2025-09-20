@@ -128,7 +128,7 @@ void ProjectStorageMock::addExportedTypeName(QmlDesigner::TypeId typeId,
     ON_CALL(*this, typeId(Eq(moduleId), Eq(typeName), _)).WillByDefault(Return(typeId));
     ON_CALL(*this, fetchTypeIdByModuleIdAndExportedName(Eq(moduleId), Eq(typeName)))
         .WillByDefault(Return(typeId));
-    exportedTypeName[typeId].emplace_back(moduleId, typeName);
+    exportedTypeName[typeId].emplace_back(moduleId, typeId, typeName);
 }
 
 void ProjectStorageMock::addExportedTypeNameBySourceId(QmlDesigner::TypeId typeId,
@@ -136,7 +136,7 @@ void ProjectStorageMock::addExportedTypeNameBySourceId(QmlDesigner::TypeId typeI
                                                        Utils::SmallStringView typeName,
                                                        QmlDesigner::SourceId sourceId)
 {
-    exportedTypeNameBySourceId[{typeId, sourceId}].emplace_back(moduleId, typeName);
+    exportedTypeNameBySourceId[{typeId, sourceId}].emplace_back(moduleId, typeId, typeName);
 }
 
 void ProjectStorageMock::removeExportedTypeName(QmlDesigner::TypeId typeId,
@@ -241,6 +241,13 @@ void ProjectStorageMock::setItemLibraryEntries(
     QmlDesigner::SourceId sourceId, const QmlDesigner::Storage::Info::ItemLibraryEntries &entries)
 {
     ON_CALL(*this, itemLibraryEntries(TypedEq<SourceId>(sourceId))).WillByDefault(Return(entries));
+}
+
+void ProjectStorageMock::setDirectoryImportsItemLibraryEntries(
+    QmlDesigner::SourceId sourceId, const QmlDesigner::Storage::Info::ItemLibraryEntries &entries)
+{
+    ON_CALL(*this, directoryImportsItemLibraryEntries(TypedEq<SourceId>(sourceId)))
+        .WillByDefault(Return(entries));
 }
 
 namespace {

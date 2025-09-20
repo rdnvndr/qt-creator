@@ -2,22 +2,23 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 #include "dynamicpropertiesmodel.h"
+#include "connectioneditorlogging.h"
 #include "dynamicpropertiesitem.h"
-#include "connectioneditorutils.h"
 
 #include <abstractproperty.h>
 #include <bindingproperty.h>
 #include <modelfwd.h>
-#include <rewritertransaction.h>
-#include <rewritingexception.h>
-#include <utils/algorithm.h>
-#include <utils/qtcassert.h>
-#include <variantproperty.h>
 #include <qmlchangeset.h>
 #include <qmldesignerconstants.h>
 #include <qmldesignerplugin.h>
 #include <qmlobjectnode.h>
 #include <qmltimeline.h>
+#include <rewritertransaction.h>
+#include <rewritingexception.h>
+#include <scripteditorutils.h>
+#include <utils/algorithm.h>
+#include <utils/qtcassert.h>
+#include <variantproperty.h>
 
 #include <optional>
 
@@ -147,7 +148,7 @@ void DynamicPropertiesModel::setCurrent(int internalId, PropertyNameView name)
 
 void DynamicPropertiesModel::updateItem(const AbstractProperty &property)
 {
-    if (!property.isDynamic())
+    if (!property.isDynamic() && !property.isSignalDeclarationProperty())
         return;
 
     if (auto *item = itemForProperty(property)) {
@@ -350,6 +351,21 @@ void DynamicPropertiesModel::dispatchPropertyChanges(const AbstractProperty &abs
             const AbstractProperty targetProperty = target.variantProperty(propertyName);
             if (target.hasProperty(propertyName) && targetProperty.isDynamic())
                 updateItem(targetProperty);
+        }
+    }
+}
+
+void DynamicPropertiesModel::handleInstancePropertyChanged(const ModelNode &modelNode,
+                                                           PropertyNameView propertyName)
+{
+    if (modelNode != singleSelectedNode())
+        return;
+
+    QmlObjectNode qmlObjectNode(modelNode);
+    if (qmlObjectNode.isValid() && qmlObjectNode.currentState().isValid()) {
+        const AbstractProperty property = modelNode.property(propertyName);
+        if (property.isDynamic()) {
+            updateItem(property);
         }
     }
 }

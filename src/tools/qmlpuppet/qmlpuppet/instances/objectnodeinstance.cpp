@@ -113,6 +113,11 @@ void ObjectNodeInstance::initializePropertyWatcher(const ObjectNodeInstance::Poi
     m_signalSpy.setObjectNodeInstance(objectNodeInstance);
 }
 
+void ObjectNodeInstance::watchProperty(const PropertyName &name)
+{
+    m_signalSpy.registerDynamicProperty(name, object());
+}
+
 void ObjectNodeInstance::initialize(const ObjectNodeInstance::Pointer &objectNodeInstance,
                                     InstanceContainer::NodeFlags /*flags*/)
 {
@@ -341,7 +346,7 @@ void ObjectNodeInstance::addToNewProperty(QObject *object, QObject *newParent, c
     if (isList(property)) {
         QQmlListReference list = qvariant_cast<QQmlListReference>(property.read());
 
-        if (!QmlPrivateGate::hasFullImplementedListInterface(list)) {
+        if (!list.isValid() || !list.canAppend()) {
             qWarning() << "Property list interface not fully implemented for Class " << property.property().typeName() << " in property " << property.name() << "!";
             return;
         }
@@ -429,6 +434,11 @@ void ObjectNodeInstance::setComponentWrap(bool wrap)
 void ObjectNodeInstance::setModifiedFlag(bool b)
 {
     m_isModified = b;
+}
+
+void ObjectNodeInstance::handleNewDynamicProperty(const PropertyName &name)
+{
+    watchProperty(name);
 }
 
 QVariant ObjectNodeInstance::convertEnumToValue(const QVariant &value, const PropertyName &name)

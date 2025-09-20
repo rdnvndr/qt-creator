@@ -183,11 +183,11 @@ void NavigatorView::clearExplorerWarnings()
     QList<ModelNode> allNodes;
     allNodes.append(rootModelNode());
     allNodes.append(rootModelNode().allSubModelNodes());
-    for (ModelNode node : allNodes) {
+    for (const ModelNode &node : std::as_const(allNodes)) {
         if (node.metaInfo().isFileComponent()) {
-            const ProjectExplorer::FileNode *fnode = fileNodeForModelNode(node);
-            if (fnode)
-                fnode->setHasError(false);
+            const ProjectExplorer::FileNode *fNode = fileNodeForModelNode(node);
+            if (fNode)
+                fNode->setHasError(false);
         }
     }
 }
@@ -305,6 +305,9 @@ void NavigatorView::dragStarted(QMimeData *mimeData)
             QString assetType = assetTypeAndData.first;
             if (assetType == Constants::MIME_TYPE_ASSET_EFFECT) {
                 m_widget->setDragType(Constants::MIME_TYPE_ASSET_EFFECT);
+                m_widget->update();
+            } else if (assetType == Constants::MIME_TYPE_ASSET_IMPORTED3D) {
+                m_widget->setDragType(Constants::MIME_TYPE_ASSET_IMPORTED3D);
                 m_widget->update();
             } else if (assetType == Constants::MIME_TYPE_ASSET_TEXTURE3D) {
                 m_widget->setDragType(Constants::MIME_TYPE_ASSET_TEXTURE3D);

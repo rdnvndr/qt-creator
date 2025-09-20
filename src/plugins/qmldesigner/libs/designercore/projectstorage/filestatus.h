@@ -22,33 +22,17 @@ public:
     friend bool operator==(const FileStatus &first, const FileStatus &second)
     {
         return first.sourceId == second.sourceId && first.size == second.size
-               && first.lastModified == second.lastModified && first.size >= 0
-               && first.lastModified >= 0;
+               && first.lastModified == second.lastModified;
     }
 
-    friend bool operator!=(const FileStatus &first, const FileStatus &second)
+    friend std::weak_ordering operator<=>(const FileStatus &first, const FileStatus &second)
     {
-        return !(first == second);
+        return first.sourceId <=> second.sourceId;
     }
 
-    friend bool operator<(const FileStatus &first, const FileStatus &second)
-    {
-        return first.sourceId < second.sourceId;
-    }
+    bool isExisting() const { return sourceId && size >= 0 && lastModified >= 0; }
 
-    friend bool operator<(SourceId first, const FileStatus &second)
-    {
-        return first < second.sourceId;
-    }
-
-    friend bool operator<(const FileStatus &first, SourceId second)
-    {
-        return first.sourceId < second;
-    }
-
-    bool isValid() const { return sourceId && size >= 0 && lastModified >= 0; }
-
-    explicit operator bool() const { return isValid(); }
+    explicit operator bool() const { return bool(sourceId); }
 
     template<typename String>
     friend void convertToString(String &string, const FileStatus &fileStatus)

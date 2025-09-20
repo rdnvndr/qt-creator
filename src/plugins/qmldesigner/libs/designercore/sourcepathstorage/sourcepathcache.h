@@ -31,8 +31,8 @@ class SourcePathCache final : public SourcePathCacheInterface
 
 public:
     SourcePathCache(Storage &storage)
-        : m_sourceContextStorageAdapter{storage}
-        , m_sourceNameStorageAdapter{storage}
+        : m_directoryPathStorageAdapter{storage}
+        , m_fileNameStorageAdapter{storage}
 
     {
         populateIfEmpty();
@@ -43,127 +43,144 @@ public:
 
     void populateIfEmpty() override
     {
-        if (m_sourcePathCache.isEmpty()) {
-            m_sourceContextPathCache.populate();
-            m_sourcePathCache.populate();
+        if (m_fileNameCache.isEmpty()) {
+            m_directoryPathCache.populate();
+            m_fileNameCache.populate();
         }
-    }
-
-    std::pair<SourceContextId, SourceId> sourceContextAndSourceId(
-        SourcePathView sourcePath) const override
-    {
-        Utils::SmallStringView sourceContextPath = sourcePath.directory();
-
-        auto sourceContextId = m_sourceContextPathCache.id(sourceContextPath);
-
-        Utils::SmallStringView sourceName = sourcePath.name();
-
-        auto sourceId = m_sourcePathCache.id(sourceName);
-
-        return {sourceContextId, SourceId::create(sourceId, sourceContextId)};
     }
 
     SourceId sourceId(SourcePathView sourcePath) const override
     {
-        return sourceContextAndSourceId(sourcePath).second;
+        Utils::SmallStringView directoryPath = sourcePath.directory();
+
+        auto directoryPathId = m_directoryPathCache.id(directoryPath);
+
+        Utils::SmallStringView fileName = sourcePath.name();
+
+        auto fileNameId = m_fileNameCache.id(fileName);
+
+        return SourceId::create(directoryPathId, fileNameId);
     }
 
-    SourceId sourceId(SourceContextId sourceContextId,
-                      Utils::SmallStringView sourceName) const override
+    FileNameId fileNameId(Utils::SmallStringView fileName) const override
     {
-        SourceNameId sourceNameId = m_sourcePathCache.id(sourceName);
-
-        return SourceId::create(sourceNameId, sourceContextId);
+        return m_fileNameCache.id(fileName);
     }
 
-    SourceContextId sourceContextId(Utils::SmallStringView sourceContextPath) const override
+    SourceId sourceId(DirectoryPathId directoryPathId, Utils::SmallStringView fileName) const override
     {
-        Utils::SmallStringView path = sourceContextPath.back() == '/'
-                                          ? sourceContextPath.mid(0, sourceContextPath.size() - 1)
-                                          : sourceContextPath;
+        FileNameId fileNameId = m_fileNameCache.id(fileName);
 
-        return m_sourceContextPathCache.id(path);
+        return SourceId::create(directoryPathId, fileNameId);
+    }
+
+    DirectoryPathId directoryPathId(Utils::SmallStringView directoryPath) const override
+    {
+        Utils::SmallStringView path = directoryPath.back() == '/'
+                                          ? directoryPath.substr(0, directoryPath.size() - 1)
+                                          : directoryPath;
+
+        return m_directoryPathCache.id(path);
     }
 
     SourcePath sourcePath(SourceId sourceId) const override
     {
-        if (Q_UNLIKELY(!sourceId.isValid()))
+        if (!sourceId) [[unlikely]]
             throw NoSourcePathForInvalidSourceId();
 
-        auto sourceName = m_sourcePathCache.value(sourceId.mainId());
+        auto fileName = m_fileNameCache.value(sourceId.fileNameId());
 
-        Utils::PathString sourceContextPath = m_sourceContextPathCache.value(sourceId.contextId());
+        Utils::PathString directoryPath = m_directoryPathCache.value(sourceId.directoryPathId());
 
-        return SourcePath{sourceContextPath, sourceName};
+        return SourcePath{directoryPath, fileName};
     }
 
-    Utils::PathString sourceContextPath(SourceContextId sourceContextId) const override
+    Utils::PathString directoryPath(DirectoryPathId directoryPathId) const override
     {
-        if (Q_UNLIKELY(!sourceContextId.isValid()))
-            throw NoSourceContextPathForInvalidSourceContextId();
+        if (!directoryPathId) [[unlikely]]
+            throw NoDirectoryPathForInvalidDirectoryPathId();
 
-        return m_sourceContextPathCache.value(sourceContextId);
+        return m_directoryPathCache.value(directoryPathId);
+    }
+
+    Utils::SmallString fileName(FileNameId fileNameId) const override
+    {
+        if (!fileNameId) [[unlikely]]
+            throw NoFileNameForInvalidFileNameId();
+
+        return m_fileNameCache.value(fileNameId);
     }
 
 private:
-    class SourceContextStorageAdapter
+    class DirectoryPathStorageAdapter
     {
     public:
-        auto fetchId(Utils::SmallStringView sourceContextPath)
+        auto fetchId(Utils::SmallStringView directoryPath)
         {
-            return storage.fetchSourceContextId(sourceContextPath);
+            return storage.fetchDirectoryPathId(directoryPath);
         }
 
-        auto fetchValue(SourceContextId id) { return storage.fetchSourceContextPath(id); }
+        auto fetchValue(DirectoryPathId id) { return storage.fetchDirectoryPath(id); }
 
-        auto fetchAll() { return storage.fetchAllSourceContexts(); }
+        auto fetchAll() { return storage.fetchAllDirectoryPaths(); }
 
         Storage &storage;
     };
 
-    class SourceNameStorageAdapter
+    class FileNameStorageAdapter
     {
     public:
-        auto fetchId(Utils::SmallStringView sourceNameView)
+        auto fetchId(Utils::SmallStringView fileNameView)
         {
-            return storage.fetchSourceNameId(sourceNameView);
+            return storage.fetchFileNameId(fileNameView);
         }
 
-        auto fetchValue(SourceNameId id) { return storage.fetchSourceName(id); }
+        auto fetchValue(FileNameId id) { return storage.fetchFileName(id); }
 
-        auto fetchAll() { return storage.fetchAllSourceNames(); }
+        auto fetchAll() { return storage.fetchAllFileNames(); }
 
         Storage &storage;
     };
 
-    static bool sourceLess(Utils::SmallStringView first, Utils::SmallStringView second) noexcept
+    struct FileNameLess
     {
-        return std::lexicographical_compare(first.rbegin(),
-                                            first.rend(),
-                                            second.rbegin(),
-                                            second.rend());
-    }
+        bool operator()(Utils::SmallStringView first, Utils::SmallStringView second) const noexcept
+        {
+            return first < second;
+        }
+    };
 
-    using SourceContextPathCache = StorageCache<Utils::PathString,
-                                                Utils::SmallStringView,
-                                                SourceContextId,
-                                                SourceContextStorageAdapter,
-                                                Mutex,
-                                                sourceLess,
-                                                Cache::SourceContext>;
-    using SourceNameCache = StorageCache<Utils::PathString,
+    struct DirectoryPathLess
+    {
+        bool operator()(Utils::SmallStringView first, Utils::SmallStringView second) const noexcept
+        {
+            return std::ranges::lexicographical_compare(first.rbegin(),
+                                                        first.rend(),
+                                                        second.rbegin(),
+                                                        second.rend());
+        }
+    };
+
+    using DirectoryPathCache = StorageCache<Utils::PathString,
+                                            Utils::SmallStringView,
+                                            DirectoryPathId,
+                                            DirectoryPathStorageAdapter,
+                                            Mutex,
+                                            DirectoryPathLess,
+                                            Cache::DirectoryPath>;
+    using FileNameCache = StorageCache<Utils::SmallString,
                                          Utils::SmallStringView,
-                                         SourceNameId,
-                                         SourceNameStorageAdapter,
+                                         FileNameId,
+                                         FileNameStorageAdapter,
                                          Mutex,
-                                         sourceLess,
-                                         Cache::SourceName>;
+                                         FileNameLess,
+                                         Cache::FileName>;
 
 private:
-    SourceContextStorageAdapter m_sourceContextStorageAdapter;
-    SourceNameStorageAdapter m_sourceNameStorageAdapter;
-    mutable SourceContextPathCache m_sourceContextPathCache{m_sourceContextStorageAdapter};
-    mutable SourceNameCache m_sourcePathCache{m_sourceNameStorageAdapter};
+    DirectoryPathStorageAdapter m_directoryPathStorageAdapter;
+    FileNameStorageAdapter m_fileNameStorageAdapter;
+    mutable DirectoryPathCache m_directoryPathCache{m_directoryPathStorageAdapter};
+    mutable FileNameCache m_fileNameCache{m_fileNameStorageAdapter};
 };
 
 } // namespace QmlDesigner

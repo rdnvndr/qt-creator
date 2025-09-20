@@ -48,37 +48,51 @@ public:
     RewriteAction &operator=(const RewriteAction&) = delete;
 };
 
-class AddPropertyRewriteAction: public RewriteAction
+class PropertyRewriteAction : public RewriteAction
 {
 public:
-    AddPropertyRewriteAction(const AbstractProperty &property, const QString &valueText, QmlDesigner::QmlRefactoring::PropertyType propertyType, const ModelNode &containedModelNode/* = ModelNode()*/):
-            m_property(property), m_valueText(valueText), m_propertyType(propertyType), m_containedModelNode(containedModelNode),
-            m_sheduledInHierarchy(property.isValid() && property.parentModelNode().isInHierarchy())
+    PropertyRewriteAction(const AbstractProperty &property,
+                          const QString &valueText,
+                          QmlDesigner::QmlRefactoring::PropertyType propertyType,
+                          const ModelNode &containedModelNode /* = ModelNode()*/)
+        : m_property(property)
+        , m_valueText(valueText)
+        , m_propertyType(propertyType)
+        , m_containedModelNode(containedModelNode)
+        , m_scheduledInHierarchy(property.isValid() && property.parentModelNode().isInHierarchy())
     {}
 
-    bool execute(QmlDesigner::QmlRefactoring &refactoring, ModelNodePositionStorage &positionStore) override;
-    QString info() const override;
+    AbstractProperty property() const { return m_property; }
 
-    AddPropertyRewriteAction *asAddPropertyRewriteAction() override { return this; }
+    QString valueText() const { return m_valueText; }
 
-    AbstractProperty property() const
-    { return m_property; }
+    QmlDesigner::QmlRefactoring::PropertyType propertyType() const { return m_propertyType; }
 
-    QString valueText() const
-    { return m_valueText; }
+    ModelNode containedModelNode() const { return m_containedModelNode; }
 
-    QmlDesigner::QmlRefactoring::PropertyType propertyType() const
-    { return m_propertyType; }
+    void setMovedAfterCreation(bool moved) { m_movedAfterCreation = moved; }
 
-    ModelNode containedModelNode() const
-    { return m_containedModelNode; }
+protected:
+    bool scheduledInHierarchy() const { return m_scheduledInHierarchy; }
+    bool movedAfterCreation() const { return m_movedAfterCreation; }
+    std::optional<int> nodeLocation() const;
 
 private:
     AbstractProperty m_property;
     QString m_valueText;
     QmlDesigner::QmlRefactoring::PropertyType m_propertyType;
     ModelNode m_containedModelNode;
-    bool m_sheduledInHierarchy;
+    bool m_scheduledInHierarchy;
+    bool m_movedAfterCreation = false;
+};
+
+class AddPropertyRewriteAction : public PropertyRewriteAction
+{
+public:
+    using PropertyRewriteAction::PropertyRewriteAction;
+    bool execute(QmlDesigner::QmlRefactoring &refactoring, ModelNodePositionStorage &positionStore) override;
+    QString info() const override;
+    AddPropertyRewriteAction *asAddPropertyRewriteAction() override { return this; }
 };
 
 class ChangeIdRewriteAction: public RewriteAction
@@ -102,37 +116,13 @@ private:
     QString m_newId;
 };
 
-class ChangePropertyRewriteAction: public RewriteAction
+class ChangePropertyRewriteAction : public PropertyRewriteAction
 {
 public:
-    ChangePropertyRewriteAction(const AbstractProperty &property, const QString &valueText, QmlDesigner::QmlRefactoring::PropertyType propertyType, const ModelNode &containedModelNode/* = ModelNode()*/):
-            m_property(property), m_valueText(valueText), m_propertyType(propertyType), m_containedModelNode(containedModelNode),
-            m_sheduledInHierarchy(property.isValid() && property.parentModelNode().isInHierarchy())
-    {}
-
+    using PropertyRewriteAction::PropertyRewriteAction;
     bool execute(QmlDesigner::QmlRefactoring &refactoring, ModelNodePositionStorage &positionStore) override;
     QString info() const override;
-
     ChangePropertyRewriteAction *asChangePropertyRewriteAction() override { return this; }
-
-    AbstractProperty property() const
-    { return m_property; }
-
-    QString valueText() const
-    { return m_valueText; }
-
-    QmlDesigner::QmlRefactoring::PropertyType propertyType() const
-    { return m_propertyType; }
-
-    ModelNode containedModelNode() const
-    { return m_containedModelNode; }
-
-private:
-    AbstractProperty m_property;
-    QString m_valueText;
-    QmlDesigner::QmlRefactoring::PropertyType m_propertyType;
-    ModelNode m_containedModelNode;
-    bool m_sheduledInHierarchy;
 };
 
 class ChangeTypeRewriteAction:public RewriteAction
@@ -237,6 +227,8 @@ public:
     QString info() const override;
 
     MoveNodeRewriteAction *asMoveNodeRewriteAction() override { return this; }
+
+    ModelNode movingNode() const { return m_movingNode; }
 
 private:
     ModelNode m_movingNode;

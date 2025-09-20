@@ -13,8 +13,9 @@ class AddObjectVisitor: public QMLRewriter
 public:
     AddObjectVisitor(QmlDesigner::TextModifier &modifier,
                      quint32 parentLocation,
+                     std::optional<int> nodeLocation,
                      const QString &content,
-                     const PropertyNameList &propertyOrder);
+                     Utils::span<const PropertyNameView> propertyOrder);
 
 protected:
     bool visit(QmlJS::AST::UiObjectBinding *ast) override;
@@ -25,8 +26,9 @@ private:
 
 private:
     quint32 m_parentLocation;
+    std::optional<int> m_nodeLocation;
     QString m_content;
-    PropertyNameList m_propertyOrder;
+    Utils::span<const PropertyNameView> m_propertyOrder;
 };
 
 } // namespace Internal

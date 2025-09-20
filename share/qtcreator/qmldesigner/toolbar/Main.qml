@@ -129,6 +129,15 @@ Rectangle {
             onCancelClicked: backend.cancelRunning()
             onRunTargetSelected: function(targetName) { backend.selectRunTarget(targetName) }
             onOpenRunTargets: backend.openDeviceManager()
+
+            TapHandler {
+                enabled: backend.runTargetType === RunManager.LivePreview
+                acceptedButtons: Qt.RightButton
+                onTapped: {
+                    var p = splitButton.mapToGlobal(0, 0)
+                    backend.showZoomMenu(p.x, p.y)
+                }
+            }
         }
 
         StudioControls.TopLevelComboBox {
@@ -346,8 +355,8 @@ Rectangle {
                 }
 
                 onVisibleChanged: {
-                    // if visible and logged in
-                    // fetch user info
+                    if (dvWindow.visible)
+                        backend.designViewerConnector.fetchUserInfo()
                 }
 
                 onClosing: {
@@ -370,7 +379,8 @@ Rectangle {
                 }
 
                 Connections {
-                    target: backend.designViewerConnector
+                    target: backend.designViewerConnector ?? null
+                    ignoreUnknownSignals: true
 
                     function onUserInfoReceived(reply: var) {
                         let jsonReply = JSON.parse(reply)
@@ -388,7 +398,7 @@ Rectangle {
                     property int internalMargin: 8
 
                     anchors.fill: parent
-                    currentIndex: backend.designViewerConnector.connectorStatus
+                    currentIndex: backend.designViewerConnector?.connectorStatus ?? 0
 
                     // Fetching
                     Rectangle {
@@ -460,7 +470,8 @@ Rectangle {
                                 id: shareNotification
 
                                 Connections {
-                                    target: backend.designViewerConnector
+                                    target: backend.designViewerConnector ?? null
+                                    ignoreUnknownSignals: true
 
                                     function onProjectUploadProgress(progress: var) {
                                         shareNotification.setProgress(progress)
@@ -547,9 +558,44 @@ Rectangle {
                                         anchors.verticalCenter: parent.verticalCenter
                                         spacing: 4
 
-                                        Text {
-                                            color: StudioTheme.Values.themeTextColor
-                                            text: loggedInPage.email ?? ""
+
+                                        RowLayout {
+                                            width: parent.width
+
+                                            Text {
+                                                Layout.fillWidth: true
+                                                color: StudioTheme.Values.themeTextColor
+                                                text: loggedInPage.email ?? ""
+                                            }
+
+                                            Label {
+                                                id: refresehIcon
+                                                width: 18
+                                                height: 18
+                                                color: StudioTheme.Values.themeTextColor
+                                                font.family: StudioTheme.Constants.iconFont.family
+                                                font.pixelSize: 14
+                                                text: StudioTheme.Constants.updateContent_medium
+                                                verticalAlignment: Text.AlignVCenter
+                                                horizontalAlignment: Text.AlignHCenter
+                                                scale: refresehMouseArea.containsMouse ? 1.2 : 1
+
+                                                RotationAnimation on rotation {
+                                                    id: refresehAnimation
+                                                    from: 0
+                                                    to: 360
+                                                }
+
+                                                MouseArea {
+                                                    id: refresehMouseArea
+                                                    anchors.fill: parent
+                                                    hoverEnabled: true
+                                                    onClicked: {
+                                                        refresehAnimation.start()
+                                                        backend.designViewerConnector.fetchUserInfo()
+                                                    }
+                                                }
+                                            }
                                         }
 
                                         RowLayout {

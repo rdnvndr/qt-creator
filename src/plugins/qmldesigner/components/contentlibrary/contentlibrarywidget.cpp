@@ -12,9 +12,7 @@
 #include "contentlibrarytexturesmodel.h"
 #include "contentlibraryusermodel.h"
 
-#include <coreplugin/icore.h>
 #include <bundleimporter.h>
-#include <coreplugin/icore.h>
 #include <designerpaths.h>
 #include <nodemetainfo.h>
 #include <qmldesignerconstants.h>
@@ -23,12 +21,13 @@
 #include <theme.h>
 
 #include <qmldesignerbase/settings/designersettings.h>
-
-#include <coreplugin/icore.h>
-
+#include <qmldesignerutils/asset.h>
 #include <qmldesignerutils/filedownloader.h>
 #include <qmldesignerutils/fileextractor.h>
 #include <qmldesignerutils/multifiledownloader.h>
+
+#include <coreplugin/fileutils.h>
+#include <coreplugin/icore.h>
 
 #include <utils/algorithm.h>
 #include <utils/fileutils.h>
@@ -138,6 +137,7 @@ ContentLibraryWidget::ContentLibraryWidget()
     , m_environmentsModel(new ContentLibraryTexturesModel("Environments", this))
     , m_effectsModel(new ContentLibraryEffectsModel(this))
     , m_userModel(new ContentLibraryUserModel(this))
+    , m_showInGraphicalShellMsg(Core::FileUtils::msgGraphicalShellAction())
 {
     qmlRegisterType<QmlDesigner::FileDownloader>("WebFetcher", 1, 0, "FileDownloader");
     qmlRegisterType<QmlDesigner::FileExtractor>("WebFetcher", 1, 0, "FileExtractor");
@@ -169,7 +169,7 @@ ContentLibraryWidget::ContentLibraryWidget()
     updateSearch();
 
     setStyleSheet(Theme::replaceCssColors(
-        QString::fromUtf8(Utils::FileReader::fetchQrc(":/qmldesigner/stylesheet.css"))));
+        Utils::FileUtils::fetchQrc(":/qmldesigner/stylesheet.css")));
 
     m_qmlSourceUpdateShortcut = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_F11), this);
     connect(m_qmlSourceUpdateShortcut, &QShortcut::activated, this, &ContentLibraryWidget::reloadQmlSource);
@@ -191,6 +191,21 @@ ContentLibraryWidget::ContentLibraryWidget()
 
 ContentLibraryWidget::~ContentLibraryWidget()
 {
+}
+
+void ContentLibraryWidget::browseBundleFolder()
+{
+    DesignDocument *document = QmlDesignerPlugin::instance()->currentDesignDocument();
+    QTC_ASSERT(document, return);
+    const QString currentDir = document->fileName().parentDir().toUrlishString();
+
+    QString dir = QFileDialog::getExistingDirectory(Core::ICore::dialogParent(),
+                                              tr("Choose Directory"),
+                                              currentDir,
+                                              QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
+
+    if (!dir.isEmpty() && !m_userModel->bundleDirExists(dir))
+        m_userModel->addBundleDir(Utils::FilePath::fromString(dir));
 }
 
 void ContentLibraryWidget::createImporter()
@@ -658,6 +673,51 @@ void ContentLibraryWidget::markTextureUpdated(const QString &textureKey)
         m_environmentsModel->markTextureHasNoUpdates(subcategory, textureKey);
 }
 
+bool ContentLibraryWidget::has3DNode(const QByteArray &data) const
+{
+    QByteArray encodedData = data;
+    QDataStream stream(&encodedData, QIODevice::ReadOnly);
+
+    int internalId = 0;
+    while (!stream.atEnd()) {
+        stream >> internalId;
+
+        if (internalId == 0)
+            continue;
+
+        ModelNode modelNode = QmlDesignerPlugin::instance()->viewManager()
+                                  .view()->modelNodeForInternalId(internalId);
+
+        if (modelNode.metaInfo().isQtQuick3DNode())
+            return true;
+    }
+
+    return false;
+}
+
+bool ContentLibraryWidget::hasTexture(const QString &format, const QVariant &data) const
+{
+    if (format == Constants::MIME_TYPE_TEXTURE) { // from material browser
+        return true;
+    } else if (format == Constants::MIME_TYPE_ASSETS) {
+        const QList<QVariant> urlList = data.toList();
+
+        for (const QVariant &url : urlList) {
+            QString str = url.toUrl().toLocalFile();
+
+            if (Asset(str).isValidTextureSource())
+                return true;
+        }
+    }
+
+    return false;
+}
+
+void ContentLibraryWidget::addQtQuick3D()
+{
+    emit importQtQuick3D();
+}
+
 QSize ContentLibraryWidget::sizeHint() const
 {
     return {420, 420};
@@ -887,6 +947,11 @@ void ContentLibraryWidget::setHasModelSelection(bool b)
 
     m_hasModelSelection = b;
     emit hasModelSelectionChanged();
+}
+
+void ContentLibraryWidget::showInGraphicalShell(const QString &path)
+{
+    Core::FileUtils::showInGraphicalShell(Utils::FilePath::fromString(path));
 }
 
 } // namespace QmlDesigner

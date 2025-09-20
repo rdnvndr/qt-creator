@@ -28,6 +28,8 @@
 #include <QApplication>
 #include <QDebug>
 
+using namespace Utils;
+
 namespace QmlDesigner {
 
 namespace {
@@ -204,8 +206,7 @@ struct ModelBuilder
         }
 
         document = std::make_unique<QTextDocument>(fileContent);
-        modifier = std::make_unique<NotIndentingTextEditModifier>(document.get(),
-                                                                  QTextCursor{document.get()});
+        modifier = std::make_unique<NotIndentingTextEditModifier>(document.get());
 
         rewriter = std::make_unique<RewriterView>(externalDependencies, RewriterView::Amend);
         rewriter->setCheckSemanticErrors(false);
@@ -351,10 +352,10 @@ void InsightModel::setup()
     }
 
     m_fileSystemWatcher->addFiles(
-        {m_mainQmlInfo.absoluteFilePath(),
-         m_configInfo.absoluteFilePath(),
-         m_qtdsConfigInfo.absoluteFilePath()},
-        Utils::FileSystemWatcher::WatchModifiedDate);
+        {FilePath::fromString(m_mainQmlInfo.absoluteFilePath()),
+         FilePath::fromString(m_configInfo.absoluteFilePath()),
+         FilePath::fromString(m_qtdsConfigInfo.absoluteFilePath())},
+        FileSystemWatcher::WatchModifiedDate);
 
     m_initialized = true;
 }
@@ -554,8 +555,9 @@ void InsightModel::selectAllCustom()
     selectAll(customCategories(), m_customCheckState);
 }
 
-void InsightModel::handleFileChange(const QString &path)
+void InsightModel::handleFileChange(const FilePath &filePath)
 {
+    const QString path = filePath.toFSPathString();
     if (m_mainQmlInfo.absoluteFilePath() == path)
         parseMainQml();
     else if (m_configInfo.absoluteFilePath() == path)

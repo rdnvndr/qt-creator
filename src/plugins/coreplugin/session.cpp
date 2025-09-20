@@ -20,13 +20,14 @@
 
 #include <utils/algorithm.h>
 #include <utils/filepath.h>
+#include <utils/guard.h>
 #include <utils/macroexpander.h>
 #include <utils/persistentsettings.h>
 #include <utils/qtcassert.h>
+#include <utils/shutdownguard.h>
 #include <utils/store.h>
 #include <utils/stringutils.h>
 #include <utils/stylehelper.h>
-#include <utils/shutdownguard.h>
 #include <utils/threadutils.h>
 
 #include <nanotrace/nanotrace.h>
@@ -95,7 +96,7 @@ public:
     QString m_sessionName = "default";
     bool m_isAutoRestoreLastSession = false;
     bool m_virginSession = true;
-    bool m_loadingSession = false;
+    Guard m_loadingSession;
 
     mutable QStringList m_sessions;
     mutable QHash<QString, QDateTime> m_sessionDateTimes;
@@ -147,26 +148,30 @@ SessionManager::SessionManager()
             SessionManager::saveSession();
     });
 
-    // session menu
-    ActionContainer *mfile = ActionManager::actionContainer(Core::Constants::M_FILE);
-    ActionContainer *msession = ActionManager::createMenu(M_SESSION);
-    msession->menu()->setTitle(PE::Tr::tr("S&essions"));
-    msession->setOnAllDisabledBehavior(ActionContainer::Show);
-    mfile->addMenu(msession, Core::Constants::G_FILE_SESSION);
-    d->m_sessionMenu = msession->menu();
-    connect(mfile->menu(), &QMenu::aboutToShow, this, [] { d->updateSessionMenu(); });
+    if (!ICore::isQtDesignStudio()) {
+        // session menu
+        ActionContainer *mfile = ActionManager::actionContainer(Core::Constants::M_FILE);
+        ActionContainer *msession = ActionManager::createMenu(M_SESSION);
 
-    // session manager action
-    d->m_sessionManagerAction = new QAction(PE::Tr::tr("&Manage..."), this);
-    d->m_sessionMenu->addAction(d->m_sessionManagerAction);
-    d->m_sessionMenu->addSeparator();
-    Command *cmd = ActionManager::registerAction(d->m_sessionManagerAction,
-                                                 "ProjectExplorer.ManageSessions");
-    cmd->setDefaultKeySequence(QKeySequence());
-    connect(d->m_sessionManagerAction,
+        msession->menu()->setTitle(PE::Tr::tr("S&essions"));
+        msession->setOnAllDisabledBehavior(ActionContainer::Show);
+        mfile->addMenu(msession, Core::Constants::G_FILE_SESSION);
+        d->m_sessionMenu = msession->menu();
+        connect(mfile->menu(), &QMenu::aboutToShow, this, [] { d->updateSessionMenu(); });
+
+        // session manager action
+        d->m_sessionManagerAction = new QAction(PE::Tr::tr("&Manage..."), this);
+        d->m_sessionMenu->addAction(d->m_sessionManagerAction);
+        d->m_sessionMenu->addSeparator();
+        Command *cmd = ActionManager::registerAction(
+            d->m_sessionManagerAction, "ProjectExplorer.ManageSessions");
+        cmd->setDefaultKeySequence(QKeySequence());
+        connect(
+            d->m_sessionManagerAction,
             &QAction::triggered,
             this,
             &SessionManager::showSessionManager);
+    }
 
     MacroExpander *expander = Utils::globalMacroExpander();
     expander->registerFileVariables("Session",
@@ -205,7 +210,7 @@ bool SessionManager::isDefaultSession(const QString &session)
 
 bool SessionManager::isLoadingSession()
 {
-    return d->m_loadingSession;
+    return d->m_loadingSession.isLocked();
 }
 
 /*!
@@ -356,8 +361,8 @@ bool SessionManager::deleteSession(const QString &session)
     FilePath sessionFile = sessionNameToFileName(session);
     if (!sessionFile.exists())
         return false;
-    Result result = sessionFile.removeFile();
-    QTC_CHECK_EXPECTED(result);
+    Result<> result = sessionFile.removeFile();
+    QTC_CHECK_RESULT(result);
     return bool(result);
 }
 
@@ -679,21 +684,17 @@ bool SessionManager::loadSession(const QString &session, bool initial)
         return true;
     }
 
-    d->m_loadingSession = true;
+    GuardLocker sessionLoadingGuard(d->m_loadingSession);
 
     // Allow everyone to set something in the session and before saving
     emit SessionManager::instance()->aboutToUnloadSession(d->m_sessionName);
 
-    if (!saveSession()) {
-        d->m_loadingSession = false;
+    if (!saveSession())
         return false;
-    }
 
     // Clean up
-    if (!EditorManager::closeAllEditors()) {
-        d->m_loadingSession = false;
+    if (!EditorManager::closeAllEditors())
         return false;
-    }
 
     if (!switchFromImplicitToExplicitDefault)
         d->m_values.clear();
@@ -736,7 +737,6 @@ bool SessionManager::loadSession(const QString &session, bool initial)
 
     emit SessionManager::instance()->sessionLoaded(session);
 
-    d->m_loadingSession = false;
     return true;
 }
 
@@ -787,7 +787,7 @@ bool SessionManager::saveSession()
     if (!d->m_writer || d->m_writer->fileName() != filePath)
         d->m_writer.reset(new PersistentSettingsWriter(filePath, "QtCreatorSession"));
 
-    const bool result = d->m_writer->save(data, ICore::dialogParent());
+    const Result<> result = d->m_writer->save(data);
     if (result) {
         if (!SessionManager::isDefaultVirgin())
             d->m_sessionDateTimes.insert(SessionManager::activeSession(),
@@ -799,7 +799,7 @@ bool SessionManager::saveSession()
                                  .arg(d->m_writer->fileName().toUserOutput()));
     }
 
-    return result;
+    return result.has_value();
 }
 
 } // namespace Core

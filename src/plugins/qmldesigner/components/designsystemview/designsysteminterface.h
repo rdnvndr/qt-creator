@@ -18,12 +18,13 @@ class DesignSystemInterface : public QObject
     Q_PROPERTY(QStringList collections READ collections NOTIFY collectionsChanged FINAL)
 
 public:
-    DesignSystemInterface(DSStore *store);
+    DesignSystemInterface();
     ~DesignSystemInterface();
 
     Q_INVOKABLE void loadDesignSystem();
     Q_INVOKABLE CollectionModel *model(const QString &typeName);
 
+    Q_INVOKABLE QString generateCollectionName(const QString &hint) const;
     Q_INVOKABLE void addCollection(const QString &name);
     Q_INVOKABLE void removeCollection(const QString &name);
     Q_INVOKABLE void renameCollection(const QString &oldName, const QString &newName);
@@ -34,6 +35,8 @@ public:
 
     QStringList collections() const;
 
+    void setDSStore(DSStore *store);
+
 signals:
     void collectionsChanged();
 
@@ -42,7 +45,7 @@ private:
 
 private:
     class DSStore *m_store = nullptr;
-    std::map<QString, std::unique_ptr<CollectionModel>> m_models;
+    std::map<QString, CollectionModel> m_models;
 };
 
 } // namespace QmlDesigner

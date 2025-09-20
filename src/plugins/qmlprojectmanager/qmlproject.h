@@ -20,11 +20,15 @@ public:
     explicit QmlProject(const Utils::FilePath &filename);
 
     static bool isQtDesignStudioStartedFromQtC();
-    bool isEditModePreferred() const override;
-
-    ProjectExplorer::Tasks projectIssues(const ProjectExplorer::Kit *k) const final;
 
     static bool isMCUs();
+
+    struct Version
+    {
+        int major = -1;
+        int minor = -1;
+    };
+    static Version qtQuickVersion();
 
 protected:
     RestoreResult fromMap(const Utils::Store &map, QString *errorMessage) override;
@@ -40,7 +44,7 @@ private:
     int preferedQtTarget(ProjectExplorer::Target *target);
 
 private slots:
-    void parsingFinished(const ProjectExplorer::Target *target, bool success);
+    void parsingFinished(bool success);
 };
 
 class FilesUpdateBlocker

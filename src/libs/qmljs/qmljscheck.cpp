@@ -21,6 +21,7 @@
 using namespace QmlJS;
 using namespace QmlJS::AST;
 using namespace QmlJS::StaticAnalysis;
+using namespace Qt::Literals::StringLiterals;
 
 namespace {
 
@@ -715,16 +716,16 @@ Check::Check(Document::Ptr doc, const ContextPtr &context, Utils::QtcSettings *q
         auto toIntList = [](const QList<StaticAnalysis::Type> list) {
             return Utils::transform(list, [](StaticAnalysis::Type t) { return int(t); });
         };
-        auto disabled = qtcSettings->value("J.QtQuick/QmlJSEditor.disabledMessages",
-                                           QVariant::fromValue(
-                                               toIntList(defaultDisabledMessages()))).toList();
+        const auto disabled = qtcSettings->value("J.QtQuick/QmlJSEditor.disabledMessages",
+                                                 QVariant::fromValue(
+                                                     toIntList(defaultDisabledMessages()))).toList();
         for (const QVariant &disabledNumber : disabled)
             disableMessage(StaticAnalysis::Type(disabledNumber.toInt()));
 
         if (!isQtQuick2Ui()) {
-            auto disabled = qtcSettings->value("J.QtQuick/QmlJSEditor.disabledMessagesNonQuickUI",
-                                               QVariant::fromValue(
-                                                   toIntList(defaultDisabledMessagesForNonQuickUi()))).toList();
+            const auto disabled = qtcSettings->value("J.QtQuick/QmlJSEditor.disabledMessagesNonQuickUI",
+                                                     QVariant::fromValue(
+                                                         toIntList(defaultDisabledMessagesForNonQuickUi()))).toList();
             for (const QVariant &disabledNumber : disabled)
                 disableMessage(StaticAnalysis::Type(disabledNumber.toInt()));
         }
@@ -1373,10 +1374,10 @@ bool Check::visit(FunctionExpression *ast)
         }
     }
 
-    const bool isDirectInConnectionsScope =
-            (!m_typeStack.isEmpty() && m_typeStack.last() == "Connections");
+    const bool isDirectInConnectionsOrScriptActionScope
+        = isDirectInTypeScope("Connections"_L1, "ScriptAction"_L1);
 
-    if (!isDirectInConnectionsScope)
+    if (!isDirectInConnectionsOrScriptActionScope)
         addMessage(ErrFunctionsNotSupportedInQmlUi, locationFromRange(locfunc, loclparen));
 
     DeclarationsCheck bodyCheck;
@@ -1433,10 +1434,10 @@ bool Check::visit(BinaryExpression *ast)
     SourceLocation expressionSourceLocation = locationFromRange(ast->firstSourceLocation(),
                                                                 ast->lastSourceLocation());
 
-    const bool isDirectInConnectionsScope = (!m_typeStack.isEmpty()
-                                             && m_typeStack.last() == "Connections");
+    const bool isDirectInConnectionsOrScriptActionScope
+        = isDirectInTypeScope("Connections"_L1, "ScriptAction"_L1);
 
-    if (expressionAffectsVisualAspects(ast) && !isDirectInConnectionsScope)
+    if (expressionAffectsVisualAspects(ast) && !isDirectInConnectionsOrScriptActionScope)
         addMessage(WarnImperativeCodeNotEditableInVisualDesigner, expressionSourceLocation);
 
     // check ==, !=
@@ -1481,11 +1482,10 @@ bool Check::visit(BinaryExpression *ast)
 
 bool Check::visit(Block *ast)
 {
+    const bool isDirectInConnectionsOrScriptActionScope
+        = isDirectInTypeScope("Connections"_L1, "ScriptAction"_L1, "TimelineAnimation"_L1);
 
-    bool isDirectInConnectionsScope =
-            (!m_typeStack.isEmpty() && m_typeStack.last() == "Connections");
-
-    if (!isDirectInConnectionsScope)
+    if (!isDirectInConnectionsOrScriptActionScope)
         addMessage(ErrBlocksNotSupportedInQmlUi, locationFromRange(ast->firstSourceLocation(), ast->lastSourceLocation()));
 
     if (Node *p = parent()) {
@@ -1910,9 +1910,11 @@ bool Check::visit(CallExpression *ast)
     const bool isMathFunction = namespaceName == "Math";
     const bool isDateFunction = namespaceName == "Date";
     // allow adding connections with the help of the qt quick designer ui
-    bool isDirectInConnectionsScope =
-            (!m_typeStack.isEmpty() && m_typeStack.last() == QLatin1String("Connections"));
-    if (!whiteListedFunction && !isMathFunction && !isDateFunction && !isDirectInConnectionsScope)
+    const bool isDirectInConnectionsOrScriptActionScope
+        = isDirectInTypeScope("Connections"_L1, "ScriptAction"_L1);
+
+    if (!whiteListedFunction && !isMathFunction && !isDateFunction
+        && !isDirectInConnectionsOrScriptActionScope)
         addMessage(ErrFunctionsNotSupportedInQmlUi, location);
 
     if (translationFunctions.contains(name)) {

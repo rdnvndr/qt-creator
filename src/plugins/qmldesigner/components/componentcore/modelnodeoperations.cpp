@@ -14,12 +14,15 @@
 
 #include <bindingproperty.h>
 #include <choosefrompropertylistdialog.h>
-#include <designmodewidget.h>
+#include <designdocumentview.h>
 #include <designermcumanager.h>
+#include <designmodewidget.h>
 #include <documentmanager.h>
 #include <itemlibraryentry.h>
-#include <materialutils.h>
+#include <modelmerger.h>
 #include <modelnode.h>
+#include <modelnodeutils.h>
+#include <modelutils.h>
 #include <nodehints.h>
 #include <nodeinstanceview.h>
 #include <nodelistproperty.h>
@@ -59,8 +62,10 @@
 #include <qtsupport/qtkitaspect.h>
 
 #include <utils/algorithm.h>
-#include <utils/qtcprocess.h>
+#include <utils/fileutils.h>
+#include <utils/pathchooser.h>
 #include <utils/qtcassert.h>
+#include <utils/qtcprocess.h>
 #include <utils/smallstring.h>
 
 #include <QComboBox>
@@ -279,6 +284,82 @@ void setVisible(const SelectionContext &selectionState)
     }
 }
 
+static QSet<ModelNode> collectAncestorsAndDescendants(AbstractView *view, const ModelNode &node)
+{
+    QSet<ModelNode> keepVisible;
+
+    ModelNode ancestor = node.parentProperty().parentModelNode();
+    while (ancestor && ancestor != view->rootModelNode()) {
+        keepVisible.insert(ancestor);
+        if (!ancestor.hasParentProperty())
+            break;
+        ancestor = ancestor.parentProperty().parentModelNode();
+    }
+
+    const QList<ModelNode> descendants = node.allSubModelNodes();
+    for (const ModelNode &subNode : descendants)
+        keepVisible.insert(subNode);
+
+    return keepVisible;
+}
+
+void isolateSelectedNodes(const SelectionContext &selectionState)
+{
+    AbstractView *view = selectionState.view();
+    const QList<ModelNode> selectedNodes = view->selectedModelNodes();
+
+    if (selectedNodes.isEmpty() || view->rootModelNode().isSelected())
+        return;
+
+    const QList<ModelNode> allModelNodes = view->allModelNodes();
+    ModelNode active3DScene = Utils3D::active3DSceneNode(view);
+    QSet<ModelNode> nodesToKeepVisible({view->rootModelNode()});
+
+    for (const ModelNode &node : selectedNodes) {
+        nodesToKeepVisible.insert(node);
+        nodesToKeepVisible.unite(collectAncestorsAndDescendants(view, node));
+    }
+
+    auto hideNode = [](const ModelNode &node) {
+        QmlVisualNode(node).setVisibilityOverride(true);
+    };
+
+    auto doNotHideSubNodes = [&nodesToKeepVisible](const ModelNode &node) {
+        if (node.hasAnySubModelNodes()) {
+            const QList<ModelNode> allSubModelNodes = node.allSubModelNodes();
+            for (const ModelNode &subNode : allSubModelNodes)
+                nodesToKeepVisible.insert(subNode);
+        }
+    };
+
+    const bool is3DSelection = active3DScene.isAncestorOf(selectedNodes.first());
+    const QList<ModelNode> nodesToProcess = is3DSelection ? active3DScene.allSubModelNodes()
+                                                          : allModelNodes;
+
+    for (const ModelNode &node : nodesToProcess) {
+        if (nodesToKeepVisible.contains(node))
+            continue;
+
+        if (!is3DSelection) {
+            NodeHints hint = NodeHints::fromModelNode(node);
+            if (!((node && !hint.hideInNavigator()) || hint.visibleInNavigator())
+                || node.id() == Constants::MATERIAL_LIB_ID) {
+                continue;
+            }
+        }
+
+        doNotHideSubNodes(node); // makes sure only the top-most node in the hierarchy is hidden
+        hideNode(node);
+    }
+}
+
+void showAllNodes(const SelectionContext &selectionState)
+{
+    const QList<ModelNode> allModelNodes = selectionState.view()->allModelNodes();
+    for (const ModelNode &node : allModelNodes)
+        QmlVisualNode(node).setVisibilityOverride(false);
+}
+
 void setFillWidth(const SelectionContext &selectionState)
 {
     if (!selectionState.view()
@@ -374,25 +455,12 @@ void reverse(const SelectionContext &selectionState)
 
 inline static void backupPropertyAndRemove(const ModelNode &node, const PropertyName &propertyName)
 {
-    if (node.hasVariantProperty(propertyName)) {
-        node.setAuxiliaryData(AuxiliaryDataType::Document,
-                              auxPropertyString(propertyName),
-                              node.variantProperty(propertyName).value());
-        node.removeProperty(propertyName);
-
-    }
-    if (node.hasBindingProperty(propertyName)) {
-        node.setAuxiliaryData(AuxiliaryDataType::Document,
-                              auxPropertyString(propertyName),
-                              QmlItemNode(node).instanceValue(propertyName));
-        node.removeProperty(propertyName);
-    }
+    ModelNodeUtils::backupPropertyAndRemove(node, propertyName, auxPropertyString(propertyName));
 }
 
 static void restoreProperty(const ModelNode &node, const PropertyName &propertyName)
 {
-    if (auto data = node.auxiliaryData(AuxiliaryDataType::Document, auxPropertyString(propertyName)))
-        node.variantProperty(propertyName).setValue(*data);
+    ModelNodeUtils::restoreProperty(node, propertyName, auxPropertyString(propertyName));
 }
 
 void anchorsFill(const SelectionContext &selectionState)
@@ -410,6 +478,11 @@ void anchorsFill(const SelectionContext &selectionState)
             backupPropertyAndRemove(modelNode, "y");
             backupPropertyAndRemove(modelNode, "width");
             backupPropertyAndRemove(modelNode, "height");
+
+            node.anchors().removeMargin(AnchorLineRight);
+            node.anchors().removeMargin(AnchorLineLeft);
+            node.anchors().removeMargin(AnchorLineTop);
+            node.anchors().removeMargin(AnchorLineBottom);
         }
     });
 }
@@ -493,6 +566,7 @@ static void layoutHelperFunction(const SelectionContext &selectionContext,
                 const ModelNode layoutNode = selectionContext.view()->createModelNode(layoutType, metaInfo.majorVersion(), metaInfo.minorVersion());
 #endif
                 reparentTo(layoutNode, parentNode);
+                layoutNode.ensureIdExists();
 
                 QList<ModelNode> sortedSelectedNodes =  selectionContext.selectedModelNodes();
                 Utils::sort(sortedSelectedNodes, lessThan);
@@ -796,6 +870,90 @@ void moveToComponent(const SelectionContext &selectionContext)
         selectionContext.view()->model()->rewriterView()->moveToComponent(modelNode);
 }
 
+void extractComponent(const SelectionContext &selectionContext)
+{
+    ModelNode selectedNode = selectionContext.currentSingleSelectedNode();
+    AbstractView *contextView = selectionContext.view();
+
+    // Get the path of the qml component
+    QString filePath = ModelUtils::componentFilePath(selectedNode);
+    if (filePath.isEmpty()) {
+        qWarning() << "Qml file for component " << selectedNode.displayName() << "not found!";
+        return;
+    }
+
+    // Read the content of the qml component
+    QString componentText;
+    const FilePath path = FilePath::fromString(filePath);
+    const Result<QByteArray> res = path.fileContents();
+    if (!res) {
+        qWarning() << "Cannot open component file " << filePath;
+        return;
+    }
+    componentText = QString::fromUtf8(*res);
+
+#ifdef QDS_USE_PROJECTSTORAGE
+    ModelPointer inputModel = contextView->model()->createModel("Rectangle");
+#else
+    ModelPointer inputModel = Model::create("QtQuick.Rectangle", 1, 0, contextView->model());
+    inputModel->setFileUrl(contextView->model()->fileUrl());
+#endif
+
+    // Create ModelNodes from qml string
+    // This is not including the root node by default
+    QPlainTextEdit textEdit;
+    QString imports;
+    const QList<Import> modelImports = contextView->model()->imports();
+    for (const Import &import : modelImports)
+        imports += "import " + import.toString(true) + QLatin1Char('\n');
+
+    textEdit.setPlainText(imports + componentText);
+    NotIndentingTextEditModifier modifier(textEdit.document());
+
+    RewriterView rewriterView{contextView->externalDependencies()};
+    rewriterView.setCheckSemanticErrors(false);
+    rewriterView.setPossibleImportsEnabled(false);
+    rewriterView.setTextModifier(&modifier);
+    inputModel->setRewriterView(&rewriterView);
+    rewriterView.restoreAuxiliaryData();
+
+    if (rewriterView.errors().isEmpty() && rewriterView.rootModelNode().isValid()) {
+        try {
+            ModelMerger merger(contextView);
+            merger.insertModel(rewriterView.rootModelNode());
+        } catch(Exception &/*e*/) {
+            qWarning() << "Cannot add model " << rewriterView.rootModelNode().displayName();
+            return;
+        }
+    }
+
+    // Merge the nodes in to the current document model
+    ModelPointer pasteModel = DesignDocumentView::pasteToModel(contextView->externalDependencies());
+    QTC_ASSERT(pasteModel, return);
+
+    DesignDocumentView view{contextView->externalDependencies()};
+    pasteModel->attachView(&view);
+    QTC_ASSERT(view.rootModelNode().isValid(), return);
+
+    pasteModel->detachView(&view);
+    contextView->model()->attachView(&view);
+    ModelNode originalNode = rewriterView.rootModelNode();
+    view.executeInTransaction("DesignerActionManager::extractComponent", [=, &view]() {
+        // Acquire the root of selected node
+        const ModelNode rootOfSelection = selectedNode.parentProperty().parentModelNode();
+        QTC_ASSERT(rootOfSelection.isValid(), return);
+
+        ModelNode newNode = view.insertModel(originalNode);
+        rootOfSelection.defaultNodeListProperty().reparentHere(newNode);
+
+        // Delete current selected node
+        QmlDesignerPlugin::instance()->currentDesignDocument()->deleteSelected();
+
+        // Set selection to inserted nodes
+        contextView->setSelectedModelNode(newNode);
+    });
+}
+
 void add3DAssetToContentLibrary(const SelectionContext &selectionContext)
 {
     QmlDesignerPlugin::instance()->mainWidget()->showDockWidget("ContentLibrary");
@@ -844,10 +1002,8 @@ void editMaterial(const SelectionContext &selectionContext)
         }
     }
 
-    if (material.isValid()) {
-        QmlDesignerPlugin::instance()->mainWidget()->showDockWidget("MaterialEditor", true);
-        Utils3D::selectMaterial(material);
-    }
+    if (material.isValid())
+        Utils3D::openNodeInPropertyEditor(material);
 }
 
 void addItemToStackedContainer(const SelectionContext &selectionContext)
@@ -1136,7 +1292,11 @@ static QString getAssetDefaultDirectory(const QString &assetDir, const QString &
 
 AddFilesResult addFontToProject(const QStringList &fileNames, const QString &defaultDir, bool showDialog)
 {
-    return addFilesToProject(fileNames, getAssetDefaultDirectory("fonts", defaultDir), showDialog);
+    const AddFilesResult result = addFilesToProject(fileNames,
+                                                    getAssetDefaultDirectory("fonts", defaultDir),
+                                                    showDialog);
+    QmlDesignerPlugin::viewManager().view()->resetPuppet();
+    return result;
 }
 
 AddFilesResult addSoundToProject(const QStringList &fileNames, const QString &defaultDir, bool showDialog)
@@ -1479,7 +1639,7 @@ QString getTemplateDialog(const Utils::FilePath &projectPath)
     dialog->setMinimumWidth(480);
     dialog->setModal(true);
 
-    dialog->setWindowTitle(Tr::tr("TemplateMerge", "Merge With Template"));
+    dialog->setWindowTitle(Tr::tr("Merge With Template"));
 
     auto mainLayout = new QGridLayout(dialog);
 
@@ -1500,9 +1660,9 @@ QString getTemplateDialog(const Utils::FilePath &projectPath)
         templateFile = newFile;
     };
 
-    QPushButton *browseButton = new QPushButton(Tr::tr("TemplateMerge", "&Browse..."), dialog);
+    QPushButton *browseButton = new QPushButton(Utils::PathChooser::browseButtonLabel(), dialog);
 
-    mainLayout->addWidget(new QLabel(Tr::tr("TemplateMerge", "Template:")), 0, 0);
+    mainLayout->addWidget(new QLabel(Tr::tr("Template:")), 0, 0);
     mainLayout->addWidget(comboBox, 1, 0, 1, 3);
     mainLayout->addWidget(browseButton, 1, 3, 1 , 1);
 
@@ -1512,7 +1672,7 @@ QString getTemplateDialog(const Utils::FilePath &projectPath)
 
     QObject::connect(browseButton, &QPushButton::clicked, dialog, [setTemplate, &projectPath]() {
         const QString newFile = QFileDialog::getOpenFileName(Core::ICore::dialogParent(),
-                                                             Tr::tr("TemplateMerge", "Browse Template"),
+                                                             Tr::tr("Browse Template"),
                                                              projectPath.toUrlishString(),
                                                              "*.qml");
         if (!newFile.isEmpty())
@@ -1723,7 +1883,7 @@ Utils::FilePath findEffectFile(const ModelNode &effectNode)
         if (matches.isEmpty()) {
             QMessageBox msgBox;
             msgBox.setText(
-                ::QmlDesigner::Tr::tr("Effect file %1 not found in the project.").arg(effectFile));
+                ::QmlDesigner::Tr::tr("Effect file \"%1\" not found in the project.").arg(effectFile));
             msgBox.setStandardButtons(QMessageBox::Ok);
             msgBox.setDefaultButton(QMessageBox::Ok);
             msgBox.setIcon(QMessageBox::Warning);
@@ -1758,10 +1918,7 @@ void editInEffectComposer(const SelectionContext &selectionContext)
 
 bool isEffectComposerActivated()
 {
-    using namespace ExtensionSystem;
-    return Utils::anyOf(PluginManager::plugins(), [](PluginSpec *spec) {
-        return spec->id() == "effectcomposer" && spec->isEffectivelyEnabled();
-    });
+    return ExtensionSystem::PluginManager::specExistsAndIsEnabled("effectcomposer");
 }
 
 void openEffectComposer(const QString &filePath)
@@ -1883,6 +2040,13 @@ Utils::FilePath getImagesDefaultDirectory()
 {
     return Utils::FilePath::fromString(getAssetDefaultDirectory(
         "images",
+        QmlDesignerPlugin::instance()->documentManager().currentProjectDirPath().toUrlishString()));
+}
+
+FilePath getImported3dDefaultDirectory()
+{
+    return Utils::FilePath::fromString(getAssetDefaultDirectory(
+        "3d",
         QmlDesignerPlugin::instance()->documentManager().currentProjectDirPath().toUrlishString()));
 }
 
@@ -2016,6 +2180,36 @@ ModelNode handleItemLibraryEffectDrop(const QString &effectPath, const ModelNode
     return newModelNode;
 }
 
+ModelNode handleImported3dAssetDrop(const QString &assetPath, const ModelNode &targetNode,
+                                    const QVector3D &position)
+{
+    AbstractView *view = targetNode.view();
+    QTC_ASSERT(view, return {});
+    QTC_ASSERT(targetNode.isValid(), return {});
+
+    ModelNode newModelNode;
+
+    const GeneratedComponentUtils &compUtils = QmlDesignerPlugin::instance()->documentManager()
+                                             .generatedComponentUtils();
+
+    Utils::FilePath qmlFile = compUtils.getImported3dQml(assetPath);
+    if (qmlFile.exists()) {
+        TypeName qmlType = qmlFile.baseName().toUtf8();
+        QString importName = compUtils.getImported3dImportName(qmlFile);
+        if (!importName.isEmpty() && !qmlType.isEmpty())
+            newModelNode = QmlVisualNode::createQml3DNode(view, qmlType, targetNode, importName, position);
+    } else {
+        QMessageBox msgBox;
+        msgBox.setText(Tr::tr("Asset %1 is not complete.").arg(qmlFile.baseName()));
+        msgBox.setInformativeText(Tr::tr("Please reimport the asset."));
+        msgBox.setStandardButtons(QMessageBox::Ok);
+        msgBox.setIcon(QMessageBox::Information);
+        msgBox.exec();
+    }
+
+    return newModelNode;
+}
+
 void handleTextureDrop(const QMimeData *mimeData, const ModelNode &targetModelNode)
 {
     AbstractView *view = targetModelNode.view();
@@ -2062,7 +2256,7 @@ void handleMaterialDrop(const QMimeData *mimeData, const ModelNode &targetNode)
     ModelNode matNode = view->modelNodeForInternalId(internalId);
 
     view->executeInTransaction(__FUNCTION__, [&] {
-        MaterialUtils::assignMaterialTo3dModel(view, targetNode, matNode);
+        Utils3D::assignMaterialTo3dModel(view, targetNode, matNode);
     });
 }
 

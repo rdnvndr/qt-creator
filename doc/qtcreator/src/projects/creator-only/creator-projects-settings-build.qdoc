@@ -25,7 +25,7 @@
     \section1 Manage build configurations
 
     To add a new build configuration to the list in
-    \uicontrol {Edit build configuration}, click \uicontrol Add and select the
+    \uicontrol {Edit build configuration}, select \uicontrol Add and then select the
     type of configuration to add. The options you have depend on the
     build system that you selected for the project. You can add as many build
     configurations as you need. You can also select \uicontrol Clone to
@@ -34,7 +34,7 @@
     Select \uicontrol Rename to give the currently selected build configuration
     a new name.
 
-    To delete the currently selected build configuration, click \uicontrol Remove.
+    To delete the currently selected build configuration, select \uicontrol Remove.
 
     \section1 Edit build configurations
 
@@ -93,7 +93,8 @@
 
     You can \l {Use Qt Creator variables}{use \QC variables} in arguments,
     executable paths, and working directories. That is, in all fields where you
-    see the \inlineimage icons/replace.png (\uicontrol {Variables}) button.
+    see the \inlineimage {icons/replace.png} {Variables} (\uicontrol {Variables})
+    button.
 
     \section1 Add build steps
 
@@ -119,11 +120,13 @@
         \li To add a build step, select \uicontrol {Add Build Step} and select
             the step to add.
         \li To disable a step you added, select
-            \inlineimage icons/buildstepdisable.png (\uicontrol {Disable}).
-        \li To change the order of steps, select \inlineimage icons/arrowup.png
-            (\uicontrol {Move Up}) and \inlineimage icons/arrowdown.png
+            \inlineimage {icons/buildstepdisable.png} {Disable}
+            (\uicontrol {Disable}).
+        \li To change the order of steps, select
+            \inlineimage {icons/arrowup.png} {Move Up} (\uicontrol {Move Up})
+            and \inlineimage {icons/arrowdown.png} {Move Down}
             (\uicontrol {Move Down}).
-        \li To remove a step, select \inlineimage icons/close.png
+        \li To remove a step, select \inlineimage {icons/close.png} {Remove Item}
             (\uicontrol {Remove Item}).
     \endlist
 

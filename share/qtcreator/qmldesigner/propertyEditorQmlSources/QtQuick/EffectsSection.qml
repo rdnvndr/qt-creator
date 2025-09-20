@@ -40,7 +40,7 @@ Section {
     anchors.left: parent.left
     anchors.right: parent.right
     caption: qsTr('Effects <a style="color:%1;">[beta]</a>').arg(StudioTheme.Values.themeInteraction)
-    visible: backendValues.layer_effect.isAvailable
+    visible: backendValues.layer_effect?.isAvailable ?? false
 
     property Connections connection: Connections {
         target: modelNodeBackend
@@ -186,6 +186,8 @@ Section {
         spacing: 1
 
         Section {
+            readonly property bool __isInEffectsSection: true // used by property search logic
+
             sectionHeight: 37
             anchors.left: parent.left
             anchors.right: parent.right
@@ -193,7 +195,8 @@ Section {
             labelCapitalization: Font.MixedCase
             visible: root.hasDesignerEffect
             category: "DesignEffects"
-            expanded: false
+            defaultExpanded: false
+            expanded: defaultExpanded
 
             SectionLayout {
 
@@ -232,6 +235,8 @@ Section {
         }
 
         Section {
+            readonly property bool __isInEffectsSection: true // used by property search logic
+
             sectionHeight: 37
             anchors.left: parent.left
             anchors.right: parent.right
@@ -239,7 +244,8 @@ Section {
             labelCapitalization: Font.MixedCase
             visible: root.hasDesignerEffect
             category: "DesignEffects"
-            expanded: false
+            defaultExpanded: false
+            expanded: defaultExpanded
 
             SectionLayout {
 
@@ -305,6 +311,8 @@ Section {
             Section {
                 id: delegate
 
+                readonly property bool __isInEffectsSection: true // used by property search logic
+
                 property QtObject wrapper: modelNodeBackend.registerSubSelectionWrapper(modelData)
                 property bool wasExpanded: false
 
@@ -349,7 +357,8 @@ Section {
                 anchors.right: parent.right
                 category: "DesignEffects"
                 fillBackground: true
-                expanded: false
+                defaultExpanded: false
+                expanded: defaultExpanded
 
                 draggable: true
                 showCloseButton: true

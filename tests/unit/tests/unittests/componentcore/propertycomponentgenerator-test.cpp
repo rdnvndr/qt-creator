@@ -5,6 +5,7 @@
 #include <mocks/abstractviewmock.h>
 #include <mocks/modelresourcemanagementmock.h>
 #include <mocks/projectstoragemock.h>
+#include <mocks/projectstoragetriggerupdatemock.h>
 #include <mocks/sourcepathcachemock.h>
 #include <strippedstring-matcher.h>
 
@@ -36,13 +37,15 @@ using ComplexProperty = QmlDesigner::PropertyComponentGenerator::ComplexProperty
 template<typename Matcher>
 auto IsBasicProperty(const Matcher &matcher)
 {
-    return VariantWith<BasicProperty>(Field(&BasicProperty::component, matcher));
+    return VariantWith<BasicProperty>(
+        Field("BasicProperty::component", &BasicProperty::component, matcher));
 }
 
 template<typename Matcher>
 auto IsComplexProperty(const Matcher &matcher)
 {
-    return VariantWith<ComplexProperty>(Field(&ComplexProperty::component, matcher));
+    return VariantWith<ComplexProperty>(
+        Field("ComplexProperty::component", &ComplexProperty::component, matcher));
 }
 
 constexpr Utils::SmallStringView sourcesPath = UNITTEST_DIR
@@ -171,10 +174,11 @@ protected:
 protected:
     inline static QSharedPointer<const QmlJS::SimpleReaderNode> simpleReaderNode;
     NiceMock<AbstractViewMock> viewMock;
+    NiceMock<ProjectStorageTriggerUpdateMock> projectStorageTriggerUpdateMock;
     NiceMock<SourcePathCacheMockWithPaths> pathCacheMock{"/path/foo.qml"};
     NiceMock<ProjectStorageMockWithQtQuick> projectStorageMock{pathCacheMock.sourceId, "/path"};
     NiceMock<ModelResourceManagementMock> resourceManagementMock;
-    QmlDesigner::Model model{{projectStorageMock, pathCacheMock},
+    QmlDesigner::Model model{{projectStorageMock, pathCacheMock, projectStorageTriggerUpdateMock},
                              "Item",
                              -1,
                              -1,
@@ -219,7 +223,7 @@ TEST_F(PropertyComponentGenerator,
     QString expectedText = QStringLiteral(
         R"xy(
            Section {
-             caption: foo - Foo
+             caption: "foo - Foo"
              anchors.left: parent.left
              anchors.right: parent.right
              leftPadding: 8
@@ -252,7 +256,7 @@ TEST_F(PropertyComponentGenerator,
     QString expectedText = QStringLiteral(
         R"xy(
            Section {
-             caption: foo - Foo
+             caption: "foo - Foo"
              anchors.left: parent.left
              anchors.right: parent.right
              leftPadding: 8

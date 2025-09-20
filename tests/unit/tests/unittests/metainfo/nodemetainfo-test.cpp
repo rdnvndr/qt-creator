@@ -6,6 +6,7 @@
 #include <matchers/info_exportedtypenames-matcher.h>
 #include <matchers/projectstorage-matcher.h>
 #include <mocks/projectstoragemock.h>
+#include <mocks/projectstoragetriggerupdatemock.h>
 #include <mocks/sourcepathcachemock.h>
 
 #include <designercore/include/model.h>
@@ -24,7 +25,7 @@ using QmlDesigner::Storage::TypeTraitsKind;
 template<typename Matcher>
 auto PropertyId(const Matcher &matcher)
 {
-    return Property(&QmlDesigner::PropertyMetaInfo::id, matcher);
+    return Property("QmlDesigner::PropertyMetaInfo::id", &QmlDesigner::PropertyMetaInfo::id, matcher);
 }
 
 template<typename PropertyMatcher, typename ParentPropertyMatcher, typename NameMatcher>
@@ -32,9 +33,15 @@ auto CompoundProperty(const PropertyMatcher &propertyMatcher,
                       const ParentPropertyMatcher &parentPropertyMatcher,
                       const NameMatcher &nameMatcher)
 {
-    return AllOf(Field(&QmlDesigner::CompoundPropertyMetaInfo::property, propertyMatcher),
-                 Field(&QmlDesigner::CompoundPropertyMetaInfo::parent, parentPropertyMatcher),
-                 Property(&QmlDesigner::CompoundPropertyMetaInfo::name, nameMatcher));
+    return AllOf(Field("QmlDesigner::CompoundPropertyMetaInfo::property",
+                       &QmlDesigner::CompoundPropertyMetaInfo::property,
+                       propertyMatcher),
+                 Field("QmlDesigner::CompoundPropertyMetaInfo::parent",
+                       &QmlDesigner::CompoundPropertyMetaInfo::parent,
+                       parentPropertyMatcher),
+                 Property("QmlDesigner::CompoundPropertyMetaInfo::name",
+                          &QmlDesigner::CompoundPropertyMetaInfo::name,
+                          nameMatcher));
 }
 
 template<typename PropertyIdMatcher, typename ParentPropertyIdMatcher, typename NameMatcher>
@@ -99,9 +106,10 @@ protected:
     }
 
 protected:
+    NiceMock<ProjectStorageTriggerUpdateMock> projectStorageTriggerUpdateMock;
     NiceMock<SourcePathCacheMockWithPaths> pathCache{"/path/foo.qml"};
     NiceMock<ProjectStorageMockWithQtQuick> projectStorageMock{pathCache.sourceId, "/path"};
-    QmlDesigner::Model model{{projectStorageMock, pathCache},
+    QmlDesigner::Model model{{projectStorageMock, pathCache, projectStorageTriggerUpdateMock},
                              "Item",
                              {QmlDesigner::Import::createLibraryImport("QML"),
                               QmlDesigner::Import::createLibraryImport("QtQuick"),
@@ -228,6 +236,80 @@ TEST_F(NodeMetaInfo, component_is_file_component)
     bool isFileComponent = metaInfo.isFileComponent();
 
     ASSERT_TRUE(isFileComponent);
+}
+
+TEST_F(NodeMetaInfo, object_is_not_singleton)
+{
+    bool isSingleton = objectMetaInfo.isSingleton();
+
+    ASSERT_FALSE(isSingleton);
+}
+
+TEST_F(NodeMetaInfo, default_is_not_ingleton)
+{
+    bool isSingleton = QmlDesigner::NodeMetaInfo{}.isFileComponent();
+
+    ASSERT_FALSE(isSingleton);
+}
+
+TEST_F(NodeMetaInfo, invalid_is_not_singleton)
+{
+    auto node = model.createModelNode("Foo");
+    auto metaInfo = node.metaInfo();
+
+    bool isSingleton = metaInfo.isSingleton();
+
+    ASSERT_FALSE(isSingleton);
+}
+
+TEST_F(NodeMetaInfo, component_is_singleton)
+{
+    auto moduleId = projectStorageMock.createModule("/path/to/project", ModuleKind::PathLibrary);
+    TypeTraits traits{TypeTraitsKind::Reference};
+    traits.isSingleton = true;
+    auto typeId = projectStorageMock.createType(moduleId, "Foo", traits);
+    QmlDesigner::NodeMetaInfo metaInfo{typeId, &projectStorageMock};
+
+    bool isSingleton = metaInfo.isSingleton();
+
+    ASSERT_TRUE(isSingleton);
+}
+
+TEST_F(NodeMetaInfo, object_is_not_inside_project)
+{
+    bool isInsideProject = objectMetaInfo.isInsideProject();
+
+    ASSERT_FALSE(isInsideProject);
+}
+
+TEST_F(NodeMetaInfo, default_is_not_inside_project)
+{
+    bool isInsideProject = QmlDesigner::NodeMetaInfo{}.isInsideProject();
+
+    ASSERT_FALSE(isInsideProject);
+}
+
+TEST_F(NodeMetaInfo, invalid_is_not_inside_project)
+{
+    auto node = model.createModelNode("Foo");
+    auto metaInfo = node.metaInfo();
+
+    bool isInsideProject = metaInfo.isInsideProject();
+
+    ASSERT_FALSE(isInsideProject);
+}
+
+TEST_F(NodeMetaInfo, component_is_inside_project)
+{
+    auto moduleId = projectStorageMock.createModule("/path/to/project", ModuleKind::PathLibrary);
+    TypeTraits traits{TypeTraitsKind::Reference};
+    traits.isInsideProject = true;
+    auto typeId = projectStorageMock.createType(moduleId, "Foo", traits);
+    QmlDesigner::NodeMetaInfo metaInfo{typeId, &projectStorageMock};
+
+    bool isInsideProject = metaInfo.isInsideProject();
+
+    ASSERT_TRUE(isInsideProject);
 }
 
 TEST_F(NodeMetaInfo, has_property)
@@ -487,6 +569,11 @@ TEST_F(NodeMetaInfo, inflate_value_and_readonly_properties)
                                                               PropertyDeclarationTraits::IsReadOnly,
                                                               inputDeviceId);
     auto seatNamePropertyId = projectStorageMock.propertyDeclarationId(inputDeviceId, "seatName");
+    auto listPropertyId = projectStorageMock.createProperty(metaInfo.id(),
+                                                            "transform",
+                                                            PropertyDeclarationTraits::IsList
+                                                                | PropertyDeclarationTraits::IsReadOnly,
+                                                            inputDeviceId);
 
     auto properties = QmlDesigner::MetaInfoUtils::inflateValueAndReadOnlyProperties(
         metaInfo.properties());
@@ -497,7 +584,8 @@ TEST_F(NodeMetaInfo, inflate_value_and_readonly_properties)
               Not(Contains(CompoundPropertyIds(fontPropertyId, IsFalse(), _))),
               Contains(CompoundPropertyIds(familyPropertyId, fontPropertyId, "font.family")),
               Contains(CompoundPropertyIds(pixelSizePropertyId, fontPropertyId, "font.pixelSize")),
-              Contains(CompoundPropertyIds(seatNamePropertyId, devicePropertyId, "device.seatName"))));
+              Contains(CompoundPropertyIds(seatNamePropertyId, devicePropertyId, "device.seatName")),
+              Not(Contains(CompoundPropertyIds(seatNamePropertyId, listPropertyId, _)))));
 }
 
 TEST_F(NodeMetaInfo, inflate_value_and_readonly_properties_handles_invalid)
@@ -525,6 +613,11 @@ TEST_F(NodeMetaInfo, add_inflated_value_and_readonly_properties)
                                                               PropertyDeclarationTraits::IsReadOnly,
                                                               inputDeviceId);
     auto seatNamePropertyId = projectStorageMock.propertyDeclarationId(inputDeviceId, "seatName");
+    auto listPropertyId = projectStorageMock.createProperty(metaInfo.id(),
+                                                            "transform",
+                                                            PropertyDeclarationTraits::IsList
+                                                                | PropertyDeclarationTraits::IsReadOnly,
+                                                            inputDeviceId);
 
     auto properties = QmlDesigner::MetaInfoUtils::addInflatedValueAndReadOnlyProperties(
         metaInfo.properties());
@@ -536,7 +629,8 @@ TEST_F(NodeMetaInfo, add_inflated_value_and_readonly_properties)
               Contains(CompoundPropertyIds(familyPropertyId, fontPropertyId, "font.family")),
               Contains(CompoundPropertyIds(pixelSizePropertyId, fontPropertyId, "font.pixelSize")),
               Not(Contains(CompoundPropertyIds(devicePropertyId, IsFalse(), _))),
-              Contains(CompoundPropertyIds(seatNamePropertyId, devicePropertyId, "device.seatName"))));
+              Contains(CompoundPropertyIds(seatNamePropertyId, devicePropertyId, "device.seatName")),
+              Not(Contains(CompoundPropertyIds(seatNamePropertyId, listPropertyId, _)))));
 }
 
 TEST_F(NodeMetaInfo, add_inflated_value_and_readonly_properties_handles_invalid)
@@ -1830,6 +1924,24 @@ TEST_F(NodeMetaInfo, default_is_not_QtQuickExtras_Picture)
     ASSERT_THAT(isType, IsFalse());
 }
 
+TEST_F(NodeMetaInfo, is_QtQuick_Gradient)
+{
+    auto metaInfo = createDerivedDummyMetaInfo("QtQuick", ModuleKind::QmlLibrary, "Gradient");
+
+    bool isType = metaInfo.isQtQuickGradient();
+
+    ASSERT_THAT(isType, IsTrue());
+}
+
+TEST_F(NodeMetaInfo, default_is_not_QtQuick_Gradient)
+{
+    QmlDesigner::NodeMetaInfo metaInfo;
+
+    bool isType = metaInfo.isQtQuickGradient();
+
+    ASSERT_THAT(isType, IsFalse());
+}
+
 TEST_F(NodeMetaInfo, is_QtQuick_Image)
 {
     auto metaInfo = createDerivedDummyMetaInfo("QtQuick", ModuleKind::QmlLibrary, "Image");
@@ -2010,6 +2122,24 @@ TEST_F(NodeMetaInfo, default_is_not_QtQuick_Repeater)
     ASSERT_THAT(isType, IsFalse());
 }
 
+TEST_F(NodeMetaInfo, is_QtQuickShapes_Shape)
+{
+    auto metaInfo = createDerivedDummyMetaInfo("QtQuick.Shapes", ModuleKind::QmlLibrary, "Shape");
+
+    bool isType = metaInfo.isQtQuickShapesShape();
+
+    ASSERT_THAT(isType, IsTrue());
+}
+
+TEST_F(NodeMetaInfo, default_is_not_QtQuickShapes_Shape)
+{
+    QmlDesigner::NodeMetaInfo metaInfo;
+
+    bool isType = metaInfo.isQtQuickShapesShape();
+
+    ASSERT_THAT(isType, IsFalse());
+}
+
 TEST_F(NodeMetaInfo, is_QtQuick_State)
 {
     auto metaInfo = createDerivedDummyMetaInfo("QtQuick", ModuleKind::QmlLibrary, "State");
@@ -2048,6 +2178,26 @@ TEST_F(NodeMetaInfo, default_is_not_QtQuickNative_StateOperation)
     ASSERT_THAT(isType, IsFalse());
 }
 
+TEST_F(NodeMetaInfo, is_QtQuickStudioComponents_ArcItem)
+{
+    auto metaInfo = createDerivedDummyMetaInfo("QtQuick.Studio.Components",
+                                               ModuleKind::QmlLibrary,
+                                               "ArcItem");
+
+    bool isType = metaInfo.isQtQuickStudioComponentsArcItem();
+
+    ASSERT_THAT(isType, IsTrue());
+}
+
+TEST_F(NodeMetaInfo, default_is_not_QtQuickStudioComponents_ArcItem)
+{
+    QmlDesigner::NodeMetaInfo metaInfo;
+
+    bool isType = metaInfo.isQtQuickStudioComponentsArcItem();
+
+    ASSERT_THAT(isType, IsFalse());
+}
+
 TEST_F(NodeMetaInfo, is_QtQuickStudioComponents_GroupItem)
 {
     auto metaInfo = createDerivedDummyMetaInfo("QtQuick.Studio.Components",
@@ -2064,6 +2214,26 @@ TEST_F(NodeMetaInfo, default_is_not_QtQuickStudioComponents_GroupItem)
     QmlDesigner::NodeMetaInfo metaInfo;
 
     bool isType = metaInfo.isQtQuickStudioComponentsGroupItem();
+
+    ASSERT_THAT(isType, IsFalse());
+}
+
+TEST_F(NodeMetaInfo, is_QtQuickStudioComponents_SvgPathItem)
+{
+    auto metaInfo = createDerivedDummyMetaInfo("QtQuick.Studio.Components",
+                                               ModuleKind::QmlLibrary,
+                                               "SvgPathItem");
+
+    bool isType = metaInfo.isQtQuickStudioComponentsSvgPathItem();
+
+    ASSERT_THAT(isType, IsTrue());
+}
+
+TEST_F(NodeMetaInfo, default_is_not_QtQuickStudioComponents_SvgPathItem)
+{
+    QmlDesigner::NodeMetaInfo metaInfo;
+
+    bool isType = metaInfo.isQtQuickStudioComponentsSvgPathItem();
 
     ASSERT_THAT(isType, IsFalse());
 }
@@ -2456,23 +2626,23 @@ TEST_F(NodeMetaInfo, default_is_not_enumeration)
 
 TEST_F(NodeMetaInfo, all_external_type_names)
 {
-    QmlDesigner::Storage::Info::ExportedTypeNames names{{qmlModuleId, "Object", 2, -1},
-                                                        {qmlModuleId, "Obj", 2, 1}};
     auto metaInfo = createMetaInfo("QML", ModuleKind::QmlLibrary, "Foo");
+    QmlDesigner::Storage::Info::ExportedTypeNames names{{qmlModuleId, metaInfo.id(), "Object", 2, -1},
+                                                        {qmlModuleId, metaInfo.id(), "Obj", 2, 1}};
     ON_CALL(projectStorageMock, exportedTypeNames(metaInfo.id())).WillByDefault(Return(names));
 
     auto exportedTypeNames = metaInfo.allExportedTypeNames();
 
     ASSERT_THAT(exportedTypeNames,
-                UnorderedElementsAre(IsInfoExportTypeNames(qmlModuleId, "Object", 2, -1),
-                                     IsInfoExportTypeNames(qmlModuleId, "Obj", 2, 1)));
+                UnorderedElementsAre(IsInfoExportTypeName(qmlModuleId, metaInfo.id(), "Object", 2, -1),
+                                     IsInfoExportTypeName(qmlModuleId, metaInfo.id(), "Obj", 2, 1)));
 }
 
 TEST_F(NodeMetaInfo, default_has_no_external_type_names)
 {
-    QmlDesigner::Storage::Info::ExportedTypeNames names{{qmlModuleId, "Object", 2, -1},
-                                                        {qmlModuleId, "Obj", 2, 1}};
     QmlDesigner::NodeMetaInfo metaInfo;
+    QmlDesigner::Storage::Info::ExportedTypeNames names{{qmlModuleId, metaInfo.id(), "Object", 2, -1},
+                                                        {qmlModuleId, metaInfo.id(), "Obj", 2, 1}};
     ON_CALL(projectStorageMock, exportedTypeNames(_)).WillByDefault(Return(names));
 
     auto exportedTypeNames = metaInfo.allExportedTypeNames();
@@ -2482,24 +2652,24 @@ TEST_F(NodeMetaInfo, default_has_no_external_type_names)
 
 TEST_F(NodeMetaInfo, external_type_names_for_source_id)
 {
-    QmlDesigner::Storage::Info::ExportedTypeNames names{{qmlModuleId, "Object", 2, -1},
-                                                        {qmlModuleId, "Obj", 2, 1}};
     auto metaInfo = createMetaInfo("QML", ModuleKind::QmlLibrary, "Foo");
+    QmlDesigner::Storage::Info::ExportedTypeNames names{{qmlModuleId, metaInfo.id(), "Object", 2, -1},
+                                                        {qmlModuleId, metaInfo.id(), "Obj", 2, 1}};
     ON_CALL(projectStorageMock, exportedTypeNames(metaInfo.id(), model.fileUrlSourceId()))
         .WillByDefault(Return(names));
 
     auto exportedTypeNames = metaInfo.exportedTypeNamesForSourceId(model.fileUrlSourceId());
 
     ASSERT_THAT(exportedTypeNames,
-                UnorderedElementsAre(IsInfoExportTypeNames(qmlModuleId, "Object", 2, -1),
-                                     IsInfoExportTypeNames(qmlModuleId, "Obj", 2, 1)));
+                UnorderedElementsAre(IsInfoExportTypeName(qmlModuleId, metaInfo.id(), "Object", 2, -1),
+                                     IsInfoExportTypeName(qmlModuleId, metaInfo.id(), "Obj", 2, 1)));
 }
 
 TEST_F(NodeMetaInfo, default_has_no_external_type_names_for_source_id)
 {
-    QmlDesigner::Storage::Info::ExportedTypeNames names{{qmlModuleId, "Object", 2, -1},
-                                                        {qmlModuleId, "Obj", 2, 1}};
     QmlDesigner::NodeMetaInfo metaInfo;
+    QmlDesigner::Storage::Info::ExportedTypeNames names{{qmlModuleId, metaInfo.id(), "Object", 2, -1},
+                                                        {qmlModuleId, metaInfo.id(), "Obj", 2, 1}};
     ON_CALL(projectStorageMock, exportedTypeNames(metaInfo.id(), model.fileUrlSourceId()))
         .WillByDefault(Return(names));
 
@@ -2510,9 +2680,9 @@ TEST_F(NodeMetaInfo, default_has_no_external_type_names_for_source_id)
 
 TEST_F(NodeMetaInfo, invalid_source_id_has_no_external_type_names_for_source_id)
 {
-    QmlDesigner::Storage::Info::ExportedTypeNames names{{qmlModuleId, "Object", 2, -1},
-                                                        {qmlModuleId, "Obj", 2, 1}};
     auto metaInfo = createMetaInfo("QML", ModuleKind::QmlLibrary, "Foo");
+    QmlDesigner::Storage::Info::ExportedTypeNames names{{qmlModuleId, metaInfo.id(), "Object", 2, -1},
+                                                        {qmlModuleId, metaInfo.id(), "Obj", 2, 1}};
     ON_CALL(projectStorageMock, exportedTypeNames(metaInfo.id(), model.fileUrlSourceId()))
         .WillByDefault(Return(names));
     QmlDesigner::SourceId sourceId;
@@ -3224,3 +3394,4 @@ TEST_F(NodeMetaInfo, no_item_library_entries_for_default)
 }
 
 } // namespace
+

@@ -116,13 +116,14 @@ QString DesignDocumentView::toText() const
     }
 
     textEdit.setPlainText(imports +  QStringLiteral("Item {\n}\n"));
-    NotIndentingTextEditModifier modifier(&textEdit);
+    NotIndentingTextEditModifier modifier(textEdit.document());
 
     std::unique_ptr<RewriterView> rewriterView = std::make_unique<RewriterView>(externalDependencies(),
                                                                                 RewriterView::Amend);
     rewriterView->setCheckSemanticErrors(false);
     rewriterView->setPossibleImportsEnabled(false);
     rewriterView->setTextModifier(&modifier);
+    rewriterView->setRemoveImports(false);
     outputModel->setRewriterView(rewriterView.get());
 
     ModelMerger merger(rewriterView.get());
@@ -155,7 +156,7 @@ void DesignDocumentView::fromText(const QString &text)
         imports += "import " + import.toString(true) + QLatin1Char(';') + QLatin1Char('\n');
 
     textEdit.setPlainText(imports + text);
-    NotIndentingTextEditModifier modifier(&textEdit);
+    NotIndentingTextEditModifier modifier(textEdit.document());
 
     RewriterView rewriterView{externalDependencies()};
     rewriterView.setCheckSemanticErrors(false);

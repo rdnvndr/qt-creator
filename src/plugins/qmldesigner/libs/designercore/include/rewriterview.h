@@ -174,6 +174,13 @@ public:
 
     void forceAmend();
 
+#ifndef QDS_USE_PROJECTSTORAGE
+    bool isDocumentRewriterView() const;
+    void setIsDocumentRewriterView(bool b);
+#endif
+
+    void setRemoveImports(bool removeImports);
+
 signals:
     void modelInterfaceProjectUpdated();
 
@@ -222,6 +229,10 @@ private: //variables
     bool m_modelAttachPending = false;
     bool m_allowComponentRoot = false;
     bool m_possibleImportsEnabled = true;
+
+#ifndef QDS_USE_PROJECTSTORAGE
+    bool m_isDocumentRewriterView = false;
+#endif
 
     mutable QHash<int, ModelNode> m_canonicalIntModelNode;
     mutable QHash<ModelNode, int> m_canonicalModelNodeInt;

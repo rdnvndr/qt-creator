@@ -7,12 +7,13 @@
 #include "assetslibrarywidget.h"
 #include "formeditorscene.h"
 #include "formeditorview.h"
-#include "materialutils.h"
 #include "qmldesignerconstants.h"
+#include <designeractionmanager.h>
 #include <itemlibraryentry.h>
 #include <modelnodeoperations.h>
 #include <nodehints.h>
 #include <rewritingexception.h>
+#include <utils3d.h>
 
 #include <utils/qtcassert.h>
 
@@ -176,7 +177,7 @@ void DragTool::clearMoveDelay()
 {
     if (m_blockMove) {
         m_blockMove = false;
-        if (!m_dragNodes.isEmpty())
+        if (!m_dragNodes.isEmpty() && m_dragNodes.first().isValid())
             beginWithPoint(m_startPoint);
     }
 }
@@ -208,6 +209,8 @@ static ItemLibraryEntry itemLibraryEntryFromMimeData(const QMimeData *mimeData)
 
 static bool canBeDropped(const QMimeData *mimeData, Model *model)
 {
+    if (AbstractFormEditorTool::hasDroppableAsset(mimeData))
+        return true;
 #ifdef QDS_USE_PROJECTSTORAGE
     auto itemLibraryEntry = itemLibraryEntryFromMimeData(mimeData);
     NodeMetaInfo metaInfo{itemLibraryEntry.typeId(), model->projectStorage()};
@@ -288,6 +291,14 @@ void DragTool::dropEvent(const QList<QGraphicsItem *> &itemList, QGraphicsSceneD
                     view()->emitCustomNotification("item_library_created_by_drop", nodeList);
             }
             m_dragNodes.clear();
+        }
+
+        if (qApp->keyboardModifiers().testFlag(Qt::AltModifier)) {
+            if (auto *actionInterface = DesignerActionManager::instance().actionByMenuId(
+                    ComponentCoreConstants::anchorsFillCommandId);
+                actionInterface) {
+                actionInterface->action()->trigger();
+            }
         }
 
         view()->changeToSelectionTool();
@@ -446,7 +457,7 @@ void DragTool::handleView3dDrop()
             const QList<ModelNode> models = dragNode.modelNode().subModelNodesOfType(
                 model->qtQuick3DModelMetaInfo());
             QTC_ASSERT(models.size() == 1, return);
-            MaterialUtils::assignMaterialTo3dModel(view(), models.at(0));
+            Utils3D::assignMaterialTo3dModel(view(), models.at(0));
         }
     }
 }

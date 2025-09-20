@@ -117,10 +117,6 @@ GeneralSettingsWidget::GeneralSettingsWidget()
     m_languageBox->setObjectName("languageBox");
     m_languageBox->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     m_languageBox->setMinimumContentsLength(20);
-    if (Core::ICore::isQtDesignStudio()) {
-        m_languageBox->setDisabled(true);
-        m_languageBox->setToolTip("Qt Design Studio is currently available in English only.");
-    }
 
     m_codecBox->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     m_codecBox->setMinimumContentsLength(20);
@@ -206,6 +202,8 @@ GeneralSettingsWidget::GeneralSettingsWidget()
             &QAbstractButton::clicked,
             this,
             &GeneralSettingsWidget::resetWarnings);
+
+    setOnCancel([] { generalSettings().cancel(); });
 }
 
 static bool hasQmFilesForLocale(const QString &locale, const QString &creatorTrPath)
@@ -299,7 +297,8 @@ void GeneralSettingsWidget::apply()
         setDpiPolicy(selectedPolicy);
     }
     currentIndex = m_codecBox->currentIndex();
-    setCodecForLocale(m_codecBox->itemText(currentIndex).toLocal8Bit());
+    if (currentIndex != -1)
+        setCodecForLocale(m_codecBox->itemText(currentIndex).toLocal8Bit());
     // Apply the new base color if accepted
     StyleHelper::setBaseColor(m_colorButton->color());
     m_themeChooser->apply();

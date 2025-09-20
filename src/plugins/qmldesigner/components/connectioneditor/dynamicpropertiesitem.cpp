@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 #include "dynamicpropertiesitem.h"
-#include "connectioneditorutils.h"
+#include <scripteditorutils.h>
 
 #include <abstractproperty.h>
 #include <abstractview.h>
@@ -19,7 +19,8 @@ QHash<int, QByteArray> DynamicPropertiesItem::roleNames()
     return {{TargetNameRole, "target"},
             {PropertyNameRole, "name"},
             {PropertyTypeRole, "type"},
-            {PropertyValueRole, "value"}};
+            {PropertyValueRole, "value"},
+            {InstancePropertyValueRole, "instanceValue"}};
 }
 
 QStringList DynamicPropertiesItem::headerLabels()
@@ -57,6 +58,9 @@ void DynamicPropertiesItem::updateProperty(const AbstractProperty &property)
     setData(idOrTypeName(property.parentModelNode()), TargetNameRole);
     setData(property.name().toByteArray(), PropertyNameRole);
     setData(property.dynamicTypeName(), PropertyTypeRole);
+
+    const auto qmlObjectNode = QmlObjectNode(property.parentModelNode());
+    setData(qmlObjectNode.instanceValue(property.name()), InstancePropertyValueRole);
 
     if (property.isVariantProperty()) {
         if (std::optional<const QmlObjectNode> nodeInState = parentIfNotDefaultState(property))

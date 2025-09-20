@@ -17,18 +17,15 @@
 #endif
 
 #include <coreplugin/actionmanager/actionmanager.h>
-#include <coreplugin/coreconstants.h>
-#include <coreplugin/icontext.h>
 #include <coreplugin/icore.h>
 #include <coreplugin/messagemanager.h>
 
 #include <extensionsystem/iplugin.h>
 
+#include <projectexplorer/buildsystem.h>
 #include <projectexplorer/devicesupport/devicemanager.h>
-#include <projectexplorer/jsonwizard/jsonwizardfactory.h>
 #include <projectexplorer/kitmanager.h>
 #include <projectexplorer/project.h>
-#include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/projectmanager.h>
 #include <projectexplorer/projecttree.h>
 #include <projectexplorer/target.h>
@@ -118,13 +115,10 @@ static bool isQtMCUsProject(ProjectExplorer::Project *p)
     if (!p || !p->rootProjectNode())
         return false;
 
-    ProjectExplorer::Target *target = p->activeTarget();
-    if (!target)
+    BuildSystem *bs = p->activeBuildSystem();
+    if (!bs)
         return false;
-
-    const bool isMcuProject = target->additionalData("CustomQtForMCUs").toBool();
-
-    return isMcuProject;
+    return bs->additionalData("CustomQtForMCUs").toBool();
 }
 
 static void askUserAboutMcuSupportKitsSetup()
@@ -139,10 +133,11 @@ static void askUserAboutMcuSupportKitsSetup()
                                     "To do it later, select Edit > Preferences > SDKs > MCU."),
                              Utils::InfoBarEntry::GlobalSuppression::Enabled);
     // clazy:excludeall=connect-3arg-lambda
-    info.addCustomButton(Tr::tr("Create Kits for Qt for MCUs"), [] {
-        ICore::infoBar()->removeInfo(setupMcuSupportKits);
-        QTimer::singleShot(0, []() { ICore::showOptionsDialog(Constants::SETTINGS_ID); });
-    });
+    info.addCustomButton(
+        Tr::tr("Create Kits for Qt for MCUs"),
+        [] { QTimer::singleShot(0, []() { ICore::showOptionsDialog(Constants::SETTINGS_ID); }); },
+        {},
+        InfoBarEntry::ButtonAction::Hide);
     ICore::infoBar()->addInfo(info);
 }
 
@@ -162,16 +157,17 @@ static void askUserAboutRemovingUninstalledTargetsKits()
                     uninstalledTargetsKits.size()),
              Utils::InfoBarEntry::GlobalSuppression::Enabled);
 
-    info.addCustomButton(Tr::tr("Keep"), [removeUninstalledKits] {
-        ICore::infoBar()->removeInfo(removeUninstalledKits);
-    });
+    info.addCustomButton(Tr::tr("Keep"), [] {}, {}, InfoBarEntry::ButtonAction::Hide);
 
-    info.addCustomButton(Tr::tr("Remove"), [removeUninstalledKits, uninstalledTargetsKits] {
-        ICore::infoBar()->removeInfo(removeUninstalledKits);
-        QTimer::singleShot(0, [uninstalledTargetsKits]() {
-            McuKitManager::removeUninstalledTargetsKits(uninstalledTargetsKits);
-        });
-    });
+    info.addCustomButton(
+        Tr::tr("Remove"),
+        [uninstalledTargetsKits] {
+            QTimer::singleShot(0, [uninstalledTargetsKits]() {
+                McuKitManager::removeUninstalledTargetsKits(uninstalledTargetsKits);
+            });
+        },
+        {},
+        InfoBarEntry::ButtonAction::Hide);
 
     ICore::infoBar()->addInfo(info);
 }
@@ -191,7 +187,7 @@ public:
     void initialize() final;
     void extensionsInitialized() final;
 
-    Q_INVOKABLE static void updateDeployStep(ProjectExplorer::Target *target, bool enabled);
+    Q_INVOKABLE static void updateDeployStep(ProjectExplorer::BuildConfiguration *bc, bool enabled);
 };
 
 void McuSupportPlugin::initialize()
@@ -247,14 +243,18 @@ void McuSupportPlugin::initialize()
                 [&](ProjectExplorer::Project *p) {
                     if (!isQtMCUsProject(p) || !ICore::infoBar()->canInfoBeAdded(qdsMcuDocInfoEntry))
                         return;
-                    Utils::InfoBarEntry docInfo(qdsMcuDocInfoEntry,
-                                                Tr::tr("Read about Using QtMCUs in the Qt Design Studio"),
-                                                Utils::InfoBarEntry::GlobalSuppression::Enabled);
-                    docInfo.addCustomButton(Tr::tr("Go to the Documentation"), [] {
-                        ICore::infoBar()->suppressInfo(qdsMcuDocInfoEntry);
-                        QDesktopServices::openUrl(
-                            QUrl("https://doc.qt.io/qtdesignstudio/studio-on-mcus.html"));
-                    });
+                    Utils::InfoBarEntry docInfo(
+                        qdsMcuDocInfoEntry,
+                        Tr::tr("Read about using Qt Design Studio for Qt for MCUs."),
+                        Utils::InfoBarEntry::GlobalSuppression::Enabled);
+                    docInfo.addCustomButton(
+                        Tr::tr("Go to the Documentation"),
+                        [] {
+                            QDesktopServices::openUrl(
+                                QUrl("https://doc.qt.io/qtdesignstudio/studio-on-mcus.html"));
+                        },
+                        {},
+                        InfoBarEntry::ButtonAction::Suppress);
                     ICore::infoBar()->addInfo(docInfo);
                 });
     }
@@ -269,7 +269,7 @@ void McuSupportPlugin::initialize()
 
 void McuSupportPlugin::extensionsInitialized()
 {
-    ProjectExplorer::DeviceManager::instance()->addDevice(McuSupportDevice::create());
+    DeviceManager::addDevice(McuSupportDevice::create());
 
     connect(KitManager::instance(), &KitManager::kitsLoaded, this, [] {
         McuKitManager::removeOutdatedKits();
@@ -280,9 +280,9 @@ void McuSupportPlugin::extensionsInitialized()
     });
 }
 
-void McuSupportPlugin::updateDeployStep(ProjectExplorer::Target *target, bool enabled)
+void McuSupportPlugin::updateDeployStep(ProjectExplorer::BuildConfiguration *bc, bool enabled)
 {
-    MCUBuildStepFactory::updateDeployStep(target, enabled);
+    MCUBuildStepFactory::updateDeployStep(bc, enabled);
 }
 
 } // namespace McuSupport::Internal

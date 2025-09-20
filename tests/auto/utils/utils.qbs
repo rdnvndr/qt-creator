@@ -10,6 +10,7 @@ Project {
         "expander/expander.qbs",
         "expected/expected.qbs",
         "filepath/filepath.qbs",
+        "fileinprojectfinder/fileinprojectfinder.qbs",
         "fileutils/fileutils.qbs",
         "fsengine/fsengine.qbs",
         "fuzzymatcher/fuzzymatcher.qbs",
@@ -25,6 +26,7 @@ Project {
         "templateengine/templateengine.qbs",
         "text/text.qbs",
         "treemodel/treemodel.qbs",
+        "unarchiver/unarchiver.qbs",
         "unixdevicefileaccess/unixdevicefileaccess.qbs",
     ]
 }

@@ -50,7 +50,8 @@ class EffectShadersCodeEditor : public QWidget
         NOTIFY selectedShaderChanged)
 
 public:
-    EffectShadersCodeEditor(const QString &title, QWidget *parent = nullptr);
+    EffectShadersCodeEditor(
+        const QString &title = tr("Untitled Editor"), QWidget *parent = nullptr);
     ~EffectShadersCodeEditor() override;
 
     void showWidget();

@@ -39,10 +39,11 @@ class QMLDESIGNERCOMPONENTS_EXPORT Edit3DView : public AbstractView
     Q_OBJECT
 
 public:
-    struct SplitToolState
+    struct ViewportToolState
     {
         int matOverride = 0;
         bool showWireframe = false;
+        bool isPerspective = false;
     };
 
     static bool isQDSTrusted()
@@ -79,7 +80,8 @@ public:
                                   PropertyChangeFlags propertyChange) override;
     void variantPropertiesChanged(const QList<VariantProperty> &propertyList,
                                   PropertyChangeFlags propertyChange) override;
-
+    void exportedTypeNamesChanged(const ExportedTypeNames &added,
+                                  const ExportedTypeNames &removed) override;
     void sendInputEvent(QEvent *e) const;
     void edit3DViewResized(const QSize &size) const;
 
@@ -90,10 +92,10 @@ public:
     QVector<Edit3DAction *> rightActions() const;
     QVector<Edit3DAction *> visibilityToggleActions() const;
     QVector<Edit3DAction *> backgroundColorActions() const;
+    QVector<Edit3DAction *> viewportPresetActions() const;
     Edit3DAction *edit3DAction(View3DActionType type) const;
     Edit3DBakeLightsAction *bakeLightsAction() const;
 
-    void addQuick3DImport();
     void startContextMenu(const QPoint &pos);
     void showContextMenu();
     void dropMaterial(const ModelNode &matNode, const QPointF &pos);
@@ -101,7 +103,7 @@ public:
     void dropBundleItem(const QPointF &pos);
     void dropTexture(const ModelNode &textureNode, const QPointF &pos);
     void dropComponent(const ItemLibraryEntry &entry, const QPointF &pos);
-    void dropAsset(const QString &file, const QPointF &pos);
+    void dropAssets(const QList<QUrl> &urls, const QPointF &pos);
 
     bool isBakingLightsSupported() const;
 
@@ -109,11 +111,11 @@ public:
     void setCameraSpeedAuxData(double speed, double multiplier);
     void getCameraSpeedAuxData(double &speed, double &multiplier);
 
-    const QList<SplitToolState> &splitToolStates() const;
-    void setSplitToolState(int splitIndex, const SplitToolState &state);
+    const QList<ViewportToolState> &viewportToolStates() const;
+    void setViewportToolState(int viewportIndex, const ViewportToolState &state);
 
-    int activeSplit() const;
-    bool isSplitView() const;
+    int activeViewport() const;
+    bool isMultiViewportView() const;
     void setFlyMode(bool enabled);
     void emitView3DAction(View3DActionType type, const QVariant &value);
 
@@ -146,10 +148,13 @@ private:
     void createGridColorSelectionAction();
     void createResetColorAction(QAction *syncEnvBackgroundAction);
     void createSyncEnvBackgroundAction();
+    void createViewportPresetActions();
     void createSeekerSliderAction();
     void syncCameraSpeedToNewView();
     QmlObjectNode currentSceneEnv();
     void storeCurrentSceneEnvironment();
+
+    void setActiveViewport(int viewportIndex);
 
     QPoint resolveToolbarPopupPos(Edit3DAction *action) const;
 
@@ -161,6 +166,7 @@ private:
     QVector<Edit3DAction *> m_rightActions;
     QVector<Edit3DAction *> m_visibilityToggleActions;
     QVector<Edit3DAction *> m_backgroundColorActions;
+    QVector<Edit3DAction *> m_viewportPresetActions;
 
     QMap<View3DActionType, Edit3DAction *> m_edit3DActions;
     std::unique_ptr<Edit3DAction> m_selectionModeAction;
@@ -188,7 +194,14 @@ private:
     std::unique_ptr<Edit3DAction> m_selectBackgroundColorAction;
     std::unique_ptr<Edit3DAction> m_selectGridColorAction;
     std::unique_ptr<Edit3DAction> m_resetColorAction;
-    std::unique_ptr<Edit3DAction> m_splitViewAction;
+
+    // Viewport presets actions
+    std::unique_ptr<Edit3DAction> m_viewportPresetSingleAction;
+    std::unique_ptr<Edit3DAction> m_viewportPresetQuadAction;
+    std::unique_ptr<Edit3DAction> m_viewportPreset3Left1RightAction;
+    std::unique_ptr<Edit3DAction> m_viewportPreset2HorizontalAction;
+    std::unique_ptr<Edit3DAction> m_viewportPreset2VerticalAction;
+    std::unique_ptr<Edit3DAction> m_viewportPresetsMenuAction;
 
     // View3DActionType::Empty actions
     std::unique_ptr<Edit3DAction> m_resetAction;
@@ -203,7 +216,8 @@ private:
     ModelCache<QImage> m_canvasCache;
     ModelNode m_droppedModelNode;
     ItemLibraryEntry m_droppedEntry;
-    QString m_droppedFile;
+    QStringList m_dropped3dImports;
+    QString m_droppedTexture;
     NodeAtPosReqType m_nodeAtPosReqType;
     QPoint m_contextMenuPosMouse;
     QVector3D m_contextMenuPos3D;
@@ -212,9 +226,9 @@ private:
     bool m_isBakingLightsSupported = false;
     QPointer<SnapConfiguration> m_snapConfiguration;
     QPointer<CameraSpeedConfiguration> m_cameraSpeedConfiguration;
-    int m_activeSplit = 0;
+    int m_activeViewport = 0;
 
-    QList<SplitToolState> m_splitToolStates;
+    QList<ViewportToolState> m_viewportToolStates;
     ModelNode m_contextMenuPendingNode;
     ModelNode m_pickView3dNode;
 

@@ -314,11 +314,10 @@ void DocumentManager::goIntoComponent(const QString &fileName)
 
 bool DocumentManager::createFile(const QString &filePath, const QString &contents)
 {
-    Utils::TextFileFormat textFileFormat;
+    TextFileFormat textFileFormat;
     textFileFormat.setCodecName(Core::EditorManager::defaultTextCodecName());
-    QString errorMessage;
 
-    return textFileFormat.writeFile(Utils::FilePath::fromString(filePath), contents, &errorMessage);
+    return textFileFormat.writeFile(FilePath::fromString(filePath), contents).has_value();
 }
 
 void DocumentManager::addFileToVersionControl(const QString &directoryPath, const QString &newFilePath)
@@ -351,12 +350,16 @@ Utils::FilePath DocumentManager::currentProjectDirPath()
 {
     QTC_ASSERT(QmlDesignerPlugin::instance(), return {});
 
-    if (!QmlDesignerPlugin::instance()->currentDesignDocument())
+    if (!QmlDesignerPlugin::instance()->currentDesignDocument()) {
+        if (ProjectExplorer::Project *project = ProjectExplorer::ProjectManager::startupProject())
+            return project->projectDirectory();
         return {};
+    }
 
     Utils::FilePath qmlFileName = QmlDesignerPlugin::instance()->currentDesignDocument()->fileName();
 
     ProjectExplorer::Project *project = ProjectExplorer::ProjectManager::projectForFile(qmlFileName);
+
     if (project)
         return project->projectDirectory();
 

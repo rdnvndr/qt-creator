@@ -4,6 +4,7 @@
 #pragma once
 
 #include <gmock/gmock.h>
+#include <matchers/property-matcher.h>
 
 using testing::_;
 using testing::A;
@@ -17,8 +18,10 @@ using testing::AtMost;
 using testing::Between;
 using testing::ByMove;
 using testing::ByRef;
+using testing::Conditional;
 using testing::ContainerEq;
 using testing::Contains;
+using testing::Each;
 using testing::ElementsAre;
 using testing::Eq;
 using testing::Exactly;

@@ -19,9 +19,7 @@
 #include <designersettings.h>
 #include <designmodewidget.h>
 #include <import.h>
-#include <invalididexception.h>
 #include <itemlibraryentry.h>
-#include <materialutils.h>
 #include <modelutils.h>
 #include <nodeabstractproperty.h>
 #include <nodehints.h>
@@ -55,9 +53,10 @@
 
 namespace QmlDesigner {
 
-static QList<ModelNode> modelNodesFromMimeData(const QMimeData *mineData, AbstractView *view)
+static QList<ModelNode> modelNodesFromMimeData(const QMimeData *mimeData, AbstractView *view)
 {
-    QByteArray encodedModelNodeData = mineData->data(Constants::MIME_TYPE_MODELNODE_LIST);
+    QByteArray encodedModelNodeData = mimeData->data(Constants::MIME_TYPE_MODELNODE_LIST);
+
     QDataStream modelNodeStream(&encodedModelNodeData, QIODevice::ReadOnly);
 
     QList<ModelNode> modelNodeList;
@@ -669,6 +668,10 @@ bool NavigatorTreeModel::dropMimeData(const QMimeData *mimeData,
                             currNode = ModelNodeOperations::handleItemLibraryEffectDrop(
                                 assetPath, modelNodeForIndex(rowModelIndex));
                             moveNodesAfter = false;
+                        } else if (assetType == Constants::MIME_TYPE_ASSET_IMPORTED3D) {
+                            currNode = ModelNodeOperations::handleImported3dAssetDrop(
+                                assetPath, modelNodeForIndex(rowModelIndex));
+                            moveNodesAfter = false;
                         }
 
                         if (currNode.isValid())
@@ -684,6 +687,14 @@ bool NavigatorTreeModel::dropMimeData(const QMimeData *mimeData,
             }
         } else if (mimeData->hasFormat(Constants::MIME_TYPE_MODELNODE_LIST)) {
             handleInternalDrop(mimeData, rowNumber, dropModelIndex);
+        }
+
+        if (qApp->keyboardModifiers().testFlag(Qt::AltModifier)) {
+            if (auto *actionInterface = DesignerActionManager::instance().actionByMenuId(
+                    ComponentCoreConstants::anchorsFillCommandId);
+                actionInterface) {
+                actionInterface->action()->trigger();
+            }
         }
     }
 
@@ -761,7 +772,7 @@ void NavigatorTreeModel::handleItemLibraryItemDrop(const QMimeData *mimeData, in
                         newQmlObjectNode.destroy();
                         return;
                     }
-                    MaterialUtils::assignMaterialTo3dModel(m_view, targetNode, newModelNode);
+                    Utils3D::assignMaterialTo3dModel(m_view, targetNode, newModelNode);
                 } else {
                     ChooseFromPropertyListDialog *dialog = ChooseFromPropertyListDialog::createIfNeeded(
                         targetNode, newModelNode, Core::ICore::dialogParent());
@@ -802,9 +813,9 @@ void NavigatorTreeModel::handleItemLibraryItemDrop(const QMimeData *mimeData, in
                         const QList<ModelNode> models = newModelNode.subModelNodesOfType(
                             m_view->model()->qtQuick3DModelMetaInfo());
                         QTC_ASSERT(models.size() == 1, return);
-                        MaterialUtils::assignMaterialTo3dModel(m_view, models.at(0));
+                        Utils3D::assignMaterialTo3dModel(m_view, models.at(0));
                     } else if (newModelNode.metaInfo().isQtQuick3DModel()) {
-                        MaterialUtils::assignMaterialTo3dModel(m_view, newModelNode);
+                        Utils3D::assignMaterialTo3dModel(m_view, newModelNode);
                     }
 
                     if (!validContainer) {
@@ -835,8 +846,13 @@ void NavigatorTreeModel::handleItemLibraryItemDrop(const QMimeData *mimeData, in
 
 void NavigatorTreeModel::addImport(const QString &importName)
 {
+#ifdef QDS_USE_PROJECTSTORAGE
+    Import import = Import::createLibraryImport(importName);
+    m_view->model()->changeImports({import}, {});
+#else
     if (!ModelUtils::addImportWithCheck(importName, m_view->model()))
         qWarning() << __FUNCTION__ << "Adding import failed:" << importName;
+#endif
 }
 
 bool QmlDesigner::NavigatorTreeModel::moveNodeToParent(const NodeAbstractProperty &targetProperty,

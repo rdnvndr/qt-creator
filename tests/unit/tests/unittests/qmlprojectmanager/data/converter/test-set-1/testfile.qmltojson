@@ -86,10 +86,10 @@
                 "*.svgz",
                 "*.tif",
                 "*.tiff",
-                "*.ttf",
                 "*.webp",
                 "*.xbm",
-                "*.xpm"
+                "*.xpm",
+                "*.tga"
             ],
             "mcuProperties": {
             },
@@ -118,10 +118,10 @@
                 "*.svgz",
                 "*.tif",
                 "*.tiff",
-                "*.ttf",
                 "*.webp",
                 "*.xbm",
-                "*.xpm"
+                "*.xpm",
+                "*.tga"
             ],
             "mcuProperties": {
             },

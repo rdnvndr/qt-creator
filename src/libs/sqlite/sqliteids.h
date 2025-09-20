@@ -70,7 +70,7 @@ public:
 
     explicit operator std::size_t() const { return static_cast<std::size_t>(id); }
 
-    InternalIntegerType internalId() const { return id; }
+    constexpr InternalIntegerType internalId() const { return id; }
 
     [[noreturn, deprecated]] InternalIntegerType operator&() const { throw std::exception{}; }
 
@@ -120,7 +120,7 @@ public:
 
     friend constexpr bool compareInvalidAreTrue(CompoundBasicId first, CompoundBasicId second)
     {
-        return first.id, second.id;
+        return first.id == second.id;
     }
 
     friend constexpr bool operator==(CompoundBasicId first, CompoundBasicId second)
@@ -143,8 +143,8 @@ public:
     template<typename String>
     friend void convertToString(String &string, CompoundBasicId id)
     {
-        int mainId = id;
-        int contextId = id >> 32;
+        int mainId = id.id;
+        int contextId = id.id >> 32;
         convertToString(string, mainId);
         convertToString(string, contextId);
     }

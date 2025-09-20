@@ -1,6 +1,6 @@
-set(IDE_VERSION "4.7.0")                              # The IDE version.
-set(IDE_VERSION_COMPAT "4.7.0")                       # The IDE Compatibility version.
-set(IDE_VERSION_DISPLAY "4.7")                        # The IDE display version.
+set(IDE_VERSION "4.8.0")                              # The IDE version.
+set(IDE_VERSION_COMPAT "4.8.0")                       # The IDE Compatibility version.
+set(IDE_VERSION_DISPLAY "4.8")                        # The IDE display version.
 
 set(IDE_SETTINGSVARIANT "QtProject")                  # The IDE settings variation.
 set(IDE_COPY_SETTINGSVARIANT "Nokia")                 # The IDE settings to initially import.
@@ -55,7 +55,6 @@ set(DESIGNSTUDIO_PLUGINS
     Texteditor
     UpdateInfo
     VcsBase
-    assetexporterplugin
     componentsplugin
     qmlpreviewplugin
     qtquickplugin)

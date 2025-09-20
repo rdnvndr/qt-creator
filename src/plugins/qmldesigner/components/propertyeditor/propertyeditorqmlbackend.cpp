@@ -3,10 +3,13 @@
 
 #include "propertyeditorqmlbackend.h"
 
+#include "instanceimageprovider.h"
 #include "propertyeditortransaction.h"
 #include "propertyeditorutils.h"
 #include "propertyeditorvalue.h"
 #include "propertymetainfo.h"
+
+#include "componentcore/utils3d.h"
 
 #include <auxiliarydataproperties.h>
 #include <bindingproperty.h>
@@ -27,14 +30,19 @@
 #include <coreplugin/messagebox.h>
 #include <qmljs/qmljssimplereader.h>
 #include <utils/algorithm.h>
+#include <utils/array.h>
 #include <utils/environment.h>
 #include <utils/fileutils.h>
-#include <utils/qtcassert.h>
 #include <utils/smallstring.h>
+
+#ifdef QDS_USE_PROJECTSTORAGE
+#include <qmlprojectmanager/qmlproject.h>
+#endif
 
 #include <QApplication>
 #include <QDir>
 #include <QFileInfo>
+#include <QQuickItem>
 #include <QVector2D>
 #include <QVector3D>
 #include <QVector4D>
@@ -85,6 +93,21 @@ static QObject *variantToQObject(const QVariant &value)
 
 namespace QmlDesigner {
 
+using namespace Qt::StringLiterals;
+
+static bool isMaterialAuxiliaryKey(AuxiliaryDataKeyView key)
+{
+    static constexpr auto previewKeys = Utils::to_array<AuxiliaryDataKeyView>(
+        materialPreviewEnvDocProperty,
+        materialPreviewEnvValueDocProperty,
+        materialPreviewModelDocProperty,
+        materialPreviewEnvProperty,
+        materialPreviewEnvValueProperty,
+        materialPreviewModelProperty);
+
+    return std::ranges::find(previewKeys, key) != std::ranges::end(previewKeys);
+}
+
 PropertyEditorQmlBackend::PropertyEditorQmlBackend(PropertyEditorView *propertyEditor,
                                                    AsynchronousImageCache &imageCache)
     : m_view(Utils::makeUniqueObjectPtr<Quick2PropertyEditorView>(imageCache))
@@ -96,6 +119,8 @@ PropertyEditorQmlBackend::PropertyEditorQmlBackend(PropertyEditorView *propertyE
         ->settings().value(DesignerSettingsKey::SHOW_PROPERTYEDITOR_WARNINGS).toBool());
 
     m_view->engine()->addImportPath(propertyEditorResourcesPath() + "/imports");
+    m_view->engine()->addImportPath(scriptsEditorResourcesPath() + "/imports");
+
     m_dummyPropertyEditorValue->setValue(QLatin1String("#000000"));
     context()->setContextProperty(QLatin1String("dummyBackendValue"),
                                   m_dummyPropertyEditorValue.get());
@@ -300,19 +325,64 @@ void PropertyEditorQmlBackend::handleInstancePropertyChangedInModelNodeProxy(
     m_backendModelNode.handleInstancePropertyChanged(modelNode, propertyName);
 }
 
+void PropertyEditorQmlBackend::handleAuxiliaryDataChanges(const QmlObjectNode &qmlObjectNode,
+                                                          AuxiliaryDataKeyView key)
+{
+    if (qmlObjectNode.isRootModelNode() && isMaterialAuxiliaryKey(key)) {
+        m_backendMaterialNode.handleAuxiliaryPropertyChanges();
+        m_view->instanceImageProvider()->invalidate();
+    }
+}
+
 void PropertyEditorQmlBackend::handleVariantPropertyChangedInModelNodeProxy(const VariantProperty &property)
 {
     m_backendModelNode.handleVariantPropertyChanged(property);
+    updateInstanceImage();
 }
 
 void PropertyEditorQmlBackend::handleBindingPropertyChangedInModelNodeProxy(const BindingProperty &property)
 {
     m_backendModelNode.handleBindingPropertyChanged(property);
+    m_backendTextureNode.handleBindingPropertyChanged(property);
+    updateInstanceImage();
+}
+
+void PropertyEditorQmlBackend::handleBindingPropertyInModelNodeProxyAboutToChange(
+    const BindingProperty &property)
+{
+    if (m_backendMaterialNode.materialNode()) {
+        ModelNode expressionNode = property.resolveToModelNode();
+        if (expressionNode.metaInfo().isQtQuick3DTexture())
+            updateInstanceImage();
+    }
+    m_backendTextureNode.handleBindingPropertyChanged(property);
 }
 
 void PropertyEditorQmlBackend::handlePropertiesRemovedInModelNodeProxy(const AbstractProperty &property)
 {
     m_backendModelNode.handlePropertiesRemoved(property);
+    m_backendTextureNode.handlePropertiesRemoved(property);
+    updateInstanceImage();
+}
+
+void PropertyEditorQmlBackend::handleModelNodePreviewPixmapChanged(const ModelNode &node,
+                                                                   const QPixmap &pixmap,
+                                                                   const QByteArray &requestId)
+{
+    InstanceImageProvider *imageProvider = m_view->instanceImageProvider();
+
+    if (!imageProvider)
+        return;
+
+    bool imageFed = imageProvider->feedImage(node, pixmap, requestId);
+    if (imageFed && !imageProvider->hasPendingRequest())
+        refreshPreview();
+}
+
+void PropertyEditorQmlBackend::handleModelSelectedNodesChanged(PropertyEditorView *propertyEditor)
+{
+    contextObject()->setHas3DModelSelected(!Utils3D::getSelectedModels(propertyEditor).isEmpty());
+    m_backendTextureNode.updateSelectionDetails();
 }
 
 void PropertyEditorQmlBackend::createPropertyEditorValue(const QmlObjectNode &qmlObjectNode,
@@ -431,7 +501,7 @@ void PropertyEditorQmlBackend::setSource(const QUrl &url)
 
     if (showError && !m_view->errors().isEmpty()) {
         const QString errMsg = m_view->errors().constFirst().toString();
-        Core::AsynchronousMessageBox::warning(Tr::tr("Invalid QML source"), errMsg);
+        Core::AsynchronousMessageBox::warning(Tr::tr("Invalid QML Source"), errMsg);
     }
 }
 
@@ -475,168 +545,147 @@ void QmlDesigner::PropertyEditorQmlBackend::createPropertyEditorValues(const Qml
 #endif
 }
 
-void PropertyEditorQmlBackend::setup(const QmlObjectNode &qmlObjectNode, const QString &stateName, const QUrl &qmlSpecificsFile, PropertyEditorView *propertyEditor)
+PropertyEditorValue *PropertyEditorQmlBackend::insertValue(const QString &name,
+                                                           const QVariant &value,
+                                                           const ModelNode &modelNode)
 {
-    if (qmlObjectNode.isValid()) {
-
-        m_contextObject->setModel(propertyEditor->model());
-
-        qCInfo(propertyEditorBenchmark) << Q_FUNC_INFO;
-
-        QElapsedTimer time;
-        if (propertyEditorBenchmark().isInfoEnabled())
-            time.start();
-
-        createPropertyEditorValues(qmlObjectNode, propertyEditor);
-        setupLayoutAttachedProperties(qmlObjectNode, propertyEditor);
-        setupInsightAttachedProperties(qmlObjectNode, propertyEditor);
-        setupAuxiliaryProperties(qmlObjectNode, propertyEditor);
-
-        // model node
-        m_backendModelNode.setup(qmlObjectNode.modelNode());
-        context()->setContextProperty("modelNodeBackend", &m_backendModelNode);
-
-        // className
-        auto valueObject = qobject_cast<PropertyEditorValue *>(variantToQObject(
-            m_backendValuesPropertyMap.value(Constants::PROPERTY_EDITOR_CLASSNAME_PROPERTY)));
-        if (!valueObject)
-            valueObject = new PropertyEditorValue(&m_backendValuesPropertyMap);
-        valueObject->setName(Constants::PROPERTY_EDITOR_CLASSNAME_PROPERTY);
-        valueObject->setModelNode(qmlObjectNode.modelNode());
-        valueObject->setValue(m_backendModelNode.simplifiedTypeName());
-        QObject::connect(valueObject,
-                         &PropertyEditorValue::valueChanged,
-                         &backendValuesPropertyMap(),
-                         &DesignerPropertyMap::valueChanged);
-        m_backendValuesPropertyMap.insert(Constants::PROPERTY_EDITOR_CLASSNAME_PROPERTY,
-                                          QVariant::fromValue(valueObject));
-
-        // id
-        valueObject = qobject_cast<PropertyEditorValue*>(variantToQObject(m_backendValuesPropertyMap.value(QLatin1String("id"))));
-        if (!valueObject)
-            valueObject = new PropertyEditorValue(&m_backendValuesPropertyMap);
-        valueObject->setName("id");
-        valueObject->setValue(m_backendModelNode.nodeId());
-        QObject::connect(valueObject, &PropertyEditorValue::valueChanged, &backendValuesPropertyMap(), &DesignerPropertyMap::valueChanged);
-        m_backendValuesPropertyMap.insert(QLatin1String("id"), QVariant::fromValue(valueObject));
-
-        QmlItemNode itemNode(qmlObjectNode.modelNode());
-
-        // anchors
-        m_backendAnchorBinding.setup(qmlObjectNode.modelNode());
-        setupContextProperties();
-
-        contextObject()->setHasMultiSelection(
-            !qmlObjectNode.view()->singleSelectedModelNode().isValid());
-
-        qCInfo(propertyEditorBenchmark) << "anchors:" << time.elapsed();
-
-        qCInfo(propertyEditorBenchmark) << "context:" << time.elapsed();
-
-        contextObject()->setSpecificsUrl(qmlSpecificsFile);
-
-        qCInfo(propertyEditorBenchmark) << "specifics:" << time.elapsed();
-
-        contextObject()->setStateName(stateName);
-        if (!qmlObjectNode.isValid())
-            return;
-
-        context()->setContextProperty(QLatin1String("propertyCount"),
-                                      QVariant(qmlObjectNode.modelNode().properties().size()));
-
-        QStringList stateNames = qmlObjectNode.allStateNames();
-        stateNames.prepend("base state");
-        contextObject()->setAllStateNames(stateNames);
-
-        contextObject()->setIsBaseState(qmlObjectNode.isInBaseState());
-
-        contextObject()->setHasAliasExport(qmlObjectNode.isAliasExported());
-
-        contextObject()->setHasActiveTimeline(QmlTimeline::hasActiveTimeline(qmlObjectNode.view()));
-
-        contextObject()->setSelectionChanged(false);
-
-        contextObject()->setSelectionChanged(false);
-
-        NodeMetaInfo metaInfo = qmlObjectNode.modelNode().metaInfo();
-
-#ifdef QDS_USE_PROJECTSTORAGE
-        contextObject()->setMajorVersion(-1);
-        contextObject()->setMinorVersion(-1);
-        contextObject()->setMajorQtQuickVersion(-1);
-        contextObject()->setMinorQtQuickVersion(-1);
-#else
-        if (metaInfo.isValid()) {
-            contextObject()->setMajorVersion(metaInfo.majorVersion());
-            contextObject()->setMinorVersion(metaInfo.minorVersion());
-        } else {
-            contextObject()->setMajorVersion(-1);
-            contextObject()->setMinorVersion(-1);
-            contextObject()->setMajorQtQuickVersion(-1);
-            contextObject()->setMinorQtQuickVersion(-1);
-        }
-#endif
-        contextObject()->setMajorQtQuickVersion(qmlObjectNode.view()->majorQtQuickVersion());
-        contextObject()->setMinorQtQuickVersion(qmlObjectNode.view()->minorQtQuickVersion());
-
-        qCInfo(propertyEditorBenchmark) << "final:" << time.elapsed();
-    } else {
-        qWarning() << "PropertyEditor: invalid node for setup";
-    }
-}
-
-void PropertyEditorQmlBackend::initialSetup(const TypeName &typeName, const QUrl &qmlSpecificsFile, PropertyEditorView *propertyEditor)
-{
-    NodeMetaInfo metaInfo = propertyEditor->model()->metaInfo(typeName);
-
-    for (const auto &property : PropertyEditorUtils::filteredProperties(metaInfo)) {
-        setupPropertyEditorValue(property.name(), propertyEditor, property.propertyType());
-    }
-
-    auto valueObject = qobject_cast<PropertyEditorValue *>(variantToQObject(
-        m_backendValuesPropertyMap.value(Constants::PROPERTY_EDITOR_CLASSNAME_PROPERTY)));
+    auto valueObject = qobject_cast<PropertyEditorValue *>(
+        variantToQObject(m_backendValuesPropertyMap.value(name)));
     if (!valueObject)
         valueObject = new PropertyEditorValue(&m_backendValuesPropertyMap);
-    valueObject->setName(Constants::PROPERTY_EDITOR_CLASSNAME_PROPERTY);
+    valueObject->setName(name.toLatin1());
 
-    valueObject->setValue(typeName);
+    if (modelNode)
+        valueObject->setModelNode(modelNode);
+
+    if (value.isValid())
+        valueObject->setValue(value);
+
     QObject::connect(valueObject,
                      &PropertyEditorValue::valueChanged,
                      &backendValuesPropertyMap(),
                      &DesignerPropertyMap::valueChanged);
-    m_backendValuesPropertyMap.insert(Constants::PROPERTY_EDITOR_CLASSNAME_PROPERTY,
-                                      QVariant::fromValue(valueObject));
+    m_backendValuesPropertyMap.insert(name, QVariant::fromValue(valueObject));
 
-    // id
-    valueObject = qobject_cast<PropertyEditorValue*>(variantToQObject(m_backendValuesPropertyMap.value(QLatin1String("id"))));
-    if (!valueObject)
-        valueObject = new PropertyEditorValue(&m_backendValuesPropertyMap);
-    valueObject->setName("id");
-    valueObject->setValue("id");
-    QObject::connect(valueObject, &PropertyEditorValue::valueChanged, &backendValuesPropertyMap(), &DesignerPropertyMap::valueChanged);
-    m_backendValuesPropertyMap.insert(QLatin1String("id"), QVariant::fromValue(valueObject));
+    return valueObject;
+}
 
-    context()->setContextProperties(QVector<QQmlContext::PropertyPair>{
-        {{"anchorBackend"}, QVariant::fromValue(&m_backendAnchorBinding)},
-        {{"modelNodeBackend"}, QVariant::fromValue(&m_backendModelNode)},
-        {{"transaction"}, QVariant::fromValue(m_propertyEditorTransaction.get())}});
+void PropertyEditorQmlBackend::updateInstanceImage()
+{
+    m_view->instanceImageProvider()->invalidate();
+    refreshPreview();
+}
+
+void PropertyEditorQmlBackend::setup(const ModelNodes &editorNodes,
+                                     const QString &stateName,
+                                     const QUrl &qmlSpecificsFile,
+                                     PropertyEditorView *propertyEditor)
+{
+    QmlObjectNode qmlObjectNode(editorNodes.isEmpty() ? ModelNode{} : editorNodes.first());
+    if (!qmlObjectNode.isValid()) {
+        qWarning() << "PropertyEditor: invalid node for setup";
+        return;
+    }
+
+    m_contextObject->setModel(propertyEditor->model());
+
+    qCInfo(propertyEditorBenchmark) << Q_FUNC_INFO;
+
+    QElapsedTimer time;
+    if (propertyEditorBenchmark().isInfoEnabled())
+        time.start();
+
+    createPropertyEditorValues(qmlObjectNode, propertyEditor);
+    setupLayoutAttachedProperties(qmlObjectNode, propertyEditor);
+    setupInsightAttachedProperties(qmlObjectNode, propertyEditor);
+    setupAuxiliaryProperties(qmlObjectNode, propertyEditor);
+
+    // model node
+    m_backendModelNode.setup(editorNodes);
+    context()->setContextProperty("modelNodeBackend", &m_backendModelNode);
+
+    m_backendMaterialNode.setup(editorNodes);
+    m_backendTextureNode.setup(qmlObjectNode);
+
+    insertValue(Constants::PROPERTY_EDITOR_CLASSNAME_PROPERTY,
+                m_backendModelNode.simplifiedTypeName(),
+                qmlObjectNode.modelNode());
+
+    insertValue("id"_L1, m_backendModelNode.nodeId());
+    insertValue("objectName"_L1, m_backendModelNode.nodeObjectName());
+
+    QmlItemNode itemNode(qmlObjectNode.modelNode());
+
+    // anchors
+    m_backendAnchorBinding.setup(qmlObjectNode.modelNode());
+    setupContextProperties();
+
+    contextObject()->setHasMultiSelection(m_backendModelNode.multiSelection());
+
+    qCInfo(propertyEditorBenchmark) << "anchors:" << time.elapsed();
+
+    qCInfo(propertyEditorBenchmark) << "context:" << time.elapsed();
 
     contextObject()->setSpecificsUrl(qmlSpecificsFile);
 
-    contextObject()->setStateName(QStringLiteral("basestate"));
+    qCInfo(propertyEditorBenchmark) << "specifics:" << time.elapsed();
 
-    contextObject()->setIsBaseState(true);
+    contextObject()->setStateName(stateName);
 
-    contextObject()->setSpecificQmlData(QStringLiteral(""));
+    context()->setContextProperty(QLatin1String("propertyCount"),
+                                  QVariant(qmlObjectNode.modelNode().properties().size()));
+
+    QStringList stateNames = qmlObjectNode.allStateNames();
+    stateNames.prepend("base state");
+    contextObject()->setAllStateNames(stateNames);
+
+    contextObject()->setIsBaseState(qmlObjectNode.isInBaseState());
+
+    contextObject()->setHasAliasExport(qmlObjectNode.isAliasExported());
+
+    contextObject()->setHasActiveTimeline(QmlTimeline::hasActiveTimeline(qmlObjectNode.view()));
+
+    contextObject()->setSelectionChanged(false);
+
+    NodeMetaInfo metaInfo = qmlObjectNode.modelNode().metaInfo();
+
+#ifdef QDS_USE_PROJECTSTORAGE
+    contextObject()->setMajorVersion(-1);
+    contextObject()->setMinorVersion(-1);
+
+    const auto version = QmlProjectManager::QmlProject::qtQuickVersion();
+    contextObject()->setMajorQtQuickVersion(version.major);
+    contextObject()->setMinorQtQuickVersion(version.minor);
+#else
+    if (metaInfo.isValid()) {
+        contextObject()->setMajorVersion(metaInfo.majorVersion());
+        contextObject()->setMinorVersion(metaInfo.minorVersion());
+    } else {
+        contextObject()->setMajorVersion(-1);
+        contextObject()->setMinorVersion(-1);
+    }
+    contextObject()->setMajorQtQuickVersion(qmlObjectNode.view()->majorQtQuickVersion());
+    contextObject()->setMinorQtQuickVersion(qmlObjectNode.view()->minorQtQuickVersion());
+#endif
+    contextObject()->setHasMaterialLibrary(Utils3D::materialLibraryNode(propertyEditor).isValid());
+    contextObject()->setIsQt6Project(propertyEditor->externalDependencies().isQt6Project());
+    contextObject()->setEditorNodes(editorNodes);
+    contextObject()->setHasQuick3DImport(propertyEditor->model()->hasImport("QtQuick3D"));
+
+    m_view->instanceImageProvider()->setModelNode(m_backendModelNode.singleSelectedNode());
+    updateInstanceImage();
+
+    qCInfo(propertyEditorBenchmark) << "final:" << time.elapsed();
 }
 
 QString PropertyEditorQmlBackend::propertyEditorResourcesPath()
 {
-#ifdef SHARE_QML_PATH
-    if (Utils::qtcEnvironmentVariableIsSet("LOAD_QML_FROM_SOURCE"))
-        return QLatin1String(SHARE_QML_PATH) + "/propertyEditorQmlSources";
-#endif
-    return Core::ICore::resourcePath("qmldesigner/propertyEditorQmlSources").toUrlishString();
+    return resourcesPath("propertyEditorQmlSources");
+}
+
+QString PropertyEditorQmlBackend::scriptsEditorResourcesPath()
+{
+    return resourcesPath("scriptseditor");
 }
 
 inline bool dotPropertyHeuristic(const QmlObjectNode &node,
@@ -910,30 +959,13 @@ TypeName PropertyEditorQmlBackend::fixTypeNameForPanes(const TypeName &typeName)
     return fixedTypeName;
 }
 
-static NodeMetaInfo findCommonSuperClass(const NodeMetaInfo &first, const NodeMetaInfo &second)
+QString PropertyEditorQmlBackend::resourcesPath(const QString &dir)
 {
-    auto commonBase = first.commonBase(second);
-
-    return commonBase.isValid() ? commonBase : first;
-}
-
-NodeMetaInfo PropertyEditorQmlBackend::findCommonAncestor(const ModelNode &node)
-{
-    if (!node.isValid())
-        return node.metaInfo();
-
-    AbstractView *view = node.view();
-
-    if (view->selectedModelNodes().size() > 1) {
-        NodeMetaInfo commonClass = node.metaInfo();
-        for (const ModelNode &currentNode :  view->selectedModelNodes()) {
-            if (currentNode.metaInfo().isValid() && !currentNode.metaInfo().isBasedOn(commonClass))
-                commonClass = findCommonSuperClass(currentNode.metaInfo(), commonClass);
-        }
-        return commonClass;
-    }
-
-    return node.metaInfo();
+#ifdef SHARE_QML_PATH
+    if (Utils::qtcEnvironmentVariableIsSet("LOAD_QML_FROM_SOURCE"))
+        return QLatin1String(SHARE_QML_PATH) + "/" + dir;
+#endif
+    return Core::ICore::resourcePath("qmldesigner/" + dir).toUrlishString();
 }
 
 void PropertyEditorQmlBackend::refreshBackendModel()
@@ -941,12 +973,24 @@ void PropertyEditorQmlBackend::refreshBackendModel()
     m_backendModelNode.refresh();
 }
 
+void PropertyEditorQmlBackend::refreshPreview()
+{
+    auto qmlPreview = widget()->rootObject();
+
+    if (qmlPreview && qmlPreview->metaObject()->indexOfMethod("refreshPreview()") > -1)
+        QMetaObject::invokeMethod(qmlPreview, "refreshPreview");
+}
+
 void PropertyEditorQmlBackend::setupContextProperties()
 {
-    context()->setContextProperty("modelNodeBackend", &m_backendModelNode);
-    context()->setContextProperties(QVector<QQmlContext::PropertyPair>{
-        {{"anchorBackend"}, QVariant::fromValue(&m_backendAnchorBinding)},
-        {{"transaction"}, QVariant::fromValue(m_propertyEditorTransaction.get())}});
+    context()->setContextProperties({
+        {"modelNodeBackend", QVariant::fromValue(&m_backendModelNode)},
+        {"materialNodeBackend", QVariant::fromValue(&m_backendMaterialNode)},
+        {"textureNodeBackend", QVariant::fromValue(&m_backendTextureNode)},
+        {"anchorBackend", QVariant::fromValue(&m_backendAnchorBinding)},
+        {"transaction", QVariant::fromValue(m_propertyEditorTransaction.get())},
+        {"dummyBackendValue", QVariant::fromValue(m_dummyPropertyEditorValue.get())},
+    });
 }
 
 #ifndef QDS_USE_PROJECTSTORAGE
@@ -973,6 +1017,11 @@ QUrl PropertyEditorQmlBackend::fileToUrl(const QString &filePath)  {
     }
 
     return fileUrl;
+}
+
+QUrl PropertyEditorQmlBackend::emptyPaneUrl()
+{
+    return fileToUrl(QDir(propertyEditorResourcesPath()).filePath("QtQuick/emptyPane.qml"_L1));
 }
 
 QString PropertyEditorQmlBackend::fileFromUrl(const QUrl &url)
@@ -1035,20 +1084,16 @@ void PropertyEditorQmlBackend::setValueforAuxiliaryProperties(const QmlObjectNod
 #ifndef QDS_USE_PROJECTSTORAGE
 std::tuple<QUrl, NodeMetaInfo> PropertyEditorQmlBackend::getQmlUrlForMetaInfo(const NodeMetaInfo &metaInfo)
 {
-    QString className;
     if (metaInfo.isValid()) {
-        const NodeMetaInfos hierarchy = metaInfo.selfAndPrototypes();
+        const NodeMetaInfos &hierarchy = metaInfo.selfAndPrototypes();
         for (const NodeMetaInfo &info : hierarchy) {
             QUrl fileUrl = fileToUrl(locateQmlFile(info, QString::fromUtf8(qmlFileName(info))));
-            if (fileUrl.isValid()) {
+            if (fileUrl.isValid())
                 return {fileUrl, info};
-            }
         }
     }
 
-    return {fileToUrl(
-                QDir(propertyEditorResourcesPath()).filePath(QLatin1String("QtQuick/emptyPane.qml"))),
-            {}};
+    return {emptyPaneUrl(), {}};
 }
 
 QString PropertyEditorQmlBackend::locateQmlFile(const NodeMetaInfo &info, const QString &relativePath)
@@ -1101,4 +1146,3 @@ QString PropertyEditorQmlBackend::locateQmlFile(const NodeMetaInfo &info, const 
 #endif // QDS_USE_PROJECTSTORAGE
 
 } //QmlDesigner
-

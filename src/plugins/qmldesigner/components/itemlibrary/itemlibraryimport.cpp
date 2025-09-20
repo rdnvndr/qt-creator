@@ -19,9 +19,6 @@ QString ItemLibraryImport::importName() const
     if (m_sectionType == SectionType::User)
         return userComponentsTitle();
 
-    if (m_sectionType == SectionType::Quick3DAssets)
-        return quick3DAssetsTitle();
-
     if (m_sectionType == SectionType::Unimported)
         return unimportedComponentsTitle();
 
@@ -38,9 +35,6 @@ QString ItemLibraryImport::importUrl() const
 {
     if (m_sectionType == SectionType::User)
         return userComponentsTitle();
-
-    if (m_sectionType == SectionType::Quick3DAssets)
-        return quick3DAssetsTitle();
 
     if (m_sectionType == SectionType::Unimported)
         return unimportedComponentsTitle();
@@ -60,9 +54,6 @@ QString ItemLibraryImport::sortingName() const
 {
     if (m_sectionType == SectionType::User)
         return "_"; // user components always come first
-
-    if (m_sectionType == SectionType::Quick3DAssets)
-        return "__";  // Quick3DAssets come second
 
     if (m_sectionType == SectionType::Unimported)
         return "zzzzzz"; // Unimported components come last
@@ -236,12 +227,6 @@ QString ItemLibraryImport::userComponentsTitle()
 }
 
 // static
-QString ItemLibraryImport::quick3DAssetsTitle()
-{
-    return tr("My 3D Components");
-}
-
-// static
 QString ItemLibraryImport::unimportedComponentsTitle()
 {
     return tr("All Other Components");
@@ -254,8 +239,12 @@ ItemLibraryImport::SectionType ItemLibraryImport::sectionType() const
 
 void ItemLibraryImport::updateRemovable()
 {
+#ifdef QDS_USE_PROJECTSTORAGE
+    bool importRemovable = m_sectionType == SectionType::Default && m_import.url() != "QtQuick";
+#else
     bool importRemovable = !m_importUsed && m_sectionType == SectionType::Default
-            && m_import.url() != "QtQuick";
+                           && m_import.url() != "QtQuick";
+#endif
     if (importRemovable != m_importRemovable) {
         m_importRemovable = importRemovable;
         emit importRemovableChanged();

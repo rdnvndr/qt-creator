@@ -3,7 +3,7 @@
 
 /*!
     \externalpage https://doc.qt.io/qtdesignstudio/index.html
-    \title Qt Design Studio documentation
+    \title \QDS documentation
 */
 /*!
     \externalpage https://doc.qt.io/qtdesignstudio/studio-optimized-3d-scenes.html
@@ -56,6 +56,10 @@
 /*!
     \externalpage https://doc.qt.io/QtForMCUs/qtul-known-issues.html
     \title \QMCU Known Issues or Limitations
+*/
+/*!
+    \externalpage https://doc.qt.io/QtForMCUs/qtul-qtquick-controls-api-differences.html
+    \title Differences between \QUL Controls and Qt Quick Controls
 */
 /*!
     \externalpage https://doc.qt.io/qt/qt-edu-for-designers.html
@@ -132,6 +136,14 @@
 /*!
     \externalpage https://wiki.qt.io/QtDesignStudio/MCU_FAQ
     \title Qt Design Studio/MCU FAQ
+*/
+/*!
+    \externalpage https://doc.qt.io/qtdesignstudio/qtquick-positioning.html#using-layouts
+    \title Using layouts
+*/
+/*!
+    \externalpage https://www.qt.io/blog/qt-design-studio-4.7-released
+    \title Qt Design Studio 4.7 released
 */
 /*!
     \externalpage https://www.qt.io/blog/qt-design-studio-4.6-released

@@ -85,6 +85,7 @@ ModelPrivate::ModelPrivate(Model *model,
                            std::unique_ptr<ModelResourceManagementInterface> resourceManagement)
     : projectStorage{&projectStorageDependencies.storage}
     , pathCache{&projectStorageDependencies.cache}
+    , projectStorageTriggerUpdate{&projectStorageDependencies.triggerUpdate}
     , m_model{model}
     , m_resourceManagement{std::move(resourceManagement)}
 {
@@ -110,6 +111,7 @@ ModelPrivate::ModelPrivate(Model *model,
                            std::unique_ptr<ModelResourceManagementInterface> resourceManagement)
     : projectStorage{&projectStorageDependencies.storage}
     , pathCache{&projectStorageDependencies.cache}
+    , projectStorageTriggerUpdate{&projectStorageDependencies.triggerUpdate}
     , m_model{model}
     , m_resourceManagement{std::move(resourceManagement)}
 {
@@ -301,6 +303,7 @@ void ModelPrivate::changeNodeType(const InternalNodePointer &node, const TypeNam
     node->typeName = typeName;
     node->majorVersion = majorVersion;
     node->minorVersion = minorVersion;
+    setTypeId(node.get(), typeName);
 
     try {
         notifyNodeTypeChanged(node, typeName, majorVersion, minorVersion);
@@ -341,7 +344,7 @@ InternalNodePointer ModelPrivate::createNode(TypeNameView typeName,
     using PropertyPair = QPair<PropertyName, QVariant>;
 
     for (const PropertyPair &propertyPair : propertyList) {
-        newNode->addVariantProperty(propertyPair.first);
+        newNode->getVariantProperty(propertyPair.first);
         newNode->variantProperty(propertyPair.first)->setValue(propertyPair.second);
     }
 
@@ -472,6 +475,13 @@ void ModelPrivate::exportedTypesChanged()
         if (!node->typeId)
             refreshTypeId(node.get());
     }
+}
+
+void ModelPrivate::exportedTypeNamesChanged(const ExportedTypeNames &added,
+                                            const ExportedTypeNames &removed)
+{
+    notifyNodeInstanceViewLast(
+        [&](AbstractView *view) { view->exportedTypeNamesChanged(added, removed); });
 }
 
 void ModelPrivate::removeAllSubNodes(const InternalNodePointer &node)
@@ -654,12 +664,12 @@ void ModelPrivate::notifyRootNodeTypeChanged(const QString &type, int majorVersi
         [&](AbstractView *view) { view->rootNodeTypeChanged(type, majorVersion, minorVersion); });
 }
 
-void ModelPrivate::notifyInstancePropertyChange(const QList<QPair<ModelNode, PropertyName>> &propertyPairList)
+void ModelPrivate::notifyInstancePropertyChange(Utils::span<const QPair<ModelNode, PropertyName>> properties)
 {
     notifyInstanceChanges([&](AbstractView *view) {
         using ModelNodePropertyPair = QPair<ModelNode, PropertyName>;
         QList<QPair<ModelNode, PropertyName>> adaptedPropertyList;
-        for (const ModelNodePropertyPair &propertyPair : propertyPairList) {
+        for (const ModelNodePropertyPair &propertyPair : properties) {
             ModelNodePropertyPair newPair(ModelNode{propertyPair.first.internalNode(), m_model, view}, propertyPair.second);
             adaptedPropertyList.append(newPair);
         }
@@ -667,20 +677,20 @@ void ModelPrivate::notifyInstancePropertyChange(const QList<QPair<ModelNode, Pro
     });
 }
 
-void ModelPrivate::notifyInstanceErrorChange(const QVector<qint32> &instanceIds)
+void ModelPrivate::notifyInstanceErrorChange(Utils::span<const qint32> instanceIds)
 {
     notifyInstanceChanges([&](AbstractView *view) {
         QVector<ModelNode> errorNodeList;
-        errorNodeList.reserve(instanceIds.size());
+        errorNodeList.reserve(std::ssize(instanceIds));
         for (qint32 instanceId : instanceIds)
             errorNodeList.emplace_back(m_model->d->nodeForInternalId(instanceId), m_model, view);
         view->instanceErrorChanged(errorNodeList);
     });
 }
 
-void ModelPrivate::notifyInstancesCompleted(const QVector<ModelNode> &modelNodeVector)
+void ModelPrivate::notifyInstancesCompleted(Utils::span<const ModelNode> modelNodes)
 {
-    auto internalNodes = toInternalNodeList(modelNodeVector);
+    auto internalNodes = toInternalNodeList(modelNodes);
 
     notifyInstanceChanges([&](AbstractView *view) {
         view->instancesCompleted(toModelNodeList(internalNodes, view));
@@ -708,27 +718,27 @@ void ModelPrivate::notifyInstancesInformationsChange(
     });
 }
 
-void ModelPrivate::notifyInstancesRenderImageChanged(const QVector<ModelNode> &modelNodeVector)
+void ModelPrivate::notifyInstancesRenderImageChanged(Utils::span<const ModelNode> nodes)
 {
-    auto internalNodes = toInternalNodeList(modelNodeVector);
+    auto internalNodes = toInternalNodeList(nodes);
 
     notifyInstanceChanges([&](AbstractView *view) {
         view->instancesRenderImageChanged(toModelNodeList(internalNodes, view));
     });
 }
 
-void ModelPrivate::notifyInstancesPreviewImageChanged(const QVector<ModelNode> &modelNodeVector)
+void ModelPrivate::notifyInstancesPreviewImageChanged(Utils::span<const ModelNode> nodes)
 {
-    auto internalNodes = toInternalNodeList(modelNodeVector);
+    auto internalNodes = toInternalNodeList(nodes);
 
     notifyInstanceChanges([&](AbstractView *view) {
         view->instancesPreviewImageChanged(toModelNodeList(internalNodes, view));
     });
 }
 
-void ModelPrivate::notifyInstancesChildrenChanged(const QVector<ModelNode> &modelNodeVector)
+void ModelPrivate::notifyInstancesChildrenChanged(Utils::span<const ModelNode> nodes)
 {
-    auto internalNodes = toInternalNodeList(modelNodeVector);
+    auto internalNodes = toInternalNodeList(nodes);
 
     notifyInstanceChanges([&](AbstractView *view) {
         view->instancesChildrenChanged(toModelNodeList(internalNodes, view));
@@ -802,10 +812,11 @@ void ModelPrivate::notifyRewriterEndTransaction()
     notifyNodeInstanceViewLast([&](AbstractView *view) { view->rewriterEndTransaction(); });
 }
 
-void ModelPrivate::notifyInstanceToken(const QString &token, int number,
-                                       const QVector<ModelNode> &modelNodeVector)
+void ModelPrivate::notifyInstanceToken(const QString &token,
+                                       int number,
+                                       Utils::span<const ModelNode> nodes)
 {
-    auto internalNodes = toInternalNodeList(modelNodeVector);
+    auto internalNodes = toInternalNodeList(nodes);
 
     notifyInstanceChanges([&](AbstractView *view) {
         view->instancesToken(token, number, toModelNodeList(internalNodes, view));
@@ -814,10 +825,10 @@ void ModelPrivate::notifyInstanceToken(const QString &token, int number,
 
 void ModelPrivate::notifyCustomNotification(const AbstractView *senderView,
                                             const QString &identifier,
-                                            const QList<ModelNode> &modelNodeList,
+                                            Utils::span<const ModelNode> nodes,
                                             const QList<QVariant> &data)
 {
-    auto internalList = toInternalNodeList(modelNodeList);
+    auto internalList = toInternalNodeList(nodes);
     notifyNodeInstanceViewLast([&](AbstractView *view) {
         view->customNotification(senderView, identifier, toModelNodeList(internalList, view), data);
     });
@@ -915,11 +926,7 @@ void ModelPrivate::resetModelByRewriter(const QString &description)
     if (m_rewriterView) {
         m_rewriterView->resetToLastCorrectQml();
 
-        throw RewritingException(__LINE__,
-                                 __FUNCTION__,
-                                 __FILE__,
-                                 description.toUtf8(),
-                                 rewriterView()->textModifierContent());
+        throw RewritingException(description, rewriterView()->textModifierContent());
     }
 }
 
@@ -1223,22 +1230,22 @@ void ModelPrivate::removeAuxiliaryData(const InternalNodePointer &node, const Au
         notifyAuxiliaryDataChanged(node, key, QVariant());
 }
 
-QList<ModelNode> ModelPrivate::toModelNodeList(Utils::span<const InternalNodePointer> nodeList,
+QList<ModelNode> ModelPrivate::toModelNodeList(Utils::span<const InternalNodePointer> nodes,
                                                AbstractView *view) const
 {
     QList<ModelNode> modelNodeList;
-    modelNodeList.reserve(nodeList.size());
-    for (const InternalNodePointer &node : nodeList)
+    modelNodeList.reserve(std::ssize(nodes));
+    for (const InternalNodePointer &node : nodes)
         modelNodeList.emplace_back(node, m_model, view);
 
     return modelNodeList;
 }
 
-ModelPrivate::ManyNodes ModelPrivate::toInternalNodeList(const QList<ModelNode> &modelNodeList) const
+ModelPrivate::ManyNodes ModelPrivate::toInternalNodeList(Utils::span<const ModelNode> modelNodes) const
 {
     ManyNodes newNodeList;
-    newNodeList.reserve(modelNodeList.size());
-    for (const ModelNode &modelNode : modelNodeList)
+    newNodeList.reserve(std::ssize(modelNodes));
+    for (const ModelNode &modelNode : modelNodes)
         newNodeList.append(modelNode.internalNode());
 
     return newNodeList;
@@ -1383,14 +1390,7 @@ void ModelPrivate::setBindingProperty(const InternalNodePointer &node,
                                       PropertyNameView name,
                                       const QString &expression)
 {
-    AbstractView::PropertyChangeFlags propertyChange = AbstractView::NoAdditionalChanges;
-    InternalBindingProperty *bindingProperty = nullptr;
-    if (auto property = node->property(name)) {
-        bindingProperty = property->to<PropertyType::Binding>();
-    } else {
-        bindingProperty = node->addBindingProperty(name);
-        propertyChange = AbstractView::PropertiesAdded;
-    }
+    auto [bindingProperty, propertyChange] = node->getBindingProperty(name);
 
     notifyBindingPropertiesAboutToBeChanged({bindingProperty});
     bindingProperty->setExpression(expression);
@@ -1419,14 +1419,7 @@ void ModelPrivate::setSignalHandlerProperty(const InternalNodePointer &node,
                                             PropertyNameView name,
                                             const QString &source)
 {
-    AbstractView::PropertyChangeFlags propertyChange = AbstractView::NoAdditionalChanges;
-    InternalSignalHandlerProperty *signalHandlerProperty = nullptr;
-    if (auto property = node->property(name)) {
-        signalHandlerProperty = property->to<PropertyType::SignalHandler>();
-    } else {
-        signalHandlerProperty = node->addSignalHandlerProperty(name);
-        propertyChange = AbstractView::PropertiesAdded;
-    }
+    auto [signalHandlerProperty, propertyChange] = node->getSignalHandlerProperty(name);
 
     signalHandlerProperty->setSource(source);
     notifySignalHandlerPropertiesChanged({signalHandlerProperty}, propertyChange);
@@ -1436,14 +1429,7 @@ void ModelPrivate::setSignalDeclarationProperty(const InternalNodePointer &node,
                                                 PropertyNameView name,
                                                 const QString &signature)
 {
-    AbstractView::PropertyChangeFlags propertyChange = AbstractView::NoAdditionalChanges;
-    InternalSignalDeclarationProperty *signalDeclarationProperty = nullptr;
-    if (auto property = node->property(name)) {
-        signalDeclarationProperty = property->to<PropertyType::SignalDeclaration>();
-    } else {
-        signalDeclarationProperty = node->addSignalDeclarationProperty(name);
-        propertyChange = AbstractView::PropertiesAdded;
-    }
+    auto [signalDeclarationProperty, propertyChange] = node->getSignalDeclarationProperty(name);
 
     signalDeclarationProperty->setSignature(signature);
     notifySignalDeclarationPropertiesChanged({signalDeclarationProperty}, propertyChange);
@@ -1453,14 +1439,7 @@ void ModelPrivate::setVariantProperty(const InternalNodePointer &node,
                                       PropertyNameView name,
                                       const QVariant &value)
 {
-    AbstractView::PropertyChangeFlags propertyChange = AbstractView::NoAdditionalChanges;
-    InternalVariantProperty *variantProperty = nullptr;
-    if (auto property = node->property(name)) {
-        variantProperty = property->to<PropertyType::Variant>();
-    } else {
-        variantProperty = node->addVariantProperty(name);
-        propertyChange = AbstractView::PropertiesAdded;
-    }
+    auto [variantProperty, propertyChange] = node->getVariantProperty(name);
 
     variantProperty->setValue(value);
     variantProperty->resetDynamicTypeName();
@@ -1472,14 +1451,7 @@ void ModelPrivate::setDynamicVariantProperty(const InternalNodePointer &node,
                                              const TypeName &dynamicPropertyType,
                                              const QVariant &value)
 {
-    AbstractView::PropertyChangeFlags propertyChange = AbstractView::NoAdditionalChanges;
-    InternalVariantProperty *variantProperty = nullptr;
-    if (auto property = node->property(name)) {
-        variantProperty = property->to<PropertyType::Variant>();
-    } else {
-        variantProperty = node->addVariantProperty(name);
-        propertyChange = AbstractView::PropertiesAdded;
-    }
+    auto [variantProperty, propertyChange] = node->getVariantProperty(name);
 
     variantProperty->setDynamicValue(dynamicPropertyType, value);
     notifyVariantPropertiesChanged(node, PropertyNameViews({name}), propertyChange);
@@ -1490,14 +1462,7 @@ void ModelPrivate::setDynamicBindingProperty(const InternalNodePointer &node,
                                              const TypeName &dynamicPropertyType,
                                              const QString &expression)
 {
-    AbstractView::PropertyChangeFlags propertyChange = AbstractView::NoAdditionalChanges;
-    InternalBindingProperty *bindingProperty = nullptr;
-    if (auto property = node->property(name)) {
-        bindingProperty = property->to<PropertyType::Binding>();
-    } else {
-        bindingProperty = node->addBindingProperty(name);
-        propertyChange = AbstractView::PropertiesAdded;
-    }
+    auto [bindingProperty, propertyChange] = node->getBindingProperty(name);
 
     notifyBindingPropertiesAboutToBeChanged({bindingProperty});
     bindingProperty->setDynamicExpression(dynamicPropertyType, expression);
@@ -1528,16 +1493,14 @@ void ModelPrivate::reparentNode(const InternalNodePointer &parentNode,
                                 propertyChange);
 
     InternalNodeAbstractProperty *newParentProperty = nullptr;
-    if (auto property = parentNode->property(name)) {
-        newParentProperty = property->to<PropertyType::Node, PropertyType::NodeList>();
-    } else {
-        if (list)
-            newParentProperty = parentNode->addNodeListProperty(name);
-        else
-            newParentProperty = parentNode->addNodeProperty(name, dynamicTypeName);
+    AbstractView::PropertyChangeFlags newPropertyChange = AbstractView::NoAdditionalChanges;
 
-        propertyChange |= AbstractView::PropertiesAdded;
-    }
+    if (list)
+        std::tie(newParentProperty, newPropertyChange) = parentNode->getNodeListProperty(name);
+    else
+        std::tie(newParentProperty, newPropertyChange) = parentNode->getNodeProperty(name,
+                                                                                     dynamicTypeName);
+    propertyChange |= newPropertyChange;
 
     Q_ASSERT(newParentProperty);
 
@@ -1812,7 +1775,7 @@ Model::Model(const TypeName &typeName,
 ModelPointer Model::createModel(const TypeName &typeName,
                                 std::unique_ptr<ModelResourceManagementInterface> resourceManagement)
 {
-    return Model::create({*d->projectStorage, *d->pathCache},
+    return Model::create({*d->projectStorage, *d->pathCache, *d->projectStorageTriggerUpdate},
                          typeName,
                          imports(),
                          fileUrl(),
@@ -1836,10 +1799,93 @@ Storage::Info::ExportedTypeName Model::exportedTypeNameForMetaInfo(const NodeMet
     return {};
 }
 
+#ifdef QDS_USE_PROJECTSTORAGE
+
+namespace {
+
+QmlDesigner::Imports createPossibleFileImports(const Utils::FilePath &path)
+{
+    auto folder = path.parentDir();
+    QmlDesigner::Imports imports;
+
+    /* Creates imports for all sub folder that contain a qml file. */
+    folder.iterateDirectory(
+        [&](const Utils::FilePath &item) {
+            bool append = false;
+
+            item.iterateDirectory(
+                [&](const Utils::FilePath &) {
+                    append = true;
+                    return Utils::IterationPolicy::Stop;
+                },
+                {{"*.qml"}, QDir::Files});
+            if (append)
+                imports.append(QmlDesigner::Import::createFileImport(item.fileName()));
+            return Utils::IterationPolicy::Continue;
+        },
+        {{}, QDir::Dirs | QDir::NoDotAndDotDot});
+
+    return imports;
+}
+
+QmlDesigner::Imports createQt6ModulesForProjectStorage()
+{
+    QmlDesigner::Imports imports = {
+        QmlDesigner::Import::createLibraryImport("QtQuick"),
+        QmlDesigner::Import::createLibraryImport("QtQuick.Controls"),
+        QmlDesigner::Import::createLibraryImport("QtQuick.Window"),
+        QmlDesigner::Import::createLibraryImport("QtQuick.VectorImage"),
+        QmlDesigner::Import::createLibraryImport("QtQuick.Layouts"),
+        QmlDesigner::Import::createLibraryImport("QtQuick.Timeline"),
+        QmlDesigner::Import::createLibraryImport("QtCharts"),
+        QmlDesigner::Import::createLibraryImport("QtGraphs"),
+        QmlDesigner::Import::createLibraryImport("QtInsightTracker"),
+        QmlDesigner::Import::createLibraryImport("QtMultimedia"),
+
+        QmlDesigner::Import::createLibraryImport("QtQuick.VirtualKeyboard"),
+        QmlDesigner::Import::createLibraryImport("QtQuick.VirtualKeyboard.Components"),
+        QmlDesigner::Import::createLibraryImport("QtQuick.VirtualKeyboard.Layouts"),
+        QmlDesigner::Import::createLibraryImport("QtQuick.VirtualKeyboard.Settings"),
+        QmlDesigner::Import::createLibraryImport("QtQuick.VirtualKeyboard.Styles"),
+
+        QmlDesigner::Import::createLibraryImport("QtQuick3D"),
+        QmlDesigner::Import::createLibraryImport("QtQuick3D.AssetUtils"),
+        QmlDesigner::Import::createLibraryImport("QtQuick3D.Effects"),
+        QmlDesigner::Import::createLibraryImport("QtQuick3D.Helpers"),
+        QmlDesigner::Import::createLibraryImport("QtQuick3D.Particles3D"),
+        QmlDesigner::Import::createLibraryImport("QtQuick3D.Physics"),
+        QmlDesigner::Import::createLibraryImport("QtQuick3D.Physics.Helpers"),
+        QmlDesigner::Import::createLibraryImport("QtQuick3D.SpatialAudio"),
+        QmlDesigner::Import::createLibraryImport("QtQuick3D.Xr"),
+
+        QmlDesigner::Import::createLibraryImport("QtQuickUltralite.Extras"),
+        QmlDesigner::Import::createLibraryImport("QtQuickUltralite.Layers"),
+        QmlDesigner::Import::createLibraryImport("QtQuickUltralite.Studio.Components"),
+
+        QmlDesigner::Import::createLibraryImport("QtQuick.Studio.Components"),
+        QmlDesigner::Import::createLibraryImport("QtQuick.Studio.DesignEffects"),
+        QmlDesigner::Import::createLibraryImport("QtQuick.Studio.LogicHelper"),
+
+        QmlDesigner::Import::createLibraryImport("Qt.SafeRenderer"),
+
+        QmlDesigner::Import::createLibraryImport("SimulinkConnector")};
+
+    std::ranges::sort(imports);
+    return imports;
+};
+
+} //namespace
+
+#endif //QDS_USE_PROJECTSTORAGE
+
 Imports Model::possibleImports() const
 {
 #ifdef QDS_USE_PROJECTSTORAGE
-    return {};
+    static auto qt6Imports = createQt6ModulesForProjectStorage();
+    auto imports = createPossibleFileImports(Utils::FilePath::fromUrl(fileUrl()));
+    imports.append(qt6Imports);
+
+    return imports;
 #else
     return d->m_possibleImportList;
 #endif
@@ -1848,7 +1894,7 @@ Imports Model::possibleImports() const
 Imports Model::usedImports() const
 {
 #ifdef QDS_USE_PROJECTSTORAGE
-    return {};
+    return imports();
 #else
     return d->m_usedImportList;
 #endif
@@ -2004,23 +2050,35 @@ PathCacheType &Model::pathCache()
     return *d->pathCache;
 }
 
-void Model::emitInstancePropertyChange(AbstractView *view,
-                                       const QList<QPair<ModelNode, PropertyName>> &propertyList)
+ProjectStorageTriggerUpdateInterface &Model::projectStorageTriggerUpdate() const
 {
-    if (d->nodeInstanceView() == view) // never remove check
-        d->notifyInstancePropertyChange(propertyList);
+    return *d->projectStorageTriggerUpdate;
 }
 
-void Model::emitInstanceErrorChange(AbstractView *view, const QVector<qint32> &instanceIds)
+ProjectStorageDependencies Model::projectStorageDependencies() const
+{
+    return ProjectStorageDependencies{*d->projectStorage,
+                                      *d->pathCache,
+                                      *d->projectStorageTriggerUpdate};
+}
+
+void Model::emitInstancePropertyChange(AbstractView *view,
+                                       Utils::span<const QPair<ModelNode, PropertyName>> properties)
+{
+    if (d->nodeInstanceView() == view) // never remove check
+        d->notifyInstancePropertyChange(properties);
+}
+
+void Model::emitInstanceErrorChange(AbstractView *view, Utils::span<const qint32> instanceIds)
 {
     if (d->nodeInstanceView() == view) // never remove check
         d->notifyInstanceErrorChange(instanceIds);
 }
 
-void Model::emitInstancesCompleted(AbstractView *view, const QVector<ModelNode> &nodeVector)
+void Model::emitInstancesCompleted(AbstractView *view, Utils::span<const ModelNode> nodes)
 {
     if (d->nodeInstanceView() == view) // never remove check
-        d->notifyInstancesCompleted(nodeVector);
+        d->notifyInstancesCompleted(nodes);
 }
 
 void Model::emitInstanceInformationsChange(
@@ -2030,22 +2088,22 @@ void Model::emitInstanceInformationsChange(
         d->notifyInstancesInformationsChange(informationChangeHash);
 }
 
-void Model::emitInstancesRenderImageChanged(AbstractView *view, const QVector<ModelNode> &nodeVector)
+void Model::emitInstancesRenderImageChanged(AbstractView *view, Utils::span<const ModelNode> nodes)
 {
     if (d->nodeInstanceView() == view) // never remove check
-        d->notifyInstancesRenderImageChanged(nodeVector);
+        d->notifyInstancesRenderImageChanged(nodes);
 }
 
-void Model::emitInstancesPreviewImageChanged(AbstractView *view, const QVector<ModelNode> &nodeVector)
+void Model::emitInstancesPreviewImageChanged(AbstractView *view, Utils::span<const ModelNode> nodes)
 {
     if (d->nodeInstanceView() == view) // never remove check
-        d->notifyInstancesPreviewImageChanged(nodeVector);
+        d->notifyInstancesPreviewImageChanged(nodes);
 }
 
-void Model::emitInstancesChildrenChanged(AbstractView *view, const QVector<ModelNode> &nodeVector)
+void Model::emitInstancesChildrenChanged(AbstractView *view, Utils::span<const ModelNode> nodes)
 {
     if (d->nodeInstanceView() == view) // never remove check
-        d->notifyInstancesChildrenChanged(nodeVector);
+        d->notifyInstancesChildrenChanged(nodes);
 }
 
 void Model::emitInstanceToken(AbstractView *view,
@@ -2108,10 +2166,10 @@ void Model::emitDocumentMessage(const QList<DocumentMessage> &errors,
 
 void Model::emitCustomNotification(AbstractView *view,
                                    const QString &identifier,
-                                   const QList<ModelNode> &nodeList,
+                                   Utils::span<const ModelNode> nodes,
                                    const QList<QVariant> &data)
 {
-    d->notifyCustomNotification(view, identifier, nodeList, data);
+    d->notifyCustomNotification(view, identifier, nodes, data);
 }
 
 void Model::sendCustomNotificationTo(AbstractView *to, const CustomNotificationPackage &package)
@@ -2243,11 +2301,11 @@ QList<ModelNode> Model::selectedNodes(AbstractView *view) const
     return d->toModelNodeList(d->selectedNodes(), view);
 }
 
-void Model::setSelectedModelNodes(const QList<ModelNode> &selectedNodeList)
+void Model::setSelectedModelNodes(Utils::span<const ModelNode> selectedNodes)
 {
     QList<ModelNode> unlockedNodes;
 
-    for (const auto &modelNode : selectedNodeList) {
+    for (const auto &modelNode : selectedNodes) {
         if (!ModelUtils::isThisOrAncestorLocked(modelNode))
             unlockedNodes.push_back(modelNode);
     }
@@ -2395,6 +2453,26 @@ NodeMetaInfo Model::qtQuickRectangleMetaInfo() const
         return createNodeMetaInfo<QtQuick, Rectangle>();
     } else {
         return metaInfo("QtQuick.Rectangle");
+    }
+}
+
+NodeMetaInfo Model::qtQuickShapesShapeMetaInfo() const
+{
+    if constexpr (useProjectStorage()) {
+        using namespace Storage::Info;
+        return createNodeMetaInfo<QtQuick_Shapes, Shape>();
+    } else {
+        return metaInfo("QtQuick.Shapes.Shape");
+    }
+}
+
+NodeMetaInfo Model::qtQuickGradientMetaInfo() const
+{
+    if constexpr (useProjectStorage()) {
+        using namespace Storage::Info;
+        return createNodeMetaInfo<QtQuick, Gradient>();
+    } else {
+        return metaInfo("QtQuick.Gradient");
     }
 }
 
@@ -2597,6 +2675,16 @@ NodeMetaInfo Model::qtQuick3DTextureInputMetaInfo() const
     }
 }
 
+NodeMetaInfo Model::qtQuick3DView3DMetaInfo() const
+{
+    if constexpr (useProjectStorage()) {
+        using namespace Storage::Info;
+        return createNodeMetaInfo<QtQuick3D, View3D>();
+    } else {
+        return metaInfo("QtQuick3D.View3D");
+    }
+}
+
 NodeMetaInfo Model::qtQuickBorderImageMetaInfo() const
 {
     if constexpr (useProjectStorage()) {
@@ -2634,6 +2722,16 @@ NodeMetaInfo Model::qtQuick3DDefaultMaterialMetaInfo() const
         return createNodeMetaInfo<QtQuick3D, DefaultMaterial>();
     } else {
         return metaInfo("QtQuick3D.DefaultMaterial");
+    }
+}
+
+NodeMetaInfo Model::qtQuick3DLightMetaInfo() const
+{
+    if constexpr (useProjectStorage()) {
+        using namespace Storage::Info;
+        return createNodeMetaInfo<QtQuick3D, Light>();
+    } else {
+        return metaInfo("QtQuick3D.Light");
     }
 }
 
@@ -2691,7 +2789,7 @@ NodeMetaInfo Model::qtQmlConnectionsMetaInfo() const
 {
     if constexpr (useProjectStorage()) {
         using namespace Storage::Info;
-        return createNodeMetaInfo<QtQml_Base, Connections>();
+        return createNodeMetaInfo<QtQml, Connections>();
     } else {
         return metaInfo("QtQml.Connections");
     }
@@ -2768,6 +2866,27 @@ QList<ItemLibraryEntry> Model::itemLibraryEntries() const
 #endif
 }
 
+QList<ItemLibraryEntry> Model::directoryImportsItemLibraryEntries() const
+{
+#ifdef QDS_USE_PROJECTSTORAGE
+    using namespace Storage::Info;
+    return toItemLibraryEntries(*d->pathCache,
+                                d->projectStorage->directoryImportsItemLibraryEntries(d->m_sourceId));
+#else
+    return {};
+#endif
+}
+
+QList<ItemLibraryEntry> Model::allItemLibraryEntries() const
+{
+#ifdef QDS_USE_PROJECTSTORAGE
+    using namespace Storage::Info;
+    return toItemLibraryEntries(*d->pathCache, d->projectStorage->allItemLibraryEntries());
+#else
+    return d->metaInfo().itemLibraryInfo()->entries();
+#endif
+}
+
 NodeMetaInfo Model::qtQuickTimelineKeyframeGroupMetaInfo() const
 {
     if constexpr (useProjectStorage()) {
@@ -2834,6 +2953,15 @@ Module Model::module(Utils::SmallStringView moduleName, Storage::ModuleKind modu
 {
     if constexpr (useProjectStorage())
         return Module(d->projectStorage->moduleId(moduleName, moduleKind), d->projectStorage);
+
+    return {};
+}
+
+SmallModuleIds<128> Model::moduleIdsStartsWith(Utils::SmallStringView startsWith,
+                                               Storage::ModuleKind kind) const
+{
+    if constexpr (useProjectStorage())
+        return d->projectStorage->moduleIdsStartsWith(startsWith, kind);
 
     return {};
 }

@@ -24,9 +24,11 @@ using QmlDesigner::FileStatuses;
 using QmlDesigner::FlagIs;
 using QmlDesigner::ModuleId;
 using QmlDesigner::PropertyDeclarationId;
+using QmlDesigner::DirectoryPathId;
+using QmlDesigner::DirectoryPathIds;
 using QmlDesigner::SourceId;
 using QmlDesigner::SourceIds;
-using QmlDesigner::SourceNameId;
+using QmlDesigner::FileNameId;
 using QmlDesigner::Storage::ModuleKind;
 using QmlDesigner::Storage::Synchronization::SynchronizationPackage;
 using QmlDesigner::Storage::Synchronization::TypeAnnotations;
@@ -50,8 +52,8 @@ Storage::Imports operator+(const Storage::Imports &first,
 
 auto IsModule(Utils::SmallStringView name, ModuleKind kind)
 {
-    return AllOf(Field(&QmlDesigner::Storage::Module::name, name),
-                 Field(&QmlDesigner::Storage::Module::kind, kind));
+    return AllOf(Field("QmlDesigner::Storage::Module::name", &QmlDesigner::Storage::Module::name, name),
+                 Field("QmlDesigner::Storage::Module::kind", &QmlDesigner::Storage::Module::kind, kind));
 }
 
 MATCHER_P4(IsStorageType,
@@ -140,8 +142,11 @@ template<typename PropertyTypeIdMatcher>
 auto IsPropertyDeclaration(Utils::SmallStringView name,
                            const PropertyTypeIdMatcher &propertyTypeIdMatcher)
 {
-    return AllOf(Field(&Storage::Synchronization::PropertyDeclaration::name, name),
-                 Field(&Storage::Synchronization::PropertyDeclaration::propertyTypeId,
+    return AllOf(Field("PropertyDeclaration::name",
+                       &Storage::Synchronization::PropertyDeclaration::name,
+                       name),
+                 Field("PropertyDeclaration::propertyTypeId",
+                       &Storage::Synchronization::PropertyDeclaration::propertyTypeId,
                        propertyTypeIdMatcher));
 }
 
@@ -150,10 +155,15 @@ auto IsPropertyDeclaration(Utils::SmallStringView name,
                            const PropertyTypeIdMatcher &propertyTypeIdMatcher,
                            TraitsMatcher traitsMatcher)
 {
-    return AllOf(Field(&Storage::Synchronization::PropertyDeclaration::name, name),
-                 Field(&Storage::Synchronization::PropertyDeclaration::propertyTypeId,
+    return AllOf(Field("PropertyDeclaration::name",
+                       &Storage::Synchronization::PropertyDeclaration::name,
+                       name),
+                 Field("PropertyDeclaration::propertyTypeId",
+                       &Storage::Synchronization::PropertyDeclaration::propertyTypeId,
                        propertyTypeIdMatcher),
-                 Field(&Storage::Synchronization::PropertyDeclaration::traits, traitsMatcher));
+                 Field("PropertyDeclaration::traits",
+                       &Storage::Synchronization::PropertyDeclaration::traits,
+                       traitsMatcher));
 }
 
 template<typename PropertyTypeIdMatcher, typename TraitsMatcher>
@@ -162,11 +172,17 @@ auto IsPropertyDeclaration(Utils::SmallStringView name,
                            TraitsMatcher traitsMatcher,
                            Utils::SmallStringView aliasPropertyName)
 {
-    return AllOf(Field(&Storage::Synchronization::PropertyDeclaration::name, name),
-                 Field(&Storage::Synchronization::PropertyDeclaration::propertyTypeId,
+    return AllOf(Field("PropertyDeclaration::name",
+                       &Storage::Synchronization::PropertyDeclaration::name,
+                       name),
+                 Field("PropertyDeclaration::propertyTypeId",
+                       &Storage::Synchronization::PropertyDeclaration::propertyTypeId,
                        propertyTypeIdMatcher),
-                 Field(&Storage::Synchronization::PropertyDeclaration::traits, traitsMatcher),
-                 Field(&Storage::Synchronization::PropertyDeclaration::aliasPropertyName,
+                 Field("PropertyDeclaration::traits",
+                       &Storage::Synchronization::PropertyDeclaration::traits,
+                       traitsMatcher),
+                 Field("PropertyDeclaration::aliasPropertyName",
+                       &Storage::Synchronization::PropertyDeclaration::aliasPropertyName,
                        aliasPropertyName));
 }
 
@@ -176,61 +192,73 @@ auto IsInfoPropertyDeclaration(TypeId typeId,
                                TraitsMatcher traitsMatcher,
                                const PropertyTypeIdMatcher &propertyTypeIdMatcher)
 {
-    return AllOf(Field(&Storage::Info::PropertyDeclaration::typeId, typeId),
-                 Field(&Storage::Info::PropertyDeclaration::name, name),
-                 Field(&Storage::Info::PropertyDeclaration::propertyTypeId, propertyTypeIdMatcher),
-                 Field(&Storage::Info::PropertyDeclaration::traits, traitsMatcher));
+    return AllOf(Field("PropertyDeclaration::typeId", &Storage::Info::PropertyDeclaration::typeId, typeId),
+                 Field("PropertyDeclaration::name", &Storage::Info::PropertyDeclaration::name, name),
+                 Field("PropertyDeclaration::propertyTypeId",
+                       &Storage::Info::PropertyDeclaration::propertyTypeId,
+                       propertyTypeIdMatcher),
+                 Field("PropertyDeclaration::traits",
+                       &Storage::Info::PropertyDeclaration::traits,
+                       traitsMatcher));
 }
 
 auto IsUnresolvedTypeId()
 {
-    return Property(&QmlDesigner::TypeId::internalId, -1);
+    return Property("QmlDesigner::TypeId::internalId", &QmlDesigner::TypeId::internalId, -1);
 }
 
 auto IsNullTypeId()
 {
-    return Property(&QmlDesigner::TypeId::isNull, true);
+    return Property("QmlDesigner::TypeId::isNull", &QmlDesigner::TypeId::isNull, true);
 }
 
 auto IsNullPropertyDeclarationId()
 {
-    return Property(&QmlDesigner::PropertyDeclarationId::isNull, true);
+    return Property("QmlDesigner::PropertyDeclarationId::isNull",
+                    &QmlDesigner::PropertyDeclarationId::isNull,
+                    true);
 }
 
 template<typename Matcher>
 auto HasPrototypeId(const Matcher &matcher)
 {
-    return Field(&Storage::Synchronization::Type::prototypeId, matcher);
+    return Field("Type::prototypeId", &Storage::Synchronization::Type::prototypeId, matcher);
 }
 
 template<typename Matcher>
 auto HasExtensionId(const Matcher &matcher)
 {
-    return Field(&Storage::Synchronization::Type::extensionId, matcher);
+    return Field("Type::extensionId", &Storage::Synchronization::Type::extensionId, matcher);
 }
 
 template<typename Matcher>
 auto PropertyDeclarations(const Matcher &matcher)
 {
-    return Field(&Storage::Synchronization::Type::propertyDeclarations, matcher);
+    return Field("Type::propertyDeclarations",
+                 &Storage::Synchronization::Type::propertyDeclarations,
+                 matcher);
 }
 
 template<typename Matcher>
 auto HasPropertyTypeId(const Matcher &matcher)
 {
-    return Field(&Storage::Synchronization::PropertyDeclaration::propertyTypeId, matcher);
+    return Field("PropertyDeclaration::propertyTypeId",
+                 &Storage::Synchronization::PropertyDeclaration::propertyTypeId,
+                 matcher);
 }
 
 template<typename Matcher>
 auto HasTypeName(const Matcher &matcher)
 {
-    return Field(&Storage::Synchronization::Type::typeName, matcher);
+    return Field("Type::typeName", &Storage::Synchronization::Type::typeName, matcher);
 }
 
 template<typename Matcher>
 auto HasDefaultPropertyName(const Matcher &matcher)
 {
-    return Field(&Storage::Synchronization::Type::defaultPropertyName, matcher);
+    return Field("Type::defaultPropertyName",
+                 &Storage::Synchronization::Type::defaultPropertyName,
+                 matcher);
 }
 
 class HasNameMatcher
@@ -1039,10 +1067,19 @@ protected:
 
         package.updatedSourceIds = {sourceId1, sourceId2, sourceId3};
 
-        package.propertyEditorQmlPaths.emplace_back(qtQuickModuleId, "QtObject", sourceId1, sourceIdPath6);
-        package.propertyEditorQmlPaths.emplace_back(qtQuickModuleId, "Item", sourceId2, sourceIdPath6);
-        package.propertyEditorQmlPaths.emplace_back(qtQuickModuleId, "Item3D", sourceId3, sourceIdPath6);
-        package.updatedPropertyEditorQmlPathSourceIds.emplace_back(sourceIdPath6);
+        package.propertyEditorQmlPaths.emplace_back(qtQuickModuleId,
+                                                    "QtObject",
+                                                    sourceId1,
+                                                    directoryPathIdPath6);
+        package.propertyEditorQmlPaths.emplace_back(qtQuickModuleId,
+                                                    "Item",
+                                                    sourceId2,
+                                                    directoryPathIdPath6);
+        package.propertyEditorQmlPaths.emplace_back(qtQuickModuleId,
+                                                    "Item3D",
+                                                    sourceId3,
+                                                    directoryPathIdPath6);
+        package.updatedPropertyEditorQmlPathDirectoryIds.emplace_back(directoryPathIdPath6);
 
         return package;
     }
@@ -1056,7 +1093,7 @@ protected:
         traits.visibleInLibrary = FlagIs::True;
 
         annotations.emplace_back(sourceId4,
-                                 sourceIdPath6,
+                                 directoryPathIdPath6,
                                  "Object",
                                  qmlModuleId,
                                  "/path/to/icon.png",
@@ -1078,7 +1115,7 @@ protected:
                                         "properties":[["color", "color", "#blue"]]}])xy");
 
         annotations.emplace_back(sourceId5,
-                                 sourceIdPath6,
+                                 directoryPathIdPath6,
                                  "Item",
                                  qtQuickModuleId,
                                  "/path/to/quick.png",
@@ -1103,7 +1140,7 @@ protected:
         traits.visibleInLibrary = FlagIs::True;
 
         annotations.emplace_back(sourceId5,
-                                 sourceIdPath1,
+                                 directoryPathIdPath1,
                                  "Item",
                                  qtQuickModuleId,
                                  "/path/to/quick.png",
@@ -1216,9 +1253,13 @@ protected:
     SourceId sourceId5{sourcePathCache.sourceId(path5)};
     SourceId sourceId6{sourcePathCache.sourceId(path6)};
     SourceId sourceIdPath1{sourcePathCache.sourceId(pathPath1)};
+    DirectoryPathId directoryPathIdPath1{sourceIdPath1.directoryPathId()};
     SourceId sourceIdPath6{sourcePathCache.sourceId(pathPath6)};
+    DirectoryPathId directoryPathIdPath6{sourceIdPath6.directoryPathId()};
     SourceId qmlProjectSourceId{sourcePathCache.sourceId("/path1/qmldir")};
+    DirectoryPathId qmlProjectDirectoryPathId = qmlProjectSourceId.directoryPathId();
     SourceId qtQuickProjectSourceId{sourcePathCache.sourceId("/path2/qmldir")};
+    DirectoryPathId qtQuickProjectDirectoryPathId = qtQuickProjectSourceId.directoryPathId();
     ModuleId qmlModuleId{storage.moduleId("Qml", ModuleKind::QmlLibrary)};
     ModuleId qmlNativeModuleId{storage.moduleId("Qml", ModuleKind::CppLibrary)};
     ModuleId qtQuickModuleId{storage.moduleId("QtQuick", ModuleKind::QmlLibrary)};
@@ -1249,7 +1290,8 @@ TEST_F(ProjectStorage, synchronize_types_adds_new_types)
     ASSERT_THAT(storage.fetchTypes(),
                 UnorderedElementsAre(
                     AllOf(IsStorageType(sourceId2, "QObject", TypeId{}, TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::exportedTypes,
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(qmlModuleId, "Object"),
                                                      IsExportedType(qmlModuleId, "Obj"),
                                                      IsExportedType(qmlNativeModuleId, "QObject")))),
@@ -1257,7 +1299,8 @@ TEST_F(ProjectStorage, synchronize_types_adds_new_types)
                                         "QQuickItem",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::exportedTypes,
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(qtQuickModuleId, "Item"),
                                                      IsExportedType(qtQuickNativeModuleId,
                                                                     "QQuickItem"))))));
@@ -1273,7 +1316,8 @@ TEST_F(ProjectStorage, synchronize_types_adds_new_types_with_extension_chain)
     ASSERT_THAT(storage.fetchTypes(),
                 UnorderedElementsAre(
                     AllOf(IsStorageType(sourceId2, "QObject", TypeId{}, TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::exportedTypes,
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(qmlModuleId, "Object"),
                                                      IsExportedType(qmlModuleId, "Obj"),
                                                      IsExportedType(qmlNativeModuleId, "QObject")))),
@@ -1282,7 +1326,8 @@ TEST_F(ProjectStorage, synchronize_types_adds_new_types_with_extension_chain)
                                         TypeId{},
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::exportedTypes,
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(qtQuickModuleId, "Item"),
                                                      IsExportedType(qtQuickNativeModuleId,
                                                                     "QQuickItem"))))));
@@ -1299,7 +1344,8 @@ TEST_F(ProjectStorage, synchronize_types_adds_new_types_with_exported_prototype_
         storage.fetchTypes(),
         UnorderedElementsAre(
             AllOf(IsStorageType(sourceId2, "QObject", TypeId{}, TypeId{}, TypeTraitsKind::Reference),
-                  Field(&Storage::Synchronization::Type::exportedTypes,
+                  Field("Type::exportedTypes",
+                        &Storage::Synchronization::Type::exportedTypes,
                         UnorderedElementsAre(IsExportedType(qmlModuleId, "Object"),
                                              IsExportedType(qmlModuleId, "Obj"),
                                              IsExportedType(qmlNativeModuleId, "QObject")))),
@@ -1308,7 +1354,8 @@ TEST_F(ProjectStorage, synchronize_types_adds_new_types_with_exported_prototype_
                                 fetchTypeId(sourceId2, "QObject"),
                                 TypeId{},
                                 TypeTraitsKind::Reference),
-                  Field(&Storage::Synchronization::Type::exportedTypes,
+                  Field("Type::exportedTypes",
+                        &Storage::Synchronization::Type::exportedTypes,
                         UnorderedElementsAre(IsExportedType(qtQuickModuleId, "Item"),
                                              IsExportedType(qtQuickNativeModuleId, "QQuickItem"))))));
 }
@@ -1324,7 +1371,8 @@ TEST_F(ProjectStorage, synchronize_types_adds_new_types_with_exported_extension_
     ASSERT_THAT(storage.fetchTypes(),
                 UnorderedElementsAre(
                     AllOf(IsStorageType(sourceId2, "QObject", TypeId{}, TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::exportedTypes,
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(qmlModuleId, "Object"),
                                                      IsExportedType(qmlModuleId, "Obj"),
                                                      IsExportedType(qmlNativeModuleId, "QObject")))),
@@ -1333,7 +1381,8 @@ TEST_F(ProjectStorage, synchronize_types_adds_new_types_with_exported_extension_
                                         TypeId{},
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::exportedTypes,
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(qtQuickModuleId, "Item"),
                                                      IsExportedType(qtQuickNativeModuleId,
                                                                     "QQuickItem"))))));
@@ -1542,7 +1591,8 @@ TEST_F(ProjectStorage, synchronize_types_adds_new_types_reverse_order)
     ASSERT_THAT(storage.fetchTypes(),
                 UnorderedElementsAre(
                     AllOf(IsStorageType(sourceId2, "QObject", TypeId{}, TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::exportedTypes,
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(qmlModuleId, "Object"),
                                                      IsExportedType(qmlModuleId, "Obj"),
                                                      IsExportedType(qmlNativeModuleId, "QObject")))),
@@ -1550,7 +1600,8 @@ TEST_F(ProjectStorage, synchronize_types_adds_new_types_reverse_order)
                                         "QQuickItem",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::exportedTypes,
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(qtQuickModuleId, "Item"),
                                                      IsExportedType(qtQuickNativeModuleId,
                                                                     "QQuickItem"))))));
@@ -1568,7 +1619,8 @@ TEST_F(ProjectStorage, synchronize_types_overwrites_type_traits)
     ASSERT_THAT(storage.fetchTypes(),
                 UnorderedElementsAre(
                     AllOf(IsStorageType(sourceId2, "QObject", TypeId{}, TypeTraitsKind::Value),
-                          Field(&Storage::Synchronization::Type::exportedTypes,
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(qmlModuleId, "Object"),
                                                      IsExportedType(qmlModuleId, "Obj"),
                                                      IsExportedType(qmlNativeModuleId, "QObject")))),
@@ -1576,7 +1628,8 @@ TEST_F(ProjectStorage, synchronize_types_overwrites_type_traits)
                                         "QQuickItem",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Value),
-                          Field(&Storage::Synchronization::Type::exportedTypes,
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(qtQuickModuleId, "Item"),
                                                      IsExportedType(qtQuickNativeModuleId,
                                                                     "QQuickItem"))))));
@@ -1603,7 +1656,8 @@ TEST_F(ProjectStorage, synchronize_types_overwrites_sources)
     ASSERT_THAT(storage.fetchTypes(),
                 UnorderedElementsAre(
                     AllOf(IsStorageType(sourceId4, "QObject", TypeId{}, TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::exportedTypes,
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(qmlModuleId, "Object"),
                                                      IsExportedType(qmlModuleId, "Obj"),
                                                      IsExportedType(qmlNativeModuleId, "QObject")))),
@@ -1611,7 +1665,8 @@ TEST_F(ProjectStorage, synchronize_types_overwrites_sources)
                                         "QQuickItem",
                                         fetchTypeId(sourceId4, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::exportedTypes,
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(qtQuickModuleId, "Item"),
                                                      IsExportedType(qtQuickNativeModuleId,
                                                                     "QQuickItem"))))));
@@ -1638,7 +1693,8 @@ TEST_F(ProjectStorage, synchronize_types_insert_type_into_prototype_chain)
         storage.fetchTypes(),
         UnorderedElementsAre(
             AllOf(IsStorageType(sourceId2, "QObject", TypeId{}, TypeId{}, TypeTraitsKind::Reference),
-                  Field(&Storage::Synchronization::Type::exportedTypes,
+                  Field("Type::exportedTypes",
+                        &Storage::Synchronization::Type::exportedTypes,
                         UnorderedElementsAre(IsExportedType(qmlModuleId, "Object"),
                                              IsExportedType(qmlModuleId, "Obj"),
                                              IsExportedType(qmlNativeModuleId, "QObject")))),
@@ -1647,7 +1703,8 @@ TEST_F(ProjectStorage, synchronize_types_insert_type_into_prototype_chain)
                                 fetchTypeId(sourceId2, "QObject"),
                                 TypeId{},
                                 TypeTraitsKind::Reference),
-                  Field(&Storage::Synchronization::Type::exportedTypes,
+                  Field("Type::exportedTypes",
+                        &Storage::Synchronization::Type::exportedTypes,
                         UnorderedElementsAre(IsExportedType(qtQuickModuleId, "Object"),
                                              IsExportedType(qtQuickNativeModuleId, "QQuickObject")))),
             AllOf(IsStorageType(sourceId1,
@@ -1655,7 +1712,8 @@ TEST_F(ProjectStorage, synchronize_types_insert_type_into_prototype_chain)
                                 fetchTypeId(sourceId1, "QQuickObject"),
                                 TypeId{},
                                 TypeTraitsKind::Reference),
-                  Field(&Storage::Synchronization::Type::exportedTypes,
+                  Field("Type::exportedTypes",
+                        &Storage::Synchronization::Type::exportedTypes,
                         UnorderedElementsAre(IsExportedType(qtQuickModuleId, "Item"),
                                              IsExportedType(qtQuickNativeModuleId, "QQuickItem"))))));
 }
@@ -1682,7 +1740,8 @@ TEST_F(ProjectStorage, synchronize_types_insert_type_into_extension_chain)
         storage.fetchTypes(),
         UnorderedElementsAre(
             AllOf(IsStorageType(sourceId2, "QObject", TypeId{}, TypeId{}, TypeTraitsKind::Reference),
-                  Field(&Storage::Synchronization::Type::exportedTypes,
+                  Field("Type::exportedTypes",
+                        &Storage::Synchronization::Type::exportedTypes,
                         UnorderedElementsAre(IsExportedType(qmlModuleId, "Object"),
                                              IsExportedType(qmlModuleId, "Obj"),
                                              IsExportedType(qmlNativeModuleId, "QObject")))),
@@ -1691,7 +1750,8 @@ TEST_F(ProjectStorage, synchronize_types_insert_type_into_extension_chain)
                                 TypeId{},
                                 fetchTypeId(sourceId2, "QObject"),
                                 TypeTraitsKind::Reference),
-                  Field(&Storage::Synchronization::Type::exportedTypes,
+                  Field("Type::exportedTypes",
+                        &Storage::Synchronization::Type::exportedTypes,
                         UnorderedElementsAre(IsExportedType(qtQuickModuleId, "Object"),
                                              IsExportedType(qtQuickNativeModuleId, "QQuickObject")))),
             AllOf(IsStorageType(sourceId1,
@@ -1699,7 +1759,8 @@ TEST_F(ProjectStorage, synchronize_types_insert_type_into_extension_chain)
                                 TypeId{},
                                 fetchTypeId(sourceId1, "QQuickObject"),
                                 TypeTraitsKind::Reference),
-                  Field(&Storage::Synchronization::Type::exportedTypes,
+                  Field("Type::exportedTypes",
+                        &Storage::Synchronization::Type::exportedTypes,
                         UnorderedElementsAre(IsExportedType(qtQuickModuleId, "Item"),
                                              IsExportedType(qtQuickNativeModuleId, "QQuickItem"))))));
 }
@@ -1724,7 +1785,8 @@ TEST_F(ProjectStorage, synchronize_types_add_qualified_prototype)
         storage.fetchTypes(),
         UnorderedElementsAre(
             AllOf(IsStorageType(sourceId2, "QObject", TypeId{}, TypeId{}, TypeTraitsKind::Reference),
-                  Field(&Storage::Synchronization::Type::exportedTypes,
+                  Field("Type::exportedTypes",
+                        &Storage::Synchronization::Type::exportedTypes,
                         UnorderedElementsAre(IsExportedType(qmlModuleId, "Object"),
                                              IsExportedType(qmlModuleId, "Obj"),
                                              IsExportedType(qmlNativeModuleId, "QObject")))),
@@ -1733,7 +1795,8 @@ TEST_F(ProjectStorage, synchronize_types_add_qualified_prototype)
                                 fetchTypeId(sourceId2, "QObject"),
                                 TypeId{},
                                 TypeTraitsKind::Reference),
-                  Field(&Storage::Synchronization::Type::exportedTypes,
+                  Field("Type::exportedTypes",
+                        &Storage::Synchronization::Type::exportedTypes,
                         UnorderedElementsAre(IsExportedType(qtQuickModuleId, "Object"),
                                              IsExportedType(qtQuickNativeModuleId, "QQuickObject")))),
             AllOf(IsStorageType(sourceId1,
@@ -1741,7 +1804,8 @@ TEST_F(ProjectStorage, synchronize_types_add_qualified_prototype)
                                 fetchTypeId(sourceId1, "QQuickObject"),
                                 TypeId{},
                                 TypeTraitsKind::Reference),
-                  Field(&Storage::Synchronization::Type::exportedTypes,
+                  Field("Type::exportedTypes",
+                        &Storage::Synchronization::Type::exportedTypes,
                         UnorderedElementsAre(IsExportedType(qtQuickModuleId, "Item"),
                                              IsExportedType(qtQuickNativeModuleId, "QQuickItem"))))));
 }
@@ -1767,7 +1831,8 @@ TEST_F(ProjectStorage, synchronize_types_add_qualified_extension)
         storage.fetchTypes(),
         UnorderedElementsAre(
             AllOf(IsStorageType(sourceId2, "QObject", TypeId{}, TypeId{}, TypeTraitsKind::Reference),
-                  Field(&Storage::Synchronization::Type::exportedTypes,
+                  Field("Type::exportedTypes",
+                        &Storage::Synchronization::Type::exportedTypes,
                         UnorderedElementsAre(IsExportedType(qmlModuleId, "Object"),
                                              IsExportedType(qmlModuleId, "Obj"),
                                              IsExportedType(qmlNativeModuleId, "QObject")))),
@@ -1776,7 +1841,8 @@ TEST_F(ProjectStorage, synchronize_types_add_qualified_extension)
                                 TypeId{},
                                 fetchTypeId(sourceId2, "QObject"),
                                 TypeTraitsKind::Reference),
-                  Field(&Storage::Synchronization::Type::exportedTypes,
+                  Field("Type::exportedTypes",
+                        &Storage::Synchronization::Type::exportedTypes,
                         UnorderedElementsAre(IsExportedType(qtQuickModuleId, "Object"),
                                              IsExportedType(qtQuickNativeModuleId, "QQuickObject")))),
             AllOf(IsStorageType(sourceId1,
@@ -1784,7 +1850,8 @@ TEST_F(ProjectStorage, synchronize_types_add_qualified_extension)
                                 TypeId{},
                                 fetchTypeId(sourceId1, "QQuickObject"),
                                 TypeTraitsKind::Reference),
-                  Field(&Storage::Synchronization::Type::exportedTypes,
+                  Field("Type::exportedTypes",
+                        &Storage::Synchronization::Type::exportedTypes,
                         UnorderedElementsAre(IsExportedType(qtQuickModuleId, "Item"),
                                              IsExportedType(qtQuickNativeModuleId, "QQuickItem"))))));
 }
@@ -1863,7 +1930,8 @@ TEST_F(ProjectStorage, delete_type_if_source_id_is_synchronized)
     ASSERT_THAT(storage.fetchTypes(),
                 UnorderedElementsAre(
                     AllOf(IsStorageType(sourceId2, "QObject", TypeId{}, TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::exportedTypes,
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(qmlModuleId, "Object"),
                                                      IsExportedType(qmlModuleId, "Obj"),
                                                      IsExportedType(qmlNativeModuleId, "QObject"))))));
@@ -1879,7 +1947,8 @@ TEST_F(ProjectStorage, dont_delete_type_if_source_id_is_not_synchronized)
     ASSERT_THAT(storage.fetchTypes(),
                 UnorderedElementsAre(
                     AllOf(IsStorageType(sourceId2, "QObject", TypeId{}, TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::exportedTypes,
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(qmlModuleId, "Object"),
                                                      IsExportedType(qmlModuleId, "Obj"),
                                                      IsExportedType(qmlNativeModuleId, "QObject")))),
@@ -1887,7 +1956,8 @@ TEST_F(ProjectStorage, dont_delete_type_if_source_id_is_not_synchronized)
                                         "QQuickItem",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::exportedTypes,
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(qtQuickModuleId, "Item"),
                                                      IsExportedType(qtQuickNativeModuleId,
                                                                     "QQuickItem"))))));
@@ -1904,7 +1974,8 @@ TEST_F(ProjectStorage, update_exported_types_if_type_name_changes)
     ASSERT_THAT(storage.fetchTypes(),
                 UnorderedElementsAre(
                     AllOf(IsStorageType(sourceId2, "QObject", TypeId{}, TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::exportedTypes,
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(qmlModuleId, "Object"),
                                                      IsExportedType(qmlModuleId, "Obj"),
                                                      IsExportedType(qmlNativeModuleId, "QObject")))),
@@ -1912,7 +1983,8 @@ TEST_F(ProjectStorage, update_exported_types_if_type_name_changes)
                                         "QQuickItem2",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::exportedTypes,
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(qtQuickModuleId, "Item"),
                                                      IsExportedType(qtQuickNativeModuleId,
                                                                     "QQuickItem"))))));
@@ -2006,7 +2078,8 @@ TEST_F(ProjectStorage, synchronize_types_add_property_declarations)
                                         "QQuickItem",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::propertyDeclarations,
+                          Field("Type::propertyDeclarations",
+                                &Storage::Synchronization::Type::propertyDeclarations,
                                 UnorderedElementsAre(
                                     IsPropertyDeclaration("data",
                                                           fetchTypeId(sourceId2, "QObject"),
@@ -2075,7 +2148,8 @@ TEST_F(ProjectStorage, synchronize_types_add_property_declaration_qualified_type
                                         "QQuickItem",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::propertyDeclarations,
+                          Field("Type::propertyDeclarations",
+                                &Storage::Synchronization::Type::propertyDeclarations,
                                 UnorderedElementsAre(
                                     IsPropertyDeclaration("data",
                                                           fetchTypeId(sourceId1, "QQuickObject"),
@@ -2102,7 +2176,8 @@ TEST_F(ProjectStorage, synchronize_types_changes_property_declaration_type)
                                         "QQuickItem",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::propertyDeclarations,
+                          Field("Type::propertyDeclarations",
+                                &Storage::Synchronization::Type::propertyDeclarations,
                                 UnorderedElementsAre(
                                     IsPropertyDeclaration("data",
                                                           fetchTypeId(sourceId1, "QQuickItem"),
@@ -2126,7 +2201,8 @@ TEST_F(ProjectStorage, synchronize_types_changes_declaration_traits)
         storage.fetchTypes(),
         Contains(AllOf(
             IsStorageType(sourceId1, "QQuickItem", fetchTypeId(sourceId2, "QObject"), TypeTraitsKind::Reference),
-            Field(&Storage::Synchronization::Type::propertyDeclarations,
+            Field("Type::propertyDeclarations",
+                  &Storage::Synchronization::Type::propertyDeclarations,
                   UnorderedElementsAre(
                       IsPropertyDeclaration("data",
                                             fetchTypeId(sourceId2, "QObject"),
@@ -2151,7 +2227,8 @@ TEST_F(ProjectStorage, synchronize_types_changes_declaration_traits_and_type)
         storage.fetchTypes(),
         Contains(AllOf(
             IsStorageType(sourceId1, "QQuickItem", fetchTypeId(sourceId2, "QObject"), TypeTraitsKind::Reference),
-            Field(&Storage::Synchronization::Type::propertyDeclarations,
+            Field("Type::propertyDeclarations",
+                  &Storage::Synchronization::Type::propertyDeclarations,
                   UnorderedElementsAre(
                       IsPropertyDeclaration("data",
                                             fetchTypeId(sourceId1, "QQuickItem"),
@@ -2175,7 +2252,8 @@ TEST_F(ProjectStorage, synchronize_types_removes_a_property_declaration)
                                              "QQuickItem",
                                              fetchTypeId(sourceId2, "QObject"),
                                              TypeTraitsKind::Reference),
-                               Field(&Storage::Synchronization::Type::propertyDeclarations,
+                               Field("Type::propertyDeclarations",
+                                     &Storage::Synchronization::Type::propertyDeclarations,
                                      UnorderedElementsAre(IsPropertyDeclaration(
                                          "data",
                                          fetchTypeId(sourceId2, "QObject"),
@@ -2198,7 +2276,8 @@ TEST_F(ProjectStorage, synchronize_types_adds_a_property_declaration)
         storage.fetchTypes(),
         Contains(AllOf(
             IsStorageType(sourceId1, "QQuickItem", fetchTypeId(sourceId2, "QObject"), TypeTraitsKind::Reference),
-            Field(&Storage::Synchronization::Type::propertyDeclarations,
+            Field("Type::propertyDeclarations",
+                  &Storage::Synchronization::Type::propertyDeclarations,
                   UnorderedElementsAre(
                       IsPropertyDeclaration("object",
                                             fetchTypeId(sourceId2, "QObject"),
@@ -2226,7 +2305,8 @@ TEST_F(ProjectStorage, synchronize_types_rename_a_property_declaration)
                                         "QQuickItem",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::propertyDeclarations,
+                          Field("Type::propertyDeclarations",
+                                &Storage::Synchronization::Type::propertyDeclarations,
                                 UnorderedElementsAre(
                                     IsPropertyDeclaration("data",
                                                           fetchTypeId(sourceId2, "QObject"),
@@ -2428,7 +2508,8 @@ TEST_F(ProjectStorage, synchronize_types_add_function_declarations)
                                         "QQuickItem",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::functionDeclarations,
+                          Field("Type::functionDeclarations",
+                                &Storage::Synchronization::Type::functionDeclarations,
                                 UnorderedElementsAre(Eq(package.types[0].functionDeclarations[0]),
                                                      Eq(package.types[0].functionDeclarations[1]))))));
 }
@@ -2447,7 +2528,8 @@ TEST_F(ProjectStorage, synchronize_types_changes_function_declaration_return_typ
                                         "QQuickItem",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::functionDeclarations,
+                          Field("Type::functionDeclarations",
+                                &Storage::Synchronization::Type::functionDeclarations,
                                 UnorderedElementsAre(Eq(package.types[0].functionDeclarations[0]),
                                                      Eq(package.types[0].functionDeclarations[1]))))));
 }
@@ -2466,7 +2548,8 @@ TEST_F(ProjectStorage, synchronize_types_changes_function_declaration_name)
                                         "QQuickItem",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::functionDeclarations,
+                          Field("Type::functionDeclarations",
+                                &Storage::Synchronization::Type::functionDeclarations,
                                 UnorderedElementsAre(Eq(package.types[0].functionDeclarations[0]),
                                                      Eq(package.types[0].functionDeclarations[1]))))));
 }
@@ -2485,7 +2568,8 @@ TEST_F(ProjectStorage, synchronize_types_changes_function_declaration_pop_parame
                                         "QQuickItem",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::functionDeclarations,
+                          Field("Type::functionDeclarations",
+                                &Storage::Synchronization::Type::functionDeclarations,
                                 UnorderedElementsAre(Eq(package.types[0].functionDeclarations[0]),
                                                      Eq(package.types[0].functionDeclarations[1]))))));
 }
@@ -2505,7 +2589,8 @@ TEST_F(ProjectStorage, synchronize_types_changes_function_declaration_append_par
                                         "QQuickItem",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::functionDeclarations,
+                          Field("Type::functionDeclarations",
+                                &Storage::Synchronization::Type::functionDeclarations,
                                 UnorderedElementsAre(Eq(package.types[0].functionDeclarations[0]),
                                                      Eq(package.types[0].functionDeclarations[1]))))));
 }
@@ -2524,7 +2609,8 @@ TEST_F(ProjectStorage, synchronize_types_changes_function_declaration_change_par
                                         "QQuickItem",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::functionDeclarations,
+                          Field("Type::functionDeclarations",
+                                &Storage::Synchronization::Type::functionDeclarations,
                                 UnorderedElementsAre(Eq(package.types[0].functionDeclarations[0]),
                                                      Eq(package.types[0].functionDeclarations[1]))))));
 }
@@ -2543,7 +2629,8 @@ TEST_F(ProjectStorage, synchronize_types_changes_function_declaration_change_par
                                         "QQuickItem",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::functionDeclarations,
+                          Field("Type::functionDeclarations",
+                                &Storage::Synchronization::Type::functionDeclarations,
                                 UnorderedElementsAre(Eq(package.types[0].functionDeclarations[0]),
                                                      Eq(package.types[0].functionDeclarations[1]))))));
 }
@@ -2563,7 +2650,8 @@ TEST_F(ProjectStorage, synchronize_types_changes_function_declaration_change_par
                                         "QQuickItem",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::functionDeclarations,
+                          Field("Type::functionDeclarations",
+                                &Storage::Synchronization::Type::functionDeclarations,
                                 UnorderedElementsAre(Eq(package.types[0].functionDeclarations[0]),
                                                      Eq(package.types[0].functionDeclarations[1]))))));
 }
@@ -2582,7 +2670,8 @@ TEST_F(ProjectStorage, synchronize_types_removes_function_declaration)
                                         "QQuickItem",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::functionDeclarations,
+                          Field("Type::functionDeclarations",
+                                &Storage::Synchronization::Type::functionDeclarations,
                                 UnorderedElementsAre(Eq(package.types[0].functionDeclarations[0]))))));
 }
 
@@ -2601,7 +2690,8 @@ TEST_F(ProjectStorage, synchronize_types_add_function_declaration)
                                         "QQuickItem",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::functionDeclarations,
+                          Field("Type::functionDeclarations",
+                                &Storage::Synchronization::Type::functionDeclarations,
                                 UnorderedElementsAre(Eq(package.types[0].functionDeclarations[0]),
                                                      Eq(package.types[0].functionDeclarations[1]),
                                                      Eq(package.types[0].functionDeclarations[2]))))));
@@ -2621,7 +2711,8 @@ TEST_F(ProjectStorage, synchronize_types_add_function_declarations_with_overload
                                         "QQuickItem",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::functionDeclarations,
+                          Field("Type::functionDeclarations",
+                                &Storage::Synchronization::Type::functionDeclarations,
                                 UnorderedElementsAre(Eq(package.types[0].functionDeclarations[0]),
                                                      Eq(package.types[0].functionDeclarations[1]),
                                                      Eq(package.types[0].functionDeclarations[2]))))));
@@ -2642,7 +2733,8 @@ TEST_F(ProjectStorage, synchronize_types_function_declarations_adding_overload)
                                         "QQuickItem",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::functionDeclarations,
+                          Field("Type::functionDeclarations",
+                                &Storage::Synchronization::Type::functionDeclarations,
                                 UnorderedElementsAre(Eq(package.types[0].functionDeclarations[0]),
                                                      Eq(package.types[0].functionDeclarations[1]),
                                                      Eq(package.types[0].functionDeclarations[2]))))));
@@ -2664,7 +2756,8 @@ TEST_F(ProjectStorage, synchronize_types_function_declarations_removing_overload
                                         "QQuickItem",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::functionDeclarations,
+                          Field("Type::functionDeclarations",
+                                &Storage::Synchronization::Type::functionDeclarations,
                                 UnorderedElementsAre(Eq(package.types[0].functionDeclarations[0]),
                                                      Eq(package.types[0].functionDeclarations[1]))))));
 }
@@ -2681,7 +2774,8 @@ TEST_F(ProjectStorage, synchronize_types_add_signal_declarations)
                                         "QQuickItem",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::signalDeclarations,
+                          Field("Type::signalDeclarations",
+                                &Storage::Synchronization::Type::signalDeclarations,
                                 UnorderedElementsAre(Eq(package.types[0].signalDeclarations[0]),
                                                      Eq(package.types[0].signalDeclarations[1]))))));
 }
@@ -2700,7 +2794,8 @@ TEST_F(ProjectStorage, synchronize_types_changes_signal_declaration_name)
                                         "QQuickItem",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::signalDeclarations,
+                          Field("Type::signalDeclarations",
+                                &Storage::Synchronization::Type::signalDeclarations,
                                 UnorderedElementsAre(Eq(package.types[0].signalDeclarations[0]),
                                                      Eq(package.types[0].signalDeclarations[1]))))));
 }
@@ -2719,7 +2814,8 @@ TEST_F(ProjectStorage, synchronize_types_changes_signal_declaration_pop_paramete
                                         "QQuickItem",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::signalDeclarations,
+                          Field("Type::signalDeclarations",
+                                &Storage::Synchronization::Type::signalDeclarations,
                                 UnorderedElementsAre(Eq(package.types[0].signalDeclarations[0]),
                                                      Eq(package.types[0].signalDeclarations[1]))))));
 }
@@ -2739,7 +2835,8 @@ TEST_F(ProjectStorage, synchronize_types_changes_signal_declaration_append_param
                                         "QQuickItem",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::signalDeclarations,
+                          Field("Type::signalDeclarations",
+                                &Storage::Synchronization::Type::signalDeclarations,
                                 UnorderedElementsAre(Eq(package.types[0].signalDeclarations[0]),
                                                      Eq(package.types[0].signalDeclarations[1]))))));
 }
@@ -2758,7 +2855,8 @@ TEST_F(ProjectStorage, synchronize_types_changes_signal_declaration_change_param
                                         "QQuickItem",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::signalDeclarations,
+                          Field("Type::signalDeclarations",
+                                &Storage::Synchronization::Type::signalDeclarations,
                                 UnorderedElementsAre(Eq(package.types[0].signalDeclarations[0]),
                                                      Eq(package.types[0].signalDeclarations[1]))))));
 }
@@ -2777,7 +2875,8 @@ TEST_F(ProjectStorage, synchronize_types_changes_signal_declaration_change_param
                                         "QQuickItem",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::signalDeclarations,
+                          Field("Type::signalDeclarations",
+                                &Storage::Synchronization::Type::signalDeclarations,
                                 UnorderedElementsAre(Eq(package.types[0].signalDeclarations[0]),
                                                      Eq(package.types[0].signalDeclarations[1]))))));
 }
@@ -2796,7 +2895,8 @@ TEST_F(ProjectStorage, synchronize_types_changes_signal_declaration_change_param
                                         "QQuickItem",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::signalDeclarations,
+                          Field("Type::signalDeclarations",
+                                &Storage::Synchronization::Type::signalDeclarations,
                                 UnorderedElementsAre(Eq(package.types[0].signalDeclarations[0]),
                                                      Eq(package.types[0].signalDeclarations[1]))))));
 }
@@ -2815,7 +2915,8 @@ TEST_F(ProjectStorage, synchronize_types_removes_signal_declaration)
                                         "QQuickItem",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::signalDeclarations,
+                          Field("Type::signalDeclarations",
+                                &Storage::Synchronization::Type::signalDeclarations,
                                 UnorderedElementsAre(Eq(package.types[0].signalDeclarations[0]))))));
 }
 
@@ -2834,7 +2935,8 @@ TEST_F(ProjectStorage, synchronize_types_add_signal_declaration)
                                         "QQuickItem",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::signalDeclarations,
+                          Field("Type::signalDeclarations",
+                                &Storage::Synchronization::Type::signalDeclarations,
                                 UnorderedElementsAre(Eq(package.types[0].signalDeclarations[0]),
                                                      Eq(package.types[0].signalDeclarations[1]),
                                                      Eq(package.types[0].signalDeclarations[2]))))));
@@ -2854,7 +2956,8 @@ TEST_F(ProjectStorage, synchronize_types_add_signal_declarations_with_overloads)
                                         "QQuickItem",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::signalDeclarations,
+                          Field("Type::signalDeclarations",
+                                &Storage::Synchronization::Type::signalDeclarations,
                                 UnorderedElementsAre(Eq(package.types[0].signalDeclarations[0]),
                                                      Eq(package.types[0].signalDeclarations[1]),
                                                      Eq(package.types[0].signalDeclarations[2]))))));
@@ -2875,7 +2978,8 @@ TEST_F(ProjectStorage, synchronize_types_signal_declarations_adding_overload)
                                         "QQuickItem",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::signalDeclarations,
+                          Field("Type::signalDeclarations",
+                                &Storage::Synchronization::Type::signalDeclarations,
                                 UnorderedElementsAre(Eq(package.types[0].signalDeclarations[0]),
                                                      Eq(package.types[0].signalDeclarations[1]),
                                                      Eq(package.types[0].signalDeclarations[2]))))));
@@ -2897,7 +3001,8 @@ TEST_F(ProjectStorage, synchronize_types_signal_declarations_removing_overload)
                                         "QQuickItem",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::signalDeclarations,
+                          Field("Type::signalDeclarations",
+                                &Storage::Synchronization::Type::signalDeclarations,
                                 UnorderedElementsAre(Eq(package.types[0].signalDeclarations[0]),
                                                      Eq(package.types[0].signalDeclarations[1]))))));
 }
@@ -2914,7 +3019,8 @@ TEST_F(ProjectStorage, synchronize_types_add_enumeration_declarations)
                                   "QQuickItem",
                                   fetchTypeId(sourceId2, "QObject"),
                                   TypeTraitsKind::Reference),
-                    Field(&Storage::Synchronization::Type::enumerationDeclarations,
+                    Field("Type::enumerationDeclarations",
+                          &Storage::Synchronization::Type::enumerationDeclarations,
                           UnorderedElementsAre(Eq(package.types[0].enumerationDeclarations[0]),
                                                Eq(package.types[0].enumerationDeclarations[1]))))));
 }
@@ -2933,7 +3039,8 @@ TEST_F(ProjectStorage, synchronize_types_changes_enumeration_declaration_name)
                                   "QQuickItem",
                                   fetchTypeId(sourceId2, "QObject"),
                                   TypeTraitsKind::Reference),
-                    Field(&Storage::Synchronization::Type::enumerationDeclarations,
+                    Field("Type::enumerationDeclarations",
+                          &Storage::Synchronization::Type::enumerationDeclarations,
                           UnorderedElementsAre(Eq(package.types[0].enumerationDeclarations[0]),
                                                Eq(package.types[0].enumerationDeclarations[1]))))));
 }
@@ -2952,7 +3059,8 @@ TEST_F(ProjectStorage, synchronize_types_changes_enumeration_declaration_pop_enu
                                   "QQuickItem",
                                   fetchTypeId(sourceId2, "QObject"),
                                   TypeTraitsKind::Reference),
-                    Field(&Storage::Synchronization::Type::enumerationDeclarations,
+                    Field("Type::enumerationDeclarations",
+                          &Storage::Synchronization::Type::enumerationDeclarations,
                           UnorderedElementsAre(Eq(package.types[0].enumerationDeclarations[0]),
                                                Eq(package.types[0].enumerationDeclarations[1]))))));
 }
@@ -2972,7 +3080,8 @@ TEST_F(ProjectStorage, synchronize_types_changes_enumeration_declaration_append_
                                   "QQuickItem",
                                   fetchTypeId(sourceId2, "QObject"),
                                   TypeTraitsKind::Reference),
-                    Field(&Storage::Synchronization::Type::enumerationDeclarations,
+                    Field("Type::enumerationDeclarations",
+                          &Storage::Synchronization::Type::enumerationDeclarations,
                           UnorderedElementsAre(Eq(package.types[0].enumerationDeclarations[0]),
                                                Eq(package.types[0].enumerationDeclarations[1]))))));
 }
@@ -2992,7 +3101,8 @@ TEST_F(ProjectStorage,
                                   "QQuickItem",
                                   fetchTypeId(sourceId2, "QObject"),
                                   TypeTraitsKind::Reference),
-                    Field(&Storage::Synchronization::Type::enumerationDeclarations,
+                    Field("Type::enumerationDeclarations",
+                          &Storage::Synchronization::Type::enumerationDeclarations,
                           UnorderedElementsAre(Eq(package.types[0].enumerationDeclarations[0]),
                                                Eq(package.types[0].enumerationDeclarations[1]))))));
 }
@@ -3012,7 +3122,8 @@ TEST_F(ProjectStorage,
                                   "QQuickItem",
                                   fetchTypeId(sourceId2, "QObject"),
                                   TypeTraitsKind::Reference),
-                    Field(&Storage::Synchronization::Type::enumerationDeclarations,
+                    Field("Type::enumerationDeclarations",
+                          &Storage::Synchronization::Type::enumerationDeclarations,
                           UnorderedElementsAre(Eq(package.types[0].enumerationDeclarations[0]),
                                                Eq(package.types[0].enumerationDeclarations[1]))))));
 }
@@ -3033,7 +3144,8 @@ TEST_F(ProjectStorage,
                                   "QQuickItem",
                                   fetchTypeId(sourceId2, "QObject"),
                                   TypeTraitsKind::Reference),
-                    Field(&Storage::Synchronization::Type::enumerationDeclarations,
+                    Field("Type::enumerationDeclarations",
+                          &Storage::Synchronization::Type::enumerationDeclarations,
                           UnorderedElementsAre(Eq(package.types[0].enumerationDeclarations[0]),
                                                Eq(package.types[0].enumerationDeclarations[1]))))));
 }
@@ -3053,7 +3165,8 @@ TEST_F(ProjectStorage,
                                   "QQuickItem",
                                   fetchTypeId(sourceId2, "QObject"),
                                   TypeTraitsKind::Reference),
-                    Field(&Storage::Synchronization::Type::enumerationDeclarations,
+                    Field("Type::enumerationDeclarations",
+                          &Storage::Synchronization::Type::enumerationDeclarations,
                           UnorderedElementsAre(Eq(package.types[0].enumerationDeclarations[0]),
                                                Eq(package.types[0].enumerationDeclarations[1]))))));
 }
@@ -3071,7 +3184,8 @@ TEST_F(ProjectStorage, synchronize_types_removes_enumeration_declaration)
                                              "QQuickItem",
                                              fetchTypeId(sourceId2, "QObject"),
                                              TypeTraitsKind::Reference),
-                               Field(&Storage::Synchronization::Type::enumerationDeclarations,
+                               Field("Type::enumerationDeclarations",
+                                     &Storage::Synchronization::Type::enumerationDeclarations,
                                      UnorderedElementsAre(
                                          Eq(package.types[0].enumerationDeclarations[0]))))));
 }
@@ -3091,7 +3205,8 @@ TEST_F(ProjectStorage, synchronize_types_add_enumeration_declaration)
                                   "QQuickItem",
                                   fetchTypeId(sourceId2, "QObject"),
                                   TypeTraitsKind::Reference),
-                    Field(&Storage::Synchronization::Type::enumerationDeclarations,
+                    Field("Type::enumerationDeclarations",
+                          &Storage::Synchronization::Type::enumerationDeclarations,
                           UnorderedElementsAre(Eq(package.types[0].enumerationDeclarations[0]),
                                                Eq(package.types[0].enumerationDeclarations[1]),
                                                Eq(package.types[0].enumerationDeclarations[2]))))));
@@ -3171,7 +3286,8 @@ TEST_F(ProjectStorage, synchronize_types_add_alias_declarations)
                                   "QAliasItem",
                                   fetchTypeId(sourceId1, "QQuickItem"),
                                   TypeTraitsKind::Reference),
-                    Field(&Storage::Synchronization::Type::propertyDeclarations,
+                    Field("Type::propertyDeclarations",
+                          &Storage::Synchronization::Type::propertyDeclarations,
                           UnorderedElementsAre(
                               IsPropertyDeclaration("items",
                                                     fetchTypeId(sourceId1, "QQuickItem"),
@@ -3198,7 +3314,8 @@ TEST_F(ProjectStorage, synchronize_types_add_alias_declarations_again)
                                   "QAliasItem",
                                   fetchTypeId(sourceId1, "QQuickItem"),
                                   TypeTraitsKind::Reference),
-                    Field(&Storage::Synchronization::Type::propertyDeclarations,
+                    Field("Type::propertyDeclarations",
+                          &Storage::Synchronization::Type::propertyDeclarations,
                           UnorderedElementsAre(
                               IsPropertyDeclaration("items",
                                                     fetchTypeId(sourceId1, "QQuickItem"),
@@ -3226,7 +3343,8 @@ TEST_F(ProjectStorage, synchronize_types_remove_alias_declarations)
                                   "QAliasItem",
                                   fetchTypeId(sourceId1, "QQuickItem"),
                                   TypeTraitsKind::Reference),
-                    Field(&Storage::Synchronization::Type::propertyDeclarations,
+                    Field("Type::propertyDeclarations",
+                          &Storage::Synchronization::Type::propertyDeclarations,
                           UnorderedElementsAre(
                               IsPropertyDeclaration("items",
                                                     fetchTypeId(sourceId1, "QQuickItem"),
@@ -3336,7 +3454,8 @@ TEST_F(ProjectStorage, synchronize_types_change_alias_declarations_type_name)
                                   "QAliasItem",
                                   fetchTypeId(sourceId1, "QQuickItem"),
                                   TypeTraitsKind::Reference),
-                    Field(&Storage::Synchronization::Type::propertyDeclarations,
+                    Field("Type::propertyDeclarations",
+                          &Storage::Synchronization::Type::propertyDeclarations,
                           UnorderedElementsAre(
                               IsPropertyDeclaration("items",
                                                     fetchTypeId(sourceId1, "QQuickItem"),
@@ -3365,7 +3484,8 @@ TEST_F(ProjectStorage, synchronize_types_change_alias_declarations_property_name
                                 "QAliasItem",
                                 fetchTypeId(sourceId1, "QQuickItem"),
                                 TypeTraitsKind::Reference),
-                  Field(&Storage::Synchronization::Type::propertyDeclarations,
+                  Field("Type::propertyDeclarations",
+                        &Storage::Synchronization::Type::propertyDeclarations,
                         UnorderedElementsAre(
                             IsPropertyDeclaration("items",
                                                   fetchTypeId(sourceId1, "QQuickItem"),
@@ -3399,7 +3519,8 @@ TEST_F(ProjectStorage, synchronize_types_change_alias_declarations_to_property_d
                                 "QAliasItem",
                                 fetchTypeId(sourceId1, "QQuickItem"),
                                 TypeTraitsKind::Reference),
-                  Field(&Storage::Synchronization::Type::propertyDeclarations,
+                  Field("Type::propertyDeclarations",
+                        &Storage::Synchronization::Type::propertyDeclarations,
                         UnorderedElementsAre(
                             IsPropertyDeclaration("items",
                                                   fetchTypeId(sourceId1, "QQuickItem"),
@@ -3433,7 +3554,8 @@ TEST_F(ProjectStorage, synchronize_types_change_property_declarations_to_alias_d
                                   "QAliasItem",
                                   fetchTypeId(sourceId1, "QQuickItem"),
                                   TypeTraitsKind::Reference),
-                    Field(&Storage::Synchronization::Type::propertyDeclarations,
+                    Field("Type::propertyDeclarations",
+                          &Storage::Synchronization::Type::propertyDeclarations,
                           UnorderedElementsAre(
                               IsPropertyDeclaration("items",
                                                     fetchTypeId(sourceId1, "QQuickItem"),
@@ -3463,7 +3585,8 @@ TEST_F(ProjectStorage, synchronize_types_change_alias_target_property_declaratio
                                 "QAliasItem",
                                 fetchTypeId(sourceId1, "QQuickItem"),
                                 TypeTraitsKind::Reference),
-                  Field(&Storage::Synchronization::Type::propertyDeclarations,
+                  Field("Type::propertyDeclarations",
+                        &Storage::Synchronization::Type::propertyDeclarations,
                         UnorderedElementsAre(
                             IsPropertyDeclaration("items",
                                                   fetchTypeId(sourceId1, "QQuickItem"),
@@ -3494,7 +3617,8 @@ TEST_F(ProjectStorage, synchronize_types_change_alias_target_property_declaratio
                                   "QAliasItem",
                                   fetchTypeId(sourceId1, "QQuickItem"),
                                   TypeTraitsKind::Reference),
-                    Field(&Storage::Synchronization::Type::propertyDeclarations,
+                    Field("Type::propertyDeclarations",
+                          &Storage::Synchronization::Type::propertyDeclarations,
                           UnorderedElementsAre(
                               IsPropertyDeclaration("items",
                                                     fetchTypeId(sourceId1, "QQuickItem"),
@@ -3536,7 +3660,8 @@ TEST_F(ProjectStorage, synchronize_types_remove_property_declaration_and_alias)
                                   "QAliasItem",
                                   fetchTypeId(sourceId1, "QQuickItem"),
                                   TypeTraitsKind::Reference),
-                    Field(&Storage::Synchronization::Type::propertyDeclarations,
+                    Field("Type::propertyDeclarations",
+                          &Storage::Synchronization::Type::propertyDeclarations,
                           UnorderedElementsAre(
                               IsPropertyDeclaration("items",
                                                     fetchTypeId(sourceId1, "QQuickItem"),
@@ -3613,7 +3738,8 @@ TEST_F(ProjectStorage, synchronize_types_remove_type_and_alias_property_declarat
                                   "QAliasItem",
                                   fetchTypeId(sourceId1, "QQuickItem"),
                                   TypeTraitsKind::Reference),
-                    Field(&Storage::Synchronization::Type::propertyDeclarations,
+                    Field("Type::propertyDeclarations",
+                          &Storage::Synchronization::Type::propertyDeclarations,
                           UnorderedElementsAre(
                               IsPropertyDeclaration("items",
                                                     fetchTypeId(sourceId1, "QQuickItem"),
@@ -3642,7 +3768,8 @@ TEST_F(ProjectStorage, update_alias_property_if_property_is_overloaded)
                                 "QAliasItem",
                                 fetchTypeId(sourceId1, "QQuickItem"),
                                 TypeTraitsKind::Reference),
-                  Field(&Storage::Synchronization::Type::propertyDeclarations,
+                  Field("Type::propertyDeclarations",
+                        &Storage::Synchronization::Type::propertyDeclarations,
                         UnorderedElementsAre(
                             IsPropertyDeclaration("items",
                                                   fetchTypeId(sourceId1, "QQuickItem"),
@@ -3674,7 +3801,8 @@ TEST_F(ProjectStorage, alias_property_is_overloaded)
                                 "QAliasItem",
                                 fetchTypeId(sourceId1, "QQuickItem"),
                                 TypeTraitsKind::Reference),
-                  Field(&Storage::Synchronization::Type::propertyDeclarations,
+                  Field("Type::propertyDeclarations",
+                        &Storage::Synchronization::Type::propertyDeclarations,
                         UnorderedElementsAre(
                             IsPropertyDeclaration("items",
                                                   fetchTypeId(sourceId1, "QQuickItem"),
@@ -3707,7 +3835,8 @@ TEST_F(ProjectStorage, update_alias_property_if_overloaded_property_is_removed)
                                   "QAliasItem",
                                   fetchTypeId(sourceId1, "QQuickItem"),
                                   TypeTraitsKind::Reference),
-                    Field(&Storage::Synchronization::Type::propertyDeclarations,
+                    Field("Type::propertyDeclarations",
+                          &Storage::Synchronization::Type::propertyDeclarations,
                           UnorderedElementsAre(
                               IsPropertyDeclaration("items",
                                                     fetchTypeId(sourceId1, "QQuickItem"),
@@ -3739,7 +3868,8 @@ TEST_F(ProjectStorage, relink_alias_property)
                                   "QAliasItem",
                                   fetchTypeId(sourceId1, "QQuickItem"),
                                   TypeTraitsKind::Reference),
-                    Field(&Storage::Synchronization::Type::propertyDeclarations,
+                    Field("Type::propertyDeclarations",
+                          &Storage::Synchronization::Type::propertyDeclarations,
                           UnorderedElementsAre(
                               IsPropertyDeclaration("items",
                                                     fetchTypeId(sourceId1, "QQuickItem"),
@@ -3835,7 +3965,8 @@ TEST_F(ProjectStorage,
                                   "QAliasItem",
                                   fetchTypeId(sourceId1, "QQuickItem"),
                                   TypeTraitsKind::Reference),
-                    Field(&Storage::Synchronization::Type::propertyDeclarations,
+                    Field("Type::propertyDeclarations",
+                          &Storage::Synchronization::Type::propertyDeclarations,
                           UnorderedElementsAre(
                               IsPropertyDeclaration("items",
                                                     fetchTypeId(sourceId1, "QQuickItem"),
@@ -3865,7 +3996,8 @@ TEST_F(ProjectStorage, relink_alias_property_react_to_type_name_change)
                                   "QAliasItem",
                                   fetchTypeId(sourceId2, "QObject"),
                                   TypeTraitsKind::Reference),
-                    Field(&Storage::Synchronization::Type::propertyDeclarations,
+                    Field("Type::propertyDeclarations",
+                          &Storage::Synchronization::Type::propertyDeclarations,
                           UnorderedElementsAre(
                               IsPropertyDeclaration("items",
                                                     fetchTypeId(sourceId1, "QQuickItem2"),
@@ -4373,7 +4505,8 @@ TEST_F(ProjectStorage, recursive_aliases)
                                              "QAliasItem2",
                                              fetchTypeId(sourceId2, "QObject"),
                                              TypeTraitsKind::Reference),
-                               Field(&Storage::Synchronization::Type::propertyDeclarations,
+                               Field("Type::propertyDeclarations",
+                                     &Storage::Synchronization::Type::propertyDeclarations,
                                      ElementsAre(IsPropertyDeclaration(
                                          "objects",
                                          fetchTypeId(sourceId2, "QObject"),
@@ -4395,7 +4528,8 @@ TEST_F(ProjectStorage, recursive_aliases_change_property_type)
                                              "QAliasItem2",
                                              fetchTypeId(sourceId2, "QObject"),
                                              TypeTraitsKind::Reference),
-                               Field(&Storage::Synchronization::Type::propertyDeclarations,
+                               Field("Type::propertyDeclarations",
+                                     &Storage::Synchronization::Type::propertyDeclarations,
                                      ElementsAre(IsPropertyDeclaration(
                                          "objects",
                                          fetchTypeId(sourceId4, "QObject2"),
@@ -4418,7 +4552,8 @@ TEST_F(ProjectStorage, update_aliases_after_injecting_property)
                                              "QAliasItem2",
                                              fetchTypeId(sourceId2, "QObject"),
                                              TypeTraitsKind::Reference),
-                               Field(&Storage::Synchronization::Type::propertyDeclarations,
+                               Field("Type::propertyDeclarations",
+                                     &Storage::Synchronization::Type::propertyDeclarations,
                                      ElementsAre(IsPropertyDeclaration(
                                          "objects",
                                          fetchTypeId(sourceId1, "QQuickItem"),
@@ -4443,7 +4578,8 @@ TEST_F(ProjectStorage, update_aliases_after_change_alias_to_property)
                                                    "QAliasItem2",
                                                    fetchTypeId(sourceId2, "QObject"),
                                                    TypeTraitsKind::Reference),
-                                     Field(&Storage::Synchronization::Type::propertyDeclarations,
+                                     Field("Type::propertyDeclarations",
+                                           &Storage::Synchronization::Type::propertyDeclarations,
                                            ElementsAre(IsPropertyDeclaration(
                                                "objects",
                                                fetchTypeId(sourceId1, "QQuickItem"),
@@ -4454,7 +4590,8 @@ TEST_F(ProjectStorage, update_aliases_after_change_alias_to_property)
                                                    "QAliasItem",
                                                    fetchTypeId(sourceId1, "QQuickItem"),
                                                    TypeTraitsKind::Reference),
-                                     Field(&Storage::Synchronization::Type::propertyDeclarations,
+                                     Field("Type::propertyDeclarations",
+                                           &Storage::Synchronization::Type::propertyDeclarations,
                                            ElementsAre(IsPropertyDeclaration(
                                                "objects",
                                                fetchTypeId(sourceId1, "QQuickItem"),
@@ -4481,7 +4618,8 @@ TEST_F(ProjectStorage, update_aliases_after_change_property_to_alias)
                                              "QAliasItem2",
                                              fetchTypeId(sourceId2, "QObject"),
                                              TypeTraitsKind::Reference),
-                               Field(&Storage::Synchronization::Type::propertyDeclarations,
+                               Field("Type::propertyDeclarations",
+                                     &Storage::Synchronization::Type::propertyDeclarations,
                                      ElementsAre(IsPropertyDeclaration(
                                          "objects",
                                          fetchTypeId(sourceId2, "QObject"),
@@ -4844,7 +4982,8 @@ TEST_F(ProjectStorage, qualified_property_declaration_type_name)
 
     ASSERT_THAT(storage.fetchTypes(),
                 Contains(
-                    Field(&Storage::Synchronization::Type::propertyDeclarations,
+                    Field("Type::propertyDeclarations",
+                          &Storage::Synchronization::Type::propertyDeclarations,
                           Contains(IsPropertyDeclaration("data",
                                                          fetchTypeId(sourceId2, "QObject"),
                                                          Storage::PropertyDeclarationTraits::IsList)))));
@@ -4911,7 +5050,8 @@ TEST_F(ProjectStorage, qualified_property_declaration_type_name_in_the_module_ch
 
     ASSERT_THAT(storage.fetchTypes(),
                 Contains(
-                    Field(&Storage::Synchronization::Type::propertyDeclarations,
+                    Field("Type::propertyDeclarations",
+                          &Storage::Synchronization::Type::propertyDeclarations,
                           Contains(IsPropertyDeclaration("data",
                                                          fetchTypeId(sourceId3, "QQuickObject"),
                                                          Storage::PropertyDeclarationTraits::IsList)))));
@@ -4928,7 +5068,8 @@ TEST_F(ProjectStorage, qualified_property_declaration_type_name_with_version)
 
     ASSERT_THAT(storage.fetchTypes(),
                 Contains(
-                    Field(&Storage::Synchronization::Type::propertyDeclarations,
+                    Field("Type::propertyDeclarations",
+                          &Storage::Synchronization::Type::propertyDeclarations,
                           Contains(IsPropertyDeclaration("data",
                                                          fetchTypeId(sourceId2, "QObject"),
                                                          Storage::PropertyDeclarationTraits::IsList)))));
@@ -5004,7 +5145,8 @@ TEST_F(ProjectStorage, change_property_type_module_id_with_qualified_type)
                                              "QQuickItem",
                                              fetchTypeId(sourceId2, "QObject"),
                                              TypeTraitsKind::Reference),
-                               Field(&Storage::Synchronization::Type::propertyDeclarations,
+                               Field("Type::propertyDeclarations",
+                                     &Storage::Synchronization::Type::propertyDeclarations,
                                      Contains(IsPropertyDeclaration(
                                          "data",
                                          fetchTypeId(sourceId2, "QObject"),
@@ -5101,7 +5243,8 @@ TEST_F(ProjectStorage, synchronize_types_without_type_name)
                                              "QObject2",
                                              fetchTypeId(sourceId2, "QObject"),
                                              TypeTraitsKind::Reference),
-                               Field(&Storage::Synchronization::Type::exportedTypes,
+                               Field("Type::exportedTypes",
+                                     &Storage::Synchronization::Type::exportedTypes,
                                      UnorderedElementsAre(IsExportedType("Object2"),
                                                           IsExportedType("Obj2"))))));
 }
@@ -5593,25 +5736,35 @@ TEST_F(ProjectStorage, minimal_updates)
 
     storage.synchronize(SynchronizationPackage{{quickType}});
 
-    ASSERT_THAT(
-        storage.fetchTypes(),
-        UnorderedElementsAre(
-            AllOf(IsStorageType(sourceId2, "QObject", TypeId{}, TypeTraitsKind::Reference),
-                  Field(&Storage::Synchronization::Type::exportedTypes,
-                        UnorderedElementsAre(IsExportedType(qmlModuleId, "Object"),
-                                             IsExportedType(qmlModuleId, "Obj"),
-                                             IsExportedType(qmlNativeModuleId, "QObject")))),
-            AllOf(IsStorageType(sourceId1,
-                                "QQuickItem",
-                                fetchTypeId(sourceId2, "QObject"),
-                                TypeTraitsKind::Reference),
-                  Field(&Storage::Synchronization::Type::exportedTypes,
-                        UnorderedElementsAre(IsExportedType(qtQuickModuleId, "Item", 2, 0),
-                                             IsExportedType(qtQuickNativeModuleId, "QQuickItem"))),
-                  Field(&Storage::Synchronization::Type::propertyDeclarations, Not(IsEmpty())),
-                  Field(&Storage::Synchronization::Type::functionDeclarations, Not(IsEmpty())),
-                  Field(&Storage::Synchronization::Type::signalDeclarations, Not(IsEmpty())),
-                  Field(&Storage::Synchronization::Type::enumerationDeclarations, Not(IsEmpty())))));
+    ASSERT_THAT(storage.fetchTypes(),
+                UnorderedElementsAre(
+                    AllOf(IsStorageType(sourceId2, "QObject", TypeId{}, TypeTraitsKind::Reference),
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
+                                UnorderedElementsAre(IsExportedType(qmlModuleId, "Object"),
+                                                     IsExportedType(qmlModuleId, "Obj"),
+                                                     IsExportedType(qmlNativeModuleId, "QObject")))),
+                    AllOf(IsStorageType(sourceId1,
+                                        "QQuickItem",
+                                        fetchTypeId(sourceId2, "QObject"),
+                                        TypeTraitsKind::Reference),
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
+                                UnorderedElementsAre(IsExportedType(qtQuickModuleId, "Item", 2, 0),
+                                                     IsExportedType(qtQuickNativeModuleId,
+                                                                    "QQuickItem"))),
+                          Field("Type::propertyDeclarations",
+                                &Storage::Synchronization::Type::propertyDeclarations,
+                                Not(IsEmpty())),
+                          Field("Type::functionDeclarations",
+                                &Storage::Synchronization::Type::functionDeclarations,
+                                Not(IsEmpty())),
+                          Field("Type::signalDeclarations",
+                                &Storage::Synchronization::Type::signalDeclarations,
+                                Not(IsEmpty())),
+                          Field("Type::enumerationDeclarations",
+                                &Storage::Synchronization::Type::enumerationDeclarations,
+                                Not(IsEmpty())))));
 }
 
 TEST_F(ProjectStorage, get_module_id)
@@ -5619,6 +5772,13 @@ TEST_F(ProjectStorage, get_module_id)
     auto id = storage.moduleId("Qml", ModuleKind::QmlLibrary);
 
     ASSERT_TRUE(id);
+}
+
+TEST_F(ProjectStorage, get_invalid_module_id_for_empty_name)
+{
+    auto id = storage.moduleId("", ModuleKind::QmlLibrary);
+
+    ASSERT_FALSE(id);
 }
 
 TEST_F(ProjectStorage, get_same_module_id_again)
@@ -5667,261 +5827,311 @@ TEST_F(ProjectStorage, populate_module_cache)
     ASSERT_THAT(newStorage.module(id), IsModule("Qml", ModuleKind::QmlLibrary));
 }
 
+TEST_F(ProjectStorage, get_no_module_ids_if_they_starts_with_nothing)
+{
+    storage.moduleId("QtQml", ModuleKind::QmlLibrary);
+
+    auto ids = storage.moduleIdsStartsWith("", ModuleKind::QmlLibrary);
+
+    ASSERT_THAT(ids, IsEmpty());
+}
+
+TEST_F(ProjectStorage, get_module_ids_if_they_starts_with_New)
+{
+    auto quickId = storage.moduleId("NewQuick", ModuleKind::QmlLibrary);
+    storage.moduleId("NewQuick", ModuleKind::CppLibrary);
+    auto quick3dId = storage.moduleId("NewQuick3D", ModuleKind::QmlLibrary);
+    storage.moduleId("NewQml", ModuleKind::CppLibrary);
+    auto qmlId = storage.moduleId("NewQml", ModuleKind::QmlLibrary);
+    storage.moduleId("Foo", ModuleKind::QmlLibrary);
+    storage.moduleId("Zoo", ModuleKind::QmlLibrary);
+
+    auto ids = storage.moduleIdsStartsWith("New", ModuleKind::QmlLibrary);
+
+    ASSERT_THAT(ids, UnorderedElementsAre(qmlId, quickId, quick3dId));
+}
+
 TEST_F(ProjectStorage, add_directory_infoes)
 {
-    Storage::Synchronization::DirectoryInfo directoryInfo1{qmlProjectSourceId,
-                                                       sourceId1,
-                                                       qmlModuleId,
-                                                       Storage::Synchronization::FileType::QmlDocument};
-    Storage::Synchronization::DirectoryInfo directoryInfo2{qmlProjectSourceId,
-                                                       sourceId2,
-                                                       qmlModuleId,
-                                                       Storage::Synchronization::FileType::QmlDocument};
-    Storage::Synchronization::DirectoryInfo directoryInfo3{qtQuickProjectSourceId,
-                                                       sourceId3,
-                                                       qtQuickModuleId,
-                                                       Storage::Synchronization::FileType::QmlTypes};
+    Storage::Synchronization::DirectoryInfo directoryInfo1{qmlProjectDirectoryPathId,
+                                                           sourceId1,
+                                                           qmlModuleId,
+                                                           Storage::Synchronization::FileType::QmlDocument};
+    Storage::Synchronization::DirectoryInfo directoryInfo2{qmlProjectDirectoryPathId,
+                                                           sourceId2,
+                                                           qmlModuleId,
+                                                           Storage::Synchronization::FileType::QmlDocument};
+    Storage::Synchronization::DirectoryInfo directoryInfo3{qtQuickProjectDirectoryPathId,
+                                                           sourceId3,
+                                                           qtQuickModuleId,
+                                                           Storage::Synchronization::FileType::QmlTypes};
 
-    storage.synchronize(SynchronizationPackage{{qmlProjectSourceId, qtQuickProjectSourceId},
-                                               {directoryInfo1, directoryInfo2, directoryInfo3}});
+    storage.synchronize(
+        SynchronizationPackage{{qmlProjectDirectoryPathId, qtQuickProjectDirectoryPathId},
+                               {directoryInfo1, directoryInfo2, directoryInfo3}});
 
-    ASSERT_THAT(storage.fetchDirectoryInfos({qmlProjectSourceId, qtQuickProjectSourceId}),
+    ASSERT_THAT(storage.fetchDirectoryInfos({qmlProjectDirectoryPathId, qtQuickProjectDirectoryPathId}),
                 UnorderedElementsAre(directoryInfo1, directoryInfo2, directoryInfo3));
 }
 
 TEST_F(ProjectStorage, remove_directory_info)
 {
-    Storage::Synchronization::DirectoryInfo directoryInfo1{qmlProjectSourceId,
-                                                       sourceId1,
-                                                       qmlModuleId,
-                                                       Storage::Synchronization::FileType::QmlDocument};
-    Storage::Synchronization::DirectoryInfo directoryInfo2{qmlProjectSourceId,
-                                                       sourceId2,
-                                                       qmlModuleId,
-                                                       Storage::Synchronization::FileType::QmlDocument};
-    Storage::Synchronization::DirectoryInfo directoryInfo3{qtQuickProjectSourceId,
-                                                       sourceId3,
-                                                       qtQuickModuleId,
-                                                       Storage::Synchronization::FileType::QmlTypes};
-    storage.synchronize(SynchronizationPackage{{qmlProjectSourceId, qtQuickProjectSourceId},
-                                               {directoryInfo1, directoryInfo2, directoryInfo3}});
+    Storage::Synchronization::DirectoryInfo directoryInfo1{qmlProjectDirectoryPathId,
+                                                           sourceId1,
+                                                           qmlModuleId,
+                                                           Storage::Synchronization::FileType::QmlDocument};
+    Storage::Synchronization::DirectoryInfo directoryInfo2{qmlProjectDirectoryPathId,
+                                                           sourceId2,
+                                                           qmlModuleId,
+                                                           Storage::Synchronization::FileType::QmlDocument};
+    Storage::Synchronization::DirectoryInfo directoryInfo3{qtQuickProjectDirectoryPathId,
+                                                           sourceId3,
+                                                           qtQuickModuleId,
+                                                           Storage::Synchronization::FileType::QmlTypes};
+    storage.synchronize(
+        SynchronizationPackage{{qmlProjectDirectoryPathId, qtQuickProjectDirectoryPathId},
+                               {directoryInfo1, directoryInfo2, directoryInfo3}});
 
     storage.synchronize(
-        SynchronizationPackage{{qmlProjectSourceId, qtQuickProjectSourceId}, {directoryInfo1}});
+        SynchronizationPackage{{qmlProjectDirectoryPathId, qtQuickProjectDirectoryPathId},
+                               {directoryInfo1}});
 
-    ASSERT_THAT(storage.fetchDirectoryInfos({qmlProjectSourceId, qtQuickProjectSourceId}),
+    ASSERT_THAT(storage.fetchDirectoryInfos({qmlProjectDirectoryPathId, qtQuickProjectDirectoryPathId}),
                 UnorderedElementsAre(directoryInfo1));
 }
 
 TEST_F(ProjectStorage, update_directory_info_file_type)
 {
-    Storage::Synchronization::DirectoryInfo directoryInfo1{qmlProjectSourceId,
-                                                       sourceId1,
-                                                       qmlModuleId,
-                                                       Storage::Synchronization::FileType::QmlDocument};
-    Storage::Synchronization::DirectoryInfo directoryInfo2{qmlProjectSourceId,
-                                                       sourceId2,
-                                                       qmlModuleId,
-                                                       Storage::Synchronization::FileType::QmlDocument};
-    Storage::Synchronization::DirectoryInfo directoryInfo2b{qmlProjectSourceId,
-                                                        sourceId2,
-                                                        qmlModuleId,
-                                                        Storage::Synchronization::FileType::QmlTypes};
-    Storage::Synchronization::DirectoryInfo directoryInfo3{qtQuickProjectSourceId,
-                                                       sourceId3,
-                                                       qtQuickModuleId,
-                                                       Storage::Synchronization::FileType::QmlTypes};
-    storage.synchronize(SynchronizationPackage{{qmlProjectSourceId, qtQuickProjectSourceId},
-                                               {directoryInfo1, directoryInfo2, directoryInfo3}});
+    Storage::Synchronization::DirectoryInfo directoryInfo1{qmlProjectDirectoryPathId,
+                                                           sourceId1,
+                                                           qmlModuleId,
+                                                           Storage::Synchronization::FileType::QmlDocument};
+    Storage::Synchronization::DirectoryInfo directoryInfo2{qmlProjectDirectoryPathId,
+                                                           sourceId2,
+                                                           qmlModuleId,
+                                                           Storage::Synchronization::FileType::QmlDocument};
+    Storage::Synchronization::DirectoryInfo directoryInfo2b{qmlProjectDirectoryPathId,
+                                                            sourceId2,
+                                                            qmlModuleId,
+                                                            Storage::Synchronization::FileType::QmlTypes};
+    Storage::Synchronization::DirectoryInfo directoryInfo3{qtQuickProjectDirectoryPathId,
+                                                           sourceId3,
+                                                           qtQuickModuleId,
+                                                           Storage::Synchronization::FileType::QmlTypes};
+    storage.synchronize(
+        SynchronizationPackage{{qmlProjectDirectoryPathId, qtQuickProjectDirectoryPathId},
+                               {directoryInfo1, directoryInfo2, directoryInfo3}});
 
-    storage.synchronize(SynchronizationPackage{{qmlProjectSourceId}, {directoryInfo1, directoryInfo2b}});
+    storage.synchronize(
+        SynchronizationPackage{{qmlProjectDirectoryPathId}, {directoryInfo1, directoryInfo2b}});
 
-    ASSERT_THAT(storage.fetchDirectoryInfos({qmlProjectSourceId, qtQuickProjectSourceId}),
+    ASSERT_THAT(storage.fetchDirectoryInfos({qmlProjectDirectoryPathId, qtQuickProjectDirectoryPathId}),
                 UnorderedElementsAre(directoryInfo1, directoryInfo2b, directoryInfo3));
 }
 
 TEST_F(ProjectStorage, update_directory_info_module_id)
 {
-    Storage::Synchronization::DirectoryInfo directoryInfo1{qmlProjectSourceId,
-                                                       sourceId1,
-                                                       qmlModuleId,
-                                                       Storage::Synchronization::FileType::QmlDocument};
-    Storage::Synchronization::DirectoryInfo directoryInfo2{qmlProjectSourceId,
-                                                       sourceId3,
-                                                       qmlModuleId,
-                                                       Storage::Synchronization::FileType::QmlDocument};
-    Storage::Synchronization::DirectoryInfo directoryInfo2b{qmlProjectSourceId,
-                                                        sourceId3,
-                                                        qtQuickModuleId,
-                                                        Storage::Synchronization::FileType::QmlDocument};
-    Storage::Synchronization::DirectoryInfo directoryInfo3{qtQuickProjectSourceId,
-                                                       sourceId2,
-                                                       qtQuickModuleId,
-                                                       Storage::Synchronization::FileType::QmlTypes};
-    storage.synchronize(SynchronizationPackage{{qmlProjectSourceId, qtQuickProjectSourceId},
-                                               {directoryInfo1, directoryInfo2, directoryInfo3}});
+    Storage::Synchronization::DirectoryInfo directoryInfo1{qmlProjectDirectoryPathId,
+                                                           sourceId1,
+                                                           qmlModuleId,
+                                                           Storage::Synchronization::FileType::QmlDocument};
+    Storage::Synchronization::DirectoryInfo directoryInfo2{qmlProjectDirectoryPathId,
+                                                           sourceId3,
+                                                           qmlModuleId,
+                                                           Storage::Synchronization::FileType::QmlDocument};
+    Storage::Synchronization::DirectoryInfo directoryInfo2b{qmlProjectDirectoryPathId,
+                                                            sourceId3,
+                                                            qtQuickModuleId,
+                                                            Storage::Synchronization::FileType::QmlDocument};
+    Storage::Synchronization::DirectoryInfo directoryInfo3{qtQuickProjectDirectoryPathId,
+                                                           sourceId2,
+                                                           qtQuickModuleId,
+                                                           Storage::Synchronization::FileType::QmlTypes};
+    storage.synchronize(
+        SynchronizationPackage{{qmlProjectDirectoryPathId, qtQuickProjectDirectoryPathId},
+                               {directoryInfo1, directoryInfo2, directoryInfo3}});
 
-    storage.synchronize(SynchronizationPackage{{qmlProjectSourceId}, {directoryInfo1, directoryInfo2b}});
+    storage.synchronize(
+        SynchronizationPackage{{qmlProjectDirectoryPathId}, {directoryInfo1, directoryInfo2b}});
 
-    ASSERT_THAT(storage.fetchDirectoryInfos({qmlProjectSourceId, qtQuickProjectSourceId}),
+    ASSERT_THAT(storage.fetchDirectoryInfos({qmlProjectDirectoryPathId, qtQuickProjectDirectoryPathId}),
                 UnorderedElementsAre(directoryInfo1, directoryInfo2b, directoryInfo3));
 }
 
 TEST_F(ProjectStorage, throw_for_invalid_source_id_in_directory_info)
 {
-    Storage::Synchronization::DirectoryInfo directoryInfo1{qmlProjectSourceId,
-                                                       SourceId{},
-                                                       qmlModuleId,
-                                                       Storage::Synchronization::FileType::QmlDocument};
+    Storage::Synchronization::DirectoryInfo directoryInfo1{qmlProjectDirectoryPathId,
+                                                           SourceId{},
+                                                           qmlModuleId,
+                                                           Storage::Synchronization::FileType::QmlDocument};
 
-    ASSERT_THROW(storage.synchronize(SynchronizationPackage{{qmlProjectSourceId}, {directoryInfo1}}),
+    ASSERT_THROW(storage.synchronize(
+                     SynchronizationPackage{{qmlProjectDirectoryPathId}, {directoryInfo1}}),
                  QmlDesigner::DirectoryInfoHasInvalidSourceId);
 }
 
 TEST_F(ProjectStorage, insert_directory_info_with_invalid_module_id)
 {
-    Storage::Synchronization::DirectoryInfo directoryInfo1{qmlProjectSourceId,
-                                                       sourceId1,
-                                                       ModuleId{},
-                                                       Storage::Synchronization::FileType::QmlDocument};
+    Storage::Synchronization::DirectoryInfo directoryInfo1{qmlProjectDirectoryPathId,
+                                                           sourceId1,
+                                                           ModuleId{},
+                                                           Storage::Synchronization::FileType::QmlDocument};
 
-    storage.synchronize(SynchronizationPackage{{qmlProjectSourceId}, {directoryInfo1}});
+    storage.synchronize(SynchronizationPackage{{qmlProjectDirectoryPathId}, {directoryInfo1}});
 
-    ASSERT_THAT(storage.fetchDirectoryInfos({qmlProjectSourceId, qtQuickProjectSourceId}),
+    ASSERT_THAT(storage.fetchDirectoryInfos({qmlProjectDirectoryPathId, qtQuickProjectDirectoryPathId}),
                 UnorderedElementsAre(directoryInfo1));
 }
 
 TEST_F(ProjectStorage, update_directory_info_with_invalid_module_id)
 {
-    Storage::Synchronization::DirectoryInfo directoryInfo1{qmlProjectSourceId,
-                                                       sourceId1,
-                                                       qmlModuleId,
-                                                       Storage::Synchronization::FileType::QmlDocument};
-    storage.synchronize(SynchronizationPackage{{qmlProjectSourceId}, {directoryInfo1}});
+    Storage::Synchronization::DirectoryInfo directoryInfo1{qmlProjectDirectoryPathId,
+                                                           sourceId1,
+                                                           qmlModuleId,
+                                                           Storage::Synchronization::FileType::QmlDocument};
+    storage.synchronize(SynchronizationPackage{{qmlProjectDirectoryPathId}, {directoryInfo1}});
     directoryInfo1.moduleId = ModuleId{};
 
-    storage.synchronize(SynchronizationPackage{{qmlProjectSourceId}, {directoryInfo1}});
+    storage.synchronize(SynchronizationPackage{{qmlProjectDirectoryPathId}, {directoryInfo1}});
 
-    ASSERT_THAT(storage.fetchDirectoryInfos({qmlProjectSourceId, qtQuickProjectSourceId}),
+    ASSERT_THAT(storage.fetchDirectoryInfos({qmlProjectDirectoryPathId, qtQuickProjectDirectoryPathId}),
                 UnorderedElementsAre(directoryInfo1));
 }
 
-TEST_F(ProjectStorage, throw_for_updating_with_invalid_project_source_id_in_directory_info)
+TEST_F(ProjectStorage, throw_for_updating_with_invalid_project_directory_path_id_in_directory_info)
 {
-    Storage::Synchronization::DirectoryInfo directoryInfo1{SourceId{},
-                                                       sourceId1,
-                                                       qmlModuleId,
-                                                       Storage::Synchronization::FileType::QmlDocument};
+    Storage::Synchronization::DirectoryInfo directoryInfo1{
+        DirectoryPathId{}, sourceId1, qmlModuleId, Storage::Synchronization::FileType::QmlDocument};
 
-    ASSERT_THROW(storage.synchronize(SynchronizationPackage{{qmlProjectSourceId}, {directoryInfo1}}),
+    ASSERT_THROW(storage.synchronize(
+                     SynchronizationPackage{{qmlProjectDirectoryPathId}, {directoryInfo1}}),
                  QmlDesigner::DirectoryInfoHasInvalidProjectSourceId);
 }
 
-TEST_F(ProjectStorage, fetch_directory_infos_by_directory_source_ids)
+TEST_F(ProjectStorage, fetch_directory_infos_by_directory_directory_path_ids)
 {
-    Storage::Synchronization::DirectoryInfo directoryInfo1{qmlProjectSourceId,
-                                                       sourceId1,
-                                                       qmlModuleId,
-                                                       Storage::Synchronization::FileType::QmlDocument};
-    Storage::Synchronization::DirectoryInfo directoryInfo2{qmlProjectSourceId,
-                                                       sourceId2,
-                                                       qmlModuleId,
-                                                       Storage::Synchronization::FileType::QmlDocument};
-    Storage::Synchronization::DirectoryInfo directoryInfo3{qtQuickProjectSourceId,
-                                                       sourceId3,
-                                                       qtQuickModuleId,
-                                                       Storage::Synchronization::FileType::QmlTypes};
-    storage.synchronize(SynchronizationPackage{{qmlProjectSourceId, qtQuickProjectSourceId},
-                                               {directoryInfo1, directoryInfo2, directoryInfo3}});
+    Storage::Synchronization::DirectoryInfo directoryInfo1{qmlProjectDirectoryPathId,
+                                                           sourceId1,
+                                                           qmlModuleId,
+                                                           Storage::Synchronization::FileType::QmlDocument};
+    Storage::Synchronization::DirectoryInfo directoryInfo2{qmlProjectDirectoryPathId,
+                                                           sourceId2,
+                                                           qmlModuleId,
+                                                           Storage::Synchronization::FileType::QmlDocument};
+    Storage::Synchronization::DirectoryInfo directoryInfo3{qtQuickProjectDirectoryPathId,
+                                                           sourceId3,
+                                                           qtQuickModuleId,
+                                                           Storage::Synchronization::FileType::QmlTypes};
+    storage.synchronize(
+        SynchronizationPackage{{qmlProjectDirectoryPathId, qtQuickProjectDirectoryPathId},
+                               {directoryInfo1, directoryInfo2, directoryInfo3}});
 
-    auto directoryInfos = storage.fetchDirectoryInfos({qmlProjectSourceId, qtQuickProjectSourceId});
+    auto directoryInfos = storage.fetchDirectoryInfos(
+        {qmlProjectDirectoryPathId, qtQuickProjectDirectoryPathId});
 
     ASSERT_THAT(directoryInfos, UnorderedElementsAre(directoryInfo1, directoryInfo2, directoryInfo3));
 }
 
-TEST_F(ProjectStorage, fetch_directory_infos_by_directory_source_id)
+TEST_F(ProjectStorage, fetch_directory_infos_by_directory_directory_path_id)
 {
-    Storage::Synchronization::DirectoryInfo directoryInfo1{qmlProjectSourceId,
-                                                       sourceId1,
-                                                       qmlModuleId,
-                                                       Storage::Synchronization::FileType::QmlDocument};
-    Storage::Synchronization::DirectoryInfo directoryInfo2{qmlProjectSourceId,
-                                                       sourceId2,
-                                                       qmlModuleId,
-                                                       Storage::Synchronization::FileType::QmlDocument};
-    Storage::Synchronization::DirectoryInfo directoryInfo3{qtQuickProjectSourceId,
-                                                       sourceId3,
-                                                       qtQuickModuleId,
-                                                       Storage::Synchronization::FileType::QmlTypes};
-    storage.synchronize(SynchronizationPackage{{qmlProjectSourceId, qtQuickProjectSourceId},
-                                               {directoryInfo1, directoryInfo2, directoryInfo3}});
+    Storage::Synchronization::DirectoryInfo directoryInfo1{qmlProjectDirectoryPathId,
+                                                           sourceId1,
+                                                           qmlModuleId,
+                                                           Storage::Synchronization::FileType::QmlDocument};
+    Storage::Synchronization::DirectoryInfo directoryInfo2{qmlProjectDirectoryPathId,
+                                                           sourceId2,
+                                                           qmlModuleId,
+                                                           Storage::Synchronization::FileType::QmlDocument};
+    Storage::Synchronization::DirectoryInfo directoryInfo3{qtQuickProjectDirectoryPathId,
+                                                           sourceId3,
+                                                           qtQuickModuleId,
+                                                           Storage::Synchronization::FileType::QmlTypes};
+    storage.synchronize(
+        SynchronizationPackage{{qmlProjectDirectoryPathId, qtQuickProjectDirectoryPathId},
+                               {directoryInfo1, directoryInfo2, directoryInfo3}});
 
-    auto directoryInfo = storage.fetchDirectoryInfos(qmlProjectSourceId);
+    auto directoryInfo = storage.fetchDirectoryInfos(qmlProjectDirectoryPathId);
 
     ASSERT_THAT(directoryInfo, UnorderedElementsAre(directoryInfo1, directoryInfo2));
 }
 
-TEST_F(ProjectStorage, fetch_directory_infos_by_directory_source_id_and_file_type)
+TEST_F(ProjectStorage, fetch_directory_infos_by_directory_directory_path_id_and_file_type)
 {
-    Storage::Synchronization::DirectoryInfo directoryInfo1{
-        qmlProjectSourceId, sourceId1, qmlModuleId, Storage::Synchronization::FileType::QmlDocument};
-    Storage::Synchronization::DirectoryInfo directoryInfo2{
-        qmlProjectSourceId, sourceId2, ModuleId{}, Storage::Synchronization::FileType::Directory};
-    Storage::Synchronization::DirectoryInfo directoryInfo3{qtQuickProjectSourceId,
+    Storage::Synchronization::DirectoryInfo directoryInfo1{qmlProjectDirectoryPathId,
+                                                           sourceId1,
+                                                           qmlModuleId,
+                                                           Storage::Synchronization::FileType::QmlDocument};
+    Storage::Synchronization::DirectoryInfo directoryInfo2{qmlProjectDirectoryPathId,
+                                                           sourceId2,
+                                                           ModuleId{},
+                                                           Storage::Synchronization::FileType::Directory};
+    Storage::Synchronization::DirectoryInfo directoryInfo3{qtQuickProjectDirectoryPathId,
                                                            sourceId3,
                                                            qtQuickModuleId,
                                                            Storage::Synchronization::FileType::QmlTypes};
-    Storage::Synchronization::DirectoryInfo directoryInfo4{
-        qmlProjectSourceId, sourceId4, ModuleId{}, Storage::Synchronization::FileType::Directory};
+    Storage::Synchronization::DirectoryInfo directoryInfo4{qmlProjectDirectoryPathId,
+                                                           sourceId4,
+                                                           ModuleId{},
+                                                           Storage::Synchronization::FileType::Directory};
     storage.synchronize(
-        SynchronizationPackage{{qmlProjectSourceId, qtQuickProjectSourceId},
+        SynchronizationPackage{{qmlProjectDirectoryPathId, qtQuickProjectDirectoryPathId},
                                {directoryInfo1, directoryInfo2, directoryInfo3, directoryInfo4}});
 
-    auto directoryInfo = storage.fetchDirectoryInfos(qmlProjectSourceId,
+    auto directoryInfo = storage.fetchDirectoryInfos(qmlProjectDirectoryPathId,
                                                      Storage::Synchronization::FileType::Directory);
 
     ASSERT_THAT(directoryInfo, UnorderedElementsAre(directoryInfo2, directoryInfo4));
 }
 
-TEST_F(ProjectStorage, fetch_subdirectory_source_ids)
+TEST_F(ProjectStorage, fetch_subdirectory_directory_path_ids)
 {
-    Storage::Synchronization::DirectoryInfo directoryInfo1{
-        qmlProjectSourceId, sourceId1, qmlModuleId, Storage::Synchronization::FileType::QmlDocument};
-    Storage::Synchronization::DirectoryInfo directoryInfo2{
-        qmlProjectSourceId, sourceId2, ModuleId{}, Storage::Synchronization::FileType::Directory};
-    Storage::Synchronization::DirectoryInfo directoryInfo3{qtQuickProjectSourceId,
+    Storage::Synchronization::DirectoryInfo directoryInfo1{qmlProjectDirectoryPathId,
+                                                           sourceId1,
+                                                           qmlModuleId,
+                                                           Storage::Synchronization::FileType::QmlDocument};
+    auto directory1Id = SourceId::create(sourceId2.directoryPathId(), FileNameId{});
+    Storage::Synchronization::DirectoryInfo directoryInfo2{qmlProjectDirectoryPathId,
+                                                           directory1Id,
+                                                           ModuleId{},
+                                                           Storage::Synchronization::FileType::Directory};
+    Storage::Synchronization::DirectoryInfo directoryInfo3{qtQuickProjectDirectoryPathId,
                                                            sourceId3,
                                                            qtQuickModuleId,
                                                            Storage::Synchronization::FileType::QmlTypes};
-    Storage::Synchronization::DirectoryInfo directoryInfo4{
-        qmlProjectSourceId, sourceId4, ModuleId{}, Storage::Synchronization::FileType::Directory};
+    auto directory2Id = SourceId::create(sourceId4.directoryPathId(), FileNameId{});
+    Storage::Synchronization::DirectoryInfo directoryInfo4{qmlProjectDirectoryPathId,
+                                                           directory2Id,
+                                                           ModuleId{},
+                                                           Storage::Synchronization::FileType::Directory};
     storage.synchronize(
-        SynchronizationPackage{{qmlProjectSourceId, qtQuickProjectSourceId},
+        SynchronizationPackage{{qmlProjectDirectoryPathId, qtQuickProjectDirectoryPathId},
                                {directoryInfo1, directoryInfo2, directoryInfo3, directoryInfo4}});
 
-    auto directoryInfo = storage.fetchSubdirectorySourceIds(qmlProjectSourceId);
+    auto directoryInfo = storage.fetchSubdirectoryIds(qmlProjectDirectoryPathId);
 
-    ASSERT_THAT(directoryInfo, UnorderedElementsAre(sourceId2, sourceId4));
+    ASSERT_THAT(directoryInfo,
+                UnorderedElementsAre(directory1Id.directoryPathId(), directory2Id.directoryPathId()));
 }
 
-TEST_F(ProjectStorage, fetch_directory_info_by_source_ids)
+TEST_F(ProjectStorage, fetch_directory_info_by_source_id)
 {
-    Storage::Synchronization::DirectoryInfo directoryInfo1{qmlProjectSourceId,
-                                                       sourceId1,
-                                                       qmlModuleId,
-                                                       Storage::Synchronization::FileType::QmlDocument};
-    Storage::Synchronization::DirectoryInfo directoryInfo2{qmlProjectSourceId,
-                                                       sourceId2,
-                                                       qmlModuleId,
-                                                       Storage::Synchronization::FileType::QmlDocument};
-    Storage::Synchronization::DirectoryInfo directoryInfo3{qtQuickProjectSourceId,
-                                                       sourceId3,
-                                                       qtQuickModuleId,
-                                                       Storage::Synchronization::FileType::QmlTypes};
-    storage.synchronize(SynchronizationPackage{{qmlProjectSourceId, qtQuickProjectSourceId},
-                                               {directoryInfo1, directoryInfo2, directoryInfo3}});
+    Storage::Synchronization::DirectoryInfo directoryInfo1{qmlProjectDirectoryPathId,
+                                                           sourceId1,
+                                                           qmlModuleId,
+                                                           Storage::Synchronization::FileType::QmlDocument};
+    Storage::Synchronization::DirectoryInfo directoryInfo2{qmlProjectDirectoryPathId,
+                                                           sourceId2,
+                                                           qmlModuleId,
+                                                           Storage::Synchronization::FileType::QmlDocument};
+    Storage::Synchronization::DirectoryInfo directoryInfo3{qtQuickProjectDirectoryPathId,
+                                                           sourceId3,
+                                                           qtQuickModuleId,
+                                                           Storage::Synchronization::FileType::QmlTypes};
+    storage.synchronize(
+        SynchronizationPackage{{qmlProjectDirectoryPathId, qtQuickProjectDirectoryPathId},
+                               {directoryInfo1, directoryInfo2, directoryInfo3}});
 
-    auto directoryInfo = storage.fetchDirectoryInfo({sourceId2});
+    auto directoryInfo = storage.fetchDirectoryInfo(sourceId2);
 
     ASSERT_THAT(directoryInfo, Eq(directoryInfo2));
 }
@@ -5938,7 +6148,8 @@ TEST_F(ProjectStorage, exclude_exported_types)
     ASSERT_THAT(storage.fetchTypes(),
                 UnorderedElementsAre(
                     AllOf(IsStorageType(sourceId2, "QObject", TypeId{}, TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::exportedTypes,
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(qmlModuleId, "Object"),
                                                      IsExportedType(qmlModuleId, "Obj"),
                                                      IsExportedType(qmlNativeModuleId, "QObject")))),
@@ -5946,7 +6157,8 @@ TEST_F(ProjectStorage, exclude_exported_types)
                                         "QQuickItem",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::exportedTypes,
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(qtQuickModuleId, "Item"),
                                                      IsExportedType(qtQuickNativeModuleId,
                                                                     "QQuickItem"))))));
@@ -5964,22 +6176,26 @@ TEST_F(ProjectStorage, module_exported_import)
                                         "QQuickItem",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::exportedTypes,
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(qtQuickModuleId, "Item")))),
                     AllOf(IsStorageType(sourceId2, "QObject", TypeId{}, TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::exportedTypes,
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(qmlModuleId, "Object")))),
                     AllOf(IsStorageType(sourceId3,
                                         "QQuickItem3d",
                                         fetchTypeId(sourceId1, "QQuickItem"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::exportedTypes,
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(qtQuick3DModuleId, "Item3D")))),
                     AllOf(IsStorageType(sourceId4,
                                         "MyItem",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::exportedTypes,
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(myModuleModuleId, "MyItem"))))));
 }
 
@@ -6012,22 +6228,26 @@ TEST_F(ProjectStorage, module_exported_import_with_different_versions)
                                         "QQuickItem",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::exportedTypes,
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(qtQuickModuleId, "Item")))),
                     AllOf(IsStorageType(sourceId2, "QObject", TypeId{}, TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::exportedTypes,
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(qmlModuleId, "Object")))),
                     AllOf(IsStorageType(sourceId3,
                                         "QQuickItem3d",
                                         fetchTypeId(sourceId1, "QQuickItem"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::exportedTypes,
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(qtQuick3DModuleId, "Item3D")))),
                     AllOf(IsStorageType(sourceId4,
                                         "MyItem",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::exportedTypes,
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(myModuleModuleId, "MyItem"))))));
 }
 
@@ -6049,22 +6269,26 @@ TEST_F(ProjectStorage, module_exported_import_with_indirect_different_versions)
                                         "QQuickItem",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::exportedTypes,
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(qtQuickModuleId, "Item")))),
                     AllOf(IsStorageType(sourceId2, "QObject", TypeId{}, TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::exportedTypes,
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(qmlModuleId, "Object")))),
                     AllOf(IsStorageType(sourceId3,
                                         "QQuickItem3d",
                                         fetchTypeId(sourceId1, "QQuickItem"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::exportedTypes,
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(qtQuick3DModuleId, "Item3D")))),
                     AllOf(IsStorageType(sourceId4,
                                         "MyItem",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::exportedTypes,
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(myModuleModuleId, "MyItem"))))));
 }
 
@@ -6100,28 +6324,33 @@ TEST_F(ProjectStorage,
                                         "QQuickItem",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::exportedTypes,
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(qtQuickModuleId, "Item")))),
                     AllOf(IsStorageType(sourceId2, "QObject", TypeId{}, TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::exportedTypes,
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(qmlModuleId, "Object")))),
                     AllOf(IsStorageType(sourceId3,
                                         "QQuickItem3d",
                                         fetchTypeId(sourceId1, "QQuickItem"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::exportedTypes,
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(qtQuick3DModuleId, "Item3D")))),
                     AllOf(IsStorageType(sourceId5,
                                         "QQuickItem4d",
                                         fetchTypeId(sourceId1, "QQuickItem"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::exportedTypes,
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(qtQuick4DModuleId, "Item4D")))),
                     AllOf(IsStorageType(sourceId4,
                                         "MyItem",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::exportedTypes,
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(myModuleModuleId, "MyItem"))))));
 }
 
@@ -6141,7 +6370,8 @@ TEST_F(ProjectStorage, distinguish_between_import_kinds)
     ASSERT_THAT(storage.fetchTypes(),
                 UnorderedElementsAre(
                     AllOf(IsStorageType(sourceId2, "QObject", TypeId{}, TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::exportedTypes,
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(qmlModuleId, "Object"),
                                                      IsExportedType(qmlModuleId, "Obj"),
                                                      IsExportedType(qmlNativeModuleId, "QObject")))),
@@ -6149,7 +6379,8 @@ TEST_F(ProjectStorage, distinguish_between_import_kinds)
                                         "QQuickItem",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::exportedTypes,
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(qtQuickModuleId, "Item"),
                                                      IsExportedType(qtQuickNativeModuleId,
                                                                     "QQuickItem"))))));
@@ -6168,22 +6399,26 @@ TEST_F(ProjectStorage, module_exported_import_distinguish_between_dependency_and
                                         "QQuickItem",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::exportedTypes,
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(qtQuickModuleId, "Item")))),
                     AllOf(IsStorageType(sourceId2, "QObject", TypeId{}, TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::exportedTypes,
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(qmlModuleId, "Object")))),
                     AllOf(IsStorageType(sourceId3,
                                         "QQuickItem3d",
                                         fetchTypeId(sourceId1, "QQuickItem"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::exportedTypes,
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(qtQuick3DModuleId, "Item3D")))),
                     AllOf(IsStorageType(sourceId4,
                                         "MyItem",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::exportedTypes,
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(myModuleModuleId, "MyItem"))))));
 }
 
@@ -6201,22 +6436,26 @@ TEST_F(ProjectStorage, module_exported_import_with_qualified_imported_type)
                                         "QQuickItem",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::exportedTypes,
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(qtQuickModuleId, "Item")))),
                     AllOf(IsStorageType(sourceId2, "QObject", TypeId{}, TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::exportedTypes,
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(qmlModuleId, "Object")))),
                     AllOf(IsStorageType(sourceId3,
                                         "QQuickItem3d",
                                         fetchTypeId(sourceId1, "QQuickItem"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::exportedTypes,
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(qtQuick3DModuleId, "Item3D")))),
                     AllOf(IsStorageType(sourceId4,
                                         "MyItem",
                                         fetchTypeId(sourceId2, "QObject"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::exportedTypes,
+                          Field("Type::exportedTypes",
+                                &Storage::Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(myModuleModuleId, "MyItem"))))));
 }
 
@@ -6232,7 +6471,8 @@ TEST_F(ProjectStorage, synchronize_types_add_indirect_alias_declarations)
                                         "QAliasItem",
                                         fetchTypeId(sourceId1, "QQuickItem"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::propertyDeclarations,
+                          Field("Type::propertyDeclarations",
+                                &Storage::Synchronization::Type::propertyDeclarations,
                                 UnorderedElementsAre(
                                     IsPropertyDeclaration("items",
                                                           fetchTypeId(sourceId1, "QQuickItem"),
@@ -6257,7 +6497,8 @@ TEST_F(ProjectStorage, synchronize_types_add_indirect_alias_declarations_again)
                                         "QAliasItem",
                                         fetchTypeId(sourceId1, "QQuickItem"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::propertyDeclarations,
+                          Field("Type::propertyDeclarations",
+                                &Storage::Synchronization::Type::propertyDeclarations,
                                 UnorderedElementsAre(
                                     IsPropertyDeclaration("items",
                                                           fetchTypeId(sourceId1, "QQuickItem"),
@@ -6282,7 +6523,8 @@ TEST_F(ProjectStorage, synchronize_types_remove_indirect_alias_declaration)
                                              "QAliasItem",
                                              fetchTypeId(sourceId1, "QQuickItem"),
                                              TypeTraitsKind::Reference),
-                               Field(&Storage::Synchronization::Type::propertyDeclarations,
+                               Field("Type::propertyDeclarations",
+                                     &Storage::Synchronization::Type::propertyDeclarations,
                                      UnorderedElementsAre(IsPropertyDeclaration(
                                          "items",
                                          fetchTypeId(sourceId1, "QQuickItem"),
@@ -6446,7 +6688,8 @@ TEST_F(ProjectStorage, synchronize_types_change_indirect_alias_declaration_type_
                                         "QAliasItem",
                                         fetchTypeId(sourceId1, "QQuickItem"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::propertyDeclarations,
+                          Field("Type::propertyDeclarations",
+                                &Storage::Synchronization::Type::propertyDeclarations,
                                 UnorderedElementsAre(
                                     IsPropertyDeclaration("items",
                                                           fetchTypeId(sourceId1, "QQuickItem"),
@@ -6475,7 +6718,8 @@ TEST_F(ProjectStorage, synchronize_types_change_indirect_alias_declaration_tails
                                         "QAliasItem",
                                         fetchTypeId(sourceId1, "QQuickItem"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::propertyDeclarations,
+                          Field("Type::propertyDeclarations",
+                                &Storage::Synchronization::Type::propertyDeclarations,
                                 UnorderedElementsAre(
                                     IsPropertyDeclaration("items",
                                                           fetchTypeId(sourceId1, "QQuickItem"),
@@ -6502,7 +6746,8 @@ TEST_F(ProjectStorage, synchronize_types_change_indirect_alias_declarations_prop
                                         "QAliasItem",
                                         fetchTypeId(sourceId1, "QQuickItem"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::propertyDeclarations,
+                          Field("Type::propertyDeclarations",
+                                &Storage::Synchronization::Type::propertyDeclarations,
                                 UnorderedElementsAre(
                                     IsPropertyDeclaration("items",
                                                           fetchTypeId(sourceId1, "QQuickItem"),
@@ -6529,7 +6774,8 @@ TEST_F(ProjectStorage, synchronize_types_change_indirect_alias_declarations_prop
                                   "QAliasItem",
                                   fetchTypeId(sourceId1, "QQuickItem"),
                                   TypeTraitsKind::Reference),
-                    Field(&Storage::Synchronization::Type::propertyDeclarations,
+                    Field("Type::propertyDeclarations",
+                          &Storage::Synchronization::Type::propertyDeclarations,
                           UnorderedElementsAre(
                               IsPropertyDeclaration("items",
                                                     fetchTypeId(sourceId1, "QQuickItem"),
@@ -6558,7 +6804,8 @@ TEST_F(ProjectStorage, synchronize_types_change_indirect_alias_declarations_to_p
                                         "QAliasItem",
                                         fetchTypeId(sourceId1, "QQuickItem"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::propertyDeclarations,
+                          Field("Type::propertyDeclarations",
+                                &Storage::Synchronization::Type::propertyDeclarations,
                                 UnorderedElementsAre(
                                     IsPropertyDeclaration("items",
                                                           fetchTypeId(sourceId1, "QQuickItem"),
@@ -6595,7 +6842,8 @@ TEST_F(ProjectStorage, synchronize_types_change_property_declarations_to_indirec
                                         "QAliasItem",
                                         fetchTypeId(sourceId1, "QQuickItem"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::propertyDeclarations,
+                          Field("Type::propertyDeclarations",
+                                &Storage::Synchronization::Type::propertyDeclarations,
                                 UnorderedElementsAre(
                                     IsPropertyDeclaration("items",
                                                           fetchTypeId(sourceId1, "QQuickItem"),
@@ -6624,7 +6872,8 @@ TEST_F(ProjectStorage, synchronize_types_change_indirect_alias_target_property_d
                           "QAliasItem",
                           fetchTypeId(sourceId1, "QQuickItem"),
                           TypeTraitsKind::Reference),
-            Field(&Storage::Synchronization::Type::propertyDeclarations,
+            Field("Type::propertyDeclarations",
+                  &Storage::Synchronization::Type::propertyDeclarations,
                   UnorderedElementsAre(
                       IsPropertyDeclaration("items",
                                             fetchTypeId(sourceId1, "QQuickItem"),
@@ -6652,7 +6901,8 @@ TEST_F(ProjectStorage, synchronize_types_change_indirect_alias_target_property_d
                                         "QAliasItem",
                                         fetchTypeId(sourceId1, "QQuickItem"),
                                         TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::propertyDeclarations,
+                          Field("Type::propertyDeclarations",
+                                &Storage::Synchronization::Type::propertyDeclarations,
                                 UnorderedElementsAre(
                                     IsPropertyDeclaration("items",
                                                           fetchTypeId(sourceId1, "QQuickItem"),
@@ -6711,7 +6961,8 @@ TEST_F(ProjectStorage, synchronize_types_remove_property_declaration_and_indirec
                                              "QAliasItem",
                                              fetchTypeId(sourceId1, "QQuickItem"),
                                              TypeTraitsKind::Reference),
-                               Field(&Storage::Synchronization::Type::propertyDeclarations,
+                               Field("Type::propertyDeclarations",
+                                     &Storage::Synchronization::Type::propertyDeclarations,
                                      UnorderedElementsAre(IsPropertyDeclaration(
                                          "items",
                                          fetchTypeId(sourceId1, "QQuickItem"),
@@ -6732,12 +6983,13 @@ TEST_F(ProjectStorage, synchronize_types_remove_property_declaration_and_indirec
                                                {sourceId1, sourceId3}});
 
     ASSERT_THAT(storage.fetchTypes(),
-                Contains(
-                    AllOf(IsStorageType(sourceId3,
-                                        "QAliasItem",
-                                        fetchTypeId(sourceId1, "QQuickItem"),
-                                        TypeTraitsKind::Reference),
-                          Field(&Storage::Synchronization::Type::propertyDeclarations, IsEmpty()))));
+                Contains(AllOf(IsStorageType(sourceId3,
+                                             "QAliasItem",
+                                             fetchTypeId(sourceId1, "QQuickItem"),
+                                             TypeTraitsKind::Reference),
+                               Field("Type::propertyDeclarations",
+                                     &Storage::Synchronization::Type::propertyDeclarations,
+                                     IsEmpty()))));
 }
 
 TEST_F(ProjectStorage, get_type_id)
@@ -7961,9 +8213,9 @@ TEST_F(ProjectStorage, get_exported_type_names)
     auto exportedTypeNames = storage.exportedTypeNames(typeId);
 
     ASSERT_THAT(exportedTypeNames,
-                UnorderedElementsAre(IsInfoExportTypeNames(qmlModuleId, "Object", 2, -1),
-                                     IsInfoExportTypeNames(qmlModuleId, "Obj", 2, -1),
-                                     IsInfoExportTypeNames(qmlNativeModuleId, "QObject", -1, -1)));
+                UnorderedElementsAre(IsInfoExportTypeName(qmlModuleId, typeId, "Object", 2, -1),
+                                     IsInfoExportTypeName(qmlModuleId, typeId, "Obj", 2, -1),
+                                     IsInfoExportTypeName(qmlNativeModuleId, typeId, "QObject", -1, -1)));
 }
 
 TEST_F(ProjectStorage, get_no_exported_type_names_if_type_id_is_invalid)
@@ -7987,8 +8239,8 @@ TEST_F(ProjectStorage, get_exported_type_names_for_source_id)
     auto exportedTypeNames = storage.exportedTypeNames(typeId, sourceId3);
 
     ASSERT_THAT(exportedTypeNames,
-                UnorderedElementsAre(IsInfoExportTypeNames(qmlModuleId, "Object", 2, -1),
-                                     IsInfoExportTypeNames(qmlModuleId, "Obj", 2, -1)));
+                UnorderedElementsAre(IsInfoExportTypeName(qmlModuleId, typeId, "Object", 2, -1),
+                                     IsInfoExportTypeName(qmlModuleId, typeId, "Obj", 2, -1)));
 }
 
 TEST_F(ProjectStorage, get_no_exported_type_names_for_source_id_for_invalid_type_id)
@@ -8064,7 +8316,10 @@ TEST_F(ProjectStorage, synchronize_property_editor_adds_path)
     auto package{createPropertyEditorPathsSynchronizationPackage()};
     package.propertyEditorQmlPaths.pop_back();
     storage.synchronize(package);
-    package.propertyEditorQmlPaths.emplace_back(qtQuickModuleId, "Item3D", sourceId3, sourceIdPath6);
+    package.propertyEditorQmlPaths.emplace_back(qtQuickModuleId,
+                                                "Item3D",
+                                                sourceId3,
+                                                directoryPathIdPath6);
 
     storage.synchronize(package);
 
@@ -8076,7 +8331,10 @@ TEST_F(ProjectStorage, synchronize_property_editor_adds_path)
 TEST_F(ProjectStorage, synchronize_property_editor_with_non_existing_type_name)
 {
     auto package{createPropertyEditorPathsSynchronizationPackage()};
-    package.propertyEditorQmlPaths.emplace_back(qtQuickModuleId, "Item4D", sourceId4, sourceIdPath6);
+    package.propertyEditorQmlPaths.emplace_back(qtQuickModuleId,
+                                                "Item4D",
+                                                sourceId4,
+                                                directoryPathIdPath6);
 
     storage.synchronize(package);
 
@@ -8441,7 +8699,7 @@ TEST_F(ProjectStorage, synchronize_type_annotation_directory_source_id)
 
     storage.synchronize(package);
 
-    ASSERT_THAT(storage.typeAnnotationSourceIds(sourceIdPath6),
+    ASSERT_THAT(storage.typeAnnotationSourceIds(directoryPathIdPath6),
                 UnorderedElementsAre(sourceId4, sourceId5));
 }
 
@@ -8453,7 +8711,7 @@ TEST_F(ProjectStorage, get_type_annotation_source_ids)
         package.typeAnnotations);
     storage.synchronize(package);
 
-    auto sourceIds = storage.typeAnnotationSourceIds(sourceIdPath6);
+    auto sourceIds = storage.typeAnnotationSourceIds(directoryPathIdPath6);
 
     ASSERT_THAT(sourceIds, UnorderedElementsAre(sourceId4, sourceId5));
 }
@@ -8466,9 +8724,9 @@ TEST_F(ProjectStorage, get_type_annotation_directory_source_ids)
         package.typeAnnotations);
     storage.synchronize(package);
 
-    auto sourceIds = storage.typeAnnotationDirectorySourceIds();
+    auto sourceIds = storage.typeAnnotationDirectoryIds();
 
-    ASSERT_THAT(sourceIds, ElementsAre(sourceIdPath1, sourceIdPath6));
+    ASSERT_THAT(sourceIds, ElementsAre(directoryPathIdPath1, directoryPathIdPath6));
 }
 
 TEST_F(ProjectStorage, get_all_item_library_entries)
@@ -8656,14 +8914,14 @@ TEST_F(ProjectStorage, get_item_library_entries_by_source_id)
                                IsEmpty())));
 }
 
-TEST_F(ProjectStorage, get_local_file_item_library_entries_by_source_id)
+TEST_F(ProjectStorage, get_directory_imports_item_library_entries_by_source_id)
 {
     auto package{createSimpleSynchronizationPackage()};
     package.imports.emplace_back(pathToModuleId, Storage::Version{}, sourceId2);
     package.types[1].exportedTypes.emplace_back(pathToModuleId, "Object");
     storage.synchronize(package);
 
-    auto entries = storage.itemLibraryEntries(sourceId2);
+    auto entries = storage.directoryImportsItemLibraryEntries(sourceId2);
 
     ASSERT_THAT(entries,
                 UnorderedElementsAre(IsItemLibraryEntry(fetchTypeId(sourceId2, "QObject"),
@@ -8841,7 +9099,7 @@ TEST_F(ProjectStorage, added_document_import_fixes_unresolved_extension)
     ASSERT_THAT(fetchType(sourceId1, "QQuickItem"), HasExtensionId(fetchTypeId(sourceId2, "QObject")));
 }
 
-TEST_F(ProjectStorage, added_export_is_notifing_changed_exported_types)
+TEST_F(ProjectStorage, added_export_is_notifying_changed_exported_types)
 {
     auto package{createSimpleSynchronizationPackage()};
     storage.synchronize(package);
@@ -8854,7 +9112,7 @@ TEST_F(ProjectStorage, added_export_is_notifing_changed_exported_types)
     storage.synchronize(std::move(package));
 }
 
-TEST_F(ProjectStorage, removed_export_is_notifing_changed_exported_types)
+TEST_F(ProjectStorage, removed_export_is_notifying_changed_exported_types)
 {
     auto package{createSimpleSynchronizationPackage()};
     storage.synchronize(package);
@@ -8867,7 +9125,7 @@ TEST_F(ProjectStorage, removed_export_is_notifing_changed_exported_types)
     storage.synchronize(std::move(package));
 }
 
-TEST_F(ProjectStorage, changed_export_is_notifing_changed_exported_types)
+TEST_F(ProjectStorage, changed_export_is_notifying_changed_exported_types)
 {
     auto package{createSimpleSynchronizationPackage()};
     storage.synchronize(package);
@@ -8876,6 +9134,66 @@ TEST_F(ProjectStorage, changed_export_is_notifing_changed_exported_types)
     storage.addObserver(&observerMock);
 
     EXPECT_CALL(observerMock, exportedTypesChanged());
+
+    storage.synchronize(std::move(package));
+}
+
+TEST_F(ProjectStorage, added_export_is_notifying_changed_exported_type_names)
+{
+    auto package{createSimpleSynchronizationPackage()};
+    storage.synchronize(package);
+    package.types[1].exportedTypes.emplace_back(qmlNativeModuleId, "Objec");
+    NiceMock<ProjectStorageObserverMock> observerMock;
+    storage.addObserver(&observerMock);
+
+    EXPECT_CALL(observerMock,
+                exportedTypeNamesChanged(ElementsAre(
+                                             IsInfoExportTypeName(qmlNativeModuleId,
+                                                                  fetchTypeId(sourceId2, "QObject"),
+                                                                  Eq("Objec"),
+                                                                  A<QmlDesigner::Storage::Version>())),
+                                         IsEmpty()));
+
+    storage.synchronize(std::move(package));
+}
+
+TEST_F(ProjectStorage, removed_export_is_notifying_changed_exported_type_names)
+{
+    auto package{createSimpleSynchronizationPackage()};
+    storage.synchronize(package);
+    package.types[1].exportedTypes.pop_back();
+    NiceMock<ProjectStorageObserverMock> observerMock;
+    storage.addObserver(&observerMock);
+
+    EXPECT_CALL(observerMock,
+                exportedTypeNamesChanged(IsEmpty(),
+                                         ElementsAre(
+                                             IsInfoExportTypeName(qmlNativeModuleId,
+                                                                  fetchTypeId(sourceId2, "QObject"),
+                                                                  Eq("QObject"),
+                                                                  A<QmlDesigner::Storage::Version>()))));
+
+    storage.synchronize(std::move(package));
+}
+
+TEST_F(ProjectStorage, changed_export_is_notifying_changed_exported_type_names)
+{
+    auto package{createSimpleSynchronizationPackage()};
+    storage.synchronize(package);
+    package.types[1].exportedTypes[1].name = "Obj2";
+    NiceMock<ProjectStorageObserverMock> observerMock;
+    storage.addObserver(&observerMock);
+
+    EXPECT_CALL(observerMock,
+                exportedTypeNamesChanged(
+                    ElementsAre(IsInfoExportTypeName(qmlModuleId,
+                                                     fetchTypeId(sourceId2, "QObject"),
+                                                     Eq("Obj2"),
+                                                     A<QmlDesigner::Storage::Version>())),
+                    ElementsAre(IsInfoExportTypeName(qmlModuleId,
+                                                     fetchTypeId(sourceId2, "QObject"),
+                                                     Eq("Obj"),
+                                                     A<QmlDesigner::Storage::Version>()))));
 
     storage.synchronize(std::move(package));
 }

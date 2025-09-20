@@ -679,21 +679,6 @@ void NodeInstanceView::auxiliaryDataChanged(const ModelNode &node,
             NodeInstance instance = instanceForModelNode(node);
             PropertyValueContainer container{instance.instanceId(), key.name, value, TypeName(), key.type};
             m_nodeInstanceServer->changeAuxiliaryValues({{container}});
-            const PropertyName name = key.name.toByteArray();
-            if (node.hasVariantProperty(name)) {
-                PropertyValueContainer container(instance.instanceId(),
-                                                 name,
-                                                 node.variantProperty(name).value(),
-                                                 TypeName());
-                ChangeValuesCommand changeValueCommand({container});
-                m_nodeInstanceServer->changePropertyValues(changeValueCommand);
-            } else if (node.hasBindingProperty(name)) {
-                PropertyBindingContainer container{instance.instanceId(),
-                                                   name,
-                                                   node.bindingProperty(name).expression(),
-                                                   TypeName()};
-                m_nodeInstanceServer->changePropertyBindings({{container}});
-            }
         }
         break;
 
@@ -727,10 +712,16 @@ void NodeInstanceView::customNotification(const AbstractView *view,
 
 void NodeInstanceView::customNotification(const CustomNotificationPackage &package)
 {
-    if (auto inputEvent = std::get_if<InputEvent>(&package))
+    if (auto inputEvent = std::get_if<InputEvent>(&package)) {
         sendInputEvent(inputEvent->event);
-    else if (auto resize3DCanvas = std::get_if<Resize3DCanvas>(&package))
+    } else if (auto resize3DCanvas = std::get_if<Resize3DCanvas>(&package)) {
         edit3DViewResized(resize3DCanvas->size);
+    } else if (auto preview = std::get_if<NodePreviewImage>(&package)) {
+        previewImageDataForGenericNode(preview->modelNode,
+                                       preview->renderNode,
+                                       preview->size,
+                                       preview->requestId);
+    }
 }
 
 void NodeInstanceView::nodeSourceChanged(const ModelNode &node, const QString & newNodeSource)
@@ -1272,8 +1263,6 @@ CreateSceneCommand NodeInstanceView::createCreateSceneCommand()
                               m_externalDependencies.currentResourcePath(),
                               sceneStates,
                               lastUsedLanguage,
-                              m_captureImageMinimumSize,
-                              m_captureImageMaximumSize,
                               stateInstanceId);
 }
 
@@ -1822,12 +1811,12 @@ void NodeInstanceView::handlePuppetToCreatorCommand(const PuppetToCreatorCommand
         const auto sceneState = qvariant_cast<QVariantMap>(command.data());
         if (isAttached())
             model()->emitUpdateActiveScene3D(this, sceneState);
-    } else if (command.type() == PuppetToCreatorCommand::ActiveSplitChanged) {
-        // Active split change is a special case of active scene change
-        QVariantMap splitState;
-        splitState.insert("activeSplit", command.data());
+    } else if (command.type() == PuppetToCreatorCommand::ActiveViewportChanged) {
+        // Active viewport change is a special case of active scene change
+        QVariantMap viewportState;
+        viewportState.insert("activeViewport", command.data());
         if (isAttached())
-            model()->emitUpdateActiveScene3D(this, splitState);
+            model()->emitUpdateActiveScene3D(this, viewportState);
     } else if (command.type() == PuppetToCreatorCommand::RenderModelNodePreviewImage) {
         ImageContainer container = qvariant_cast<ImageContainer>(command.data());
         QImage image = container.image();
@@ -2250,7 +2239,7 @@ void NodeInstanceView::handleQsbProcessExit(Utils::Process *qsbProcess, const QS
     const QByteArray stdErrStr = qsbProcess->readAllRawStandardError();
 
     if (!errStr.isEmpty() || !stdErrStr.isEmpty()) {
-        Core::MessageManager::writeSilently(Tr::tr("Failed to generate QSB file for: %1").arg(shader));
+        Core::MessageManager::writeSilently(Tr::tr("Failed to generate QSB file for: %1.").arg(shader));
         if (!errStr.isEmpty())
             Core::MessageManager::writeSilently(errStr);
         if (!stdErrStr.isEmpty())

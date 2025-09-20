@@ -5,7 +5,7 @@
 
 #include "../utils_global.h"
 
-#include <utils/expected.h>
+#include <utils/result.h>
 
 #include <QBrush> // QGradientStops
 #include <QObject>
@@ -309,6 +309,48 @@ public:
         DStextSelectionColor,
         DStextSelectedTextColor,
 
+        /*New Creator Semantics for qtds*/
+
+        DS_base_black,
+        DS_base_white,
+
+        DS_accent_default,
+        DS_accent_muted,
+        DS_accent_subtle,
+
+        DS_background_default,
+        DS_background_muted,
+        DS_background_subtle,
+
+        DS_forground_default,
+        DS_foreground_muted,
+        DS_foreground_subtle,
+
+        DS_text_default,
+        DS_text_muted,
+        DS_text_subtle,
+        DS_text_accent,
+
+        DS_stroke_strong,
+        DS_stroke_muted,
+        DS_stroke_subtle,
+
+        DS_notification_alert_default,
+        DS_notification_alert_muted,
+        DS_notification_alert_subtle,
+
+        DS_notification_neutral_default,
+        DS_notification_neutral_muted,
+        DS_notification_neutral_subtle,
+
+        DS_notification_danger_default,
+        DS_notification_danger_muted,
+        DS_notification_danger_subtle,
+
+        DS_notification_success_default,
+        DS_notification_success_muted,
+        DS_notification_success_subtle,
+
         /*NEW for QtDS 4.0*/
         DScontrolBackground_toolbarIdle,
         DScontrolBackground_toolbarHover,
@@ -563,7 +605,7 @@ public:
 
     static void setHelpMenu(QMenu *menu);
 
-    static expected_str<Color> colorToken(const QString &token, TokenFlags flags = {});
+    static Result<Color> colorToken(const QString &token, TokenFlags flags = {});
     static Color highlightFor(Color role);
 
 protected:

@@ -207,15 +207,14 @@ void addAnimationsToTransition(const ModelNode &transition, const QHash<QString,
                 sequentialAnimation);
 
 #ifdef QDS_USE_PROJECTSTORAGE
-            ModelNode pauseAnimation = view->createModelNode("PauseAnimation",
-                                                       {{"duration", 50}});
+            ModelNode pauseAnimation = view->createModelNode("PauseAnimation", {{"duration", 0}});
 #else
             const NodeMetaInfo pauseMetaInfo = view->model()->metaInfo("QtQuick.PauseAnimation");
 
             ModelNode pauseAnimation = view->createModelNode("QtQuick.PauseAnimation",
-                                                       pauseMetaInfo.majorVersion(),
-                                                       pauseMetaInfo.minorVersion(),
-                                                       {{"duration", 50}});
+                                                             pauseMetaInfo.majorVersion(),
+                                                             pauseMetaInfo.minorVersion(),
+                                                             {{"duration", 0}});
 #endif
             sequentialAnimation.defaultNodeAbstractProperty().reparentHere(pauseAnimation);
 
@@ -330,8 +329,9 @@ void TransitionEditorView::resetTransitionToStateGroup(const ModelNode &transiti
 
                 transition.variantProperty("from").setValue("*");
                 transition.variantProperty("to").setValue("*");
-                if (!stateGroup.isRootNode())
-                    transition.bindingProperty("stateGroup").setDynamicTypeNameAndExpression("StateGroup", stateGroup.id());
+
+                stateGroup.nodeListProperty("transitions").reparentHere(transition);
+
                 addAnimationsToTransition(transition, idPropertyList);
             });
     } else {

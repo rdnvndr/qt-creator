@@ -4,6 +4,7 @@
 #pragma once
 
 #include "abstractview.h"
+#include "qmldesigner_global.h"
 
 #include <QHash>
 #include <QObject>
@@ -21,13 +22,14 @@ QT_END_NAMESPACE
 namespace QmlDesigner {
 
 class CollapseButton;
+class DynamicPropertiesModel;
 class ModelNode;
 class PropertyEditorQmlBackend;
 class PropertyEditorView;
 class PropertyEditorWidget;
 class QmlObjectNode;
 
-class PropertyEditorView : public AbstractView
+class QMLDESIGNER_EXPORT PropertyEditorView : public AbstractView
 {
     Q_OBJECT
 
@@ -46,6 +48,7 @@ public:
                      const NodeAbstractProperty &parentProperty,
                      PropertyChangeFlags propertyChange) override;
     void propertiesRemoved(const QList<AbstractProperty>& propertyList) override;
+    void propertiesAboutToBeRemoved(const QList<AbstractProperty> &propertyList) override;
 
     void modelAttached(Model *model) override;
 
@@ -56,6 +59,9 @@ public:
     void auxiliaryDataChanged(const ModelNode &node,
                               AuxiliaryDataKeyView key,
                               const QVariant &data) override;
+
+    void signalDeclarationPropertiesChanged(const QVector<SignalDeclarationProperty> &propertyList,
+                                            PropertyChangeFlags propertyChange) override;
 
     void instanceInformationsChanged(const QMultiHash<ModelNode, InformationName> &informationChangedHash) override;
 
@@ -73,6 +79,16 @@ public:
                         const NodeAbstractProperty &oldPropertyParent,
                         AbstractView::PropertyChangeFlags propertyChange) override;
 
+    void modelNodePreviewPixmapChanged(const ModelNode &node,
+                                       const QPixmap &pixmap,
+                                       const QByteArray &requestId) override;
+
+    void importsChanged(const Imports &addedImports, const Imports &removedImports) override;
+    void customNotification(const AbstractView *view,
+                            const QString &identifier,
+                            const QList<ModelNode> &nodeList,
+                            const QList<QVariant> &data) override;
+
     void dragStarted(QMimeData *mimeData) override;
     void dragEnded() override;
 
@@ -87,6 +103,8 @@ public:
 
     void refreshMetaInfos(const TypeIds &deletedTypeIds) override;
 
+    DynamicPropertiesModel *dynamicPropertiesModel() const;
+
     static void setExpressionOnObjectNode(const QmlObjectNode &objectNode,
                                           PropertyNameView name,
                                           const QString &expression);
@@ -97,6 +115,9 @@ public:
     static void removeAliasForProperty(const ModelNode &modelNode,
                                          const QString &propertyName);
 
+public slots:
+    void handleToolBarAction(int action);
+
 protected:
     void setValue(const QmlObjectNode &fxObjectNode, PropertyNameView name, const QVariant &value);
     bool eventFilter(QObject *obj, QEvent *event) override;
@@ -106,7 +127,8 @@ private: //functions
     void updateSize();
 
     void select();
-    void setSelelectedModelNode();
+    void setActiveNodeToSelection();
+    void forceSelection(const ModelNode &node);
 
     void delayedResetView();
     void setupQmlBackend();
@@ -118,11 +140,24 @@ private: //functions
     bool noValidSelection() const;
     void highlightTextureProperties(bool highlight = true);
 
+    ModelNode activeNode() const;
+    void setActiveNode(const ModelNode &node);
+    QList<ModelNode> currentNodes() const;
+
+    void resetSelectionLocked();
+    void setIsSelectionLocked(bool locked);
+
+    bool isNodeOrChildSelected(const ModelNode &node) const;
+    void resetIfNodeIsRemoved(const ModelNode &removedNode);
+
+    static PropertyEditorView *instance();
+
+    NodeMetaInfo findCommonAncestor(const ModelNode &node);
+
 private: //variables
     AsynchronousImageCache &m_imageCache;
-    ModelNode m_selectedNode;
+    ModelNode m_activeNode;
     QShortcut *m_updateShortcut;
-    int m_timerId;
     PropertyEditorWidget* m_stackedWidget;
     QString m_qmlDir;
     QHash<QString, PropertyEditorQmlBackend *> m_qmlBackendHash;
@@ -131,6 +166,10 @@ private: //variables
     PropertyEditorComponentGenerator m_propertyEditorComponentGenerator{m_propertyComponentGenerator};
     bool m_locked;
     bool m_textureAboutToBeRemoved = false;
+    bool m_isSelectionLocked = false;
+    DynamicPropertiesModel *m_dynamicPropertiesModel = nullptr;
+
+    friend class PropertyEditorDynamicPropertiesProxyModel;
 };
 
 } //QmlDesigner

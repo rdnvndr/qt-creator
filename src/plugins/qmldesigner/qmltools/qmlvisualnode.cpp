@@ -16,6 +16,7 @@
 #include "rewriterview.h"
 #include "modelmerger.h"
 
+#include <utils/fileutils.h>
 #include <utils/qtcassert.h>
 
 #include <QUrl>
@@ -288,10 +289,12 @@ static QmlObjectNode createQmlObjectNodeFromSource(AbstractView *view,
     auto inputModel = Model::create("QtQuick.Item", 1, 0, view->model());
 #endif
     inputModel->setFileUrl(view->model()->fileUrl());
+    inputModel->changeImports(view->model()->imports(), {});
+
     QPlainTextEdit textEdit;
 
     textEdit.setPlainText(source);
-    NotIndentingTextEditModifier modifier(&textEdit);
+    NotIndentingTextEditModifier modifier(textEdit.document());
 
     std::unique_ptr<RewriterView> rewriterView = std::make_unique<RewriterView>(
         view->externalDependencies(), RewriterView::Amend);
@@ -299,6 +302,7 @@ static QmlObjectNode createQmlObjectNodeFromSource(AbstractView *view,
     rewriterView->setTextModifier(&modifier);
     rewriterView->setAllowComponentRoot(true);
     rewriterView->setPossibleImportsEnabled(false);
+    rewriterView->setRemoveImports(false);
     inputModel->setRewriterView(rewriterView.get());
 
     if (rewriterView->errors().isEmpty() && rewriterView->rootModelNode().isValid()) {
@@ -325,6 +329,16 @@ static QString imagePlaceHolderPath(AbstractView *view)
     return QString::fromLatin1(imagePlaceHolder);
 }
 
+static QString getSourceForUrl(const QString &fileUrl)
+{
+    const Utils::Result<QByteArray> res = Utils::FilePath::fromString(fileUrl).fileContents();
+
+    if (res)
+        return QString::fromUtf8(*res);
+
+    return Utils::FileUtils::fetchQrc(fileUrl);
+}
+
 QmlObjectNode QmlVisualNode::createQmlObjectNode(AbstractView *view,
                                                  const ItemLibraryEntry &itemLibraryEntry,
                                                  const Position &position,
@@ -345,7 +359,7 @@ QmlObjectNode QmlVisualNode::createQmlObjectNode(AbstractView *view,
         using PropertyBindingEntry = QPair<PropertyName, QString>;
         QList<PropertyBindingEntry> propertyBindingList;
         QList<PropertyBindingEntry> propertyEnumList;
-        if (itemLibraryEntry.qmlSource().isEmpty()) {
+        if (auto templatePath = itemLibraryEntry.templatePath(); templatePath.isEmpty()) {
             QList<QPair<PropertyName, QVariant> > propertyPairList;
 
             for (const auto &property : itemLibraryEntry.properties()) {
@@ -385,7 +399,8 @@ QmlObjectNode QmlVisualNode::createQmlObjectNode(AbstractView *view,
                                                                    nodeSourceType));
 #endif
         } else {
-            newQmlObjectNode = createQmlObjectNodeFromSource(view, itemLibraryEntry.qmlSource(), position);
+            const QString templateContent = getSourceForUrl(templatePath);
+            newQmlObjectNode = createQmlObjectNodeFromSource(view, templateContent, position);
         }
 
         if (parentProperty.isValid()) {
@@ -469,6 +484,58 @@ QmlVisualNode QmlVisualNode::createQml3DNode(AbstractView *view,
 
     return createQmlObjectNode(view, itemLibraryEntry, position, sceneNodeProperty, createInTransaction).modelNode();
 }
+
+QmlVisualNode QmlVisualNode::createQml3DNode(AbstractView *view,
+                                             const TypeName &typeName,
+                                             const ModelNode &parentNode,
+                                             const QString &importName,
+                                             const QVector3D &position,
+                                             bool createInTransaction)
+{
+    NodeAbstractProperty targetParentProperty = parentNode.defaultNodeListProperty();
+
+    QTC_ASSERT(targetParentProperty.isValid(), return {});
+
+    QTC_ASSERT(!typeName.isEmpty(), return {});
+
+    QmlVisualNode newQmlObjectNode;
+
+    auto createNodeFunc = [&]() {
+        Imports imports = {Import::createLibraryImport("QtQuick3D")};
+        if (!importName.isEmpty())
+            imports.append(Import::createLibraryImport(importName));
+        view->model()->changeImports(imports, {});
+
+        QList<QPair<PropertyName, QVariant> > propertyPairList;
+        propertyPairList.append(Position(position).propertyPairList());
+#ifdef QDS_USE_PROJECTSTORAGE
+        newQmlObjectNode = QmlVisualNode(view->createModelNode(typeName,
+                                                               propertyPairList));
+#else
+        NodeMetaInfo metaInfo = view->model()->metaInfo(typeName);
+        newQmlObjectNode = QmlVisualNode(view->createModelNode(typeName,
+                                                               metaInfo.majorVersion(),
+                                                               metaInfo.minorVersion(),
+                                                               propertyPairList));
+#endif
+
+        if (newQmlObjectNode.id().isEmpty()) {
+            newQmlObjectNode.modelNode().setIdWithoutRefactoring(
+                view->model()->generateNewId(QString::fromUtf8(typeName)));
+        }
+
+        if (targetParentProperty.isValid())
+            targetParentProperty.reparentHere(newQmlObjectNode);
+    };
+
+    if (createInTransaction)
+        view->executeInTransaction(__FUNCTION__, createNodeFunc);
+    else
+        createNodeFunc();
+
+    return newQmlObjectNode;
+}
+
 
 NodeListProperty QmlVisualNode::findSceneNodeProperty(AbstractView *view, qint32 sceneRootId)
 {

@@ -17,7 +17,7 @@ namespace {
 namespace Storage = QmlDesigner::Storage;
 namespace Synchronization = QmlDesigner::Storage::Synchronization;
 using QmlDesigner::ModuleId;
-using QmlDesigner::SourceContextId;
+using QmlDesigner::DirectoryPathId;
 using QmlDesigner::SourceId;
 using QmlDesigner::Storage::ModuleKind;
 
@@ -77,10 +77,17 @@ MATCHER_P(IsSingleton, value, std::string(negation ? "isn't singleton " : "is si
     return traits.isSingleton == value;
 }
 
+MATCHER_P(IsInsideProject, value, std::string(negation ? "isn't inside project " : "is inside project "))
+{
+    const Storage::TypeTraits &traits = arg;
+
+    return traits.isInsideProject == value;
+}
+
 template<typename Matcher>
 auto IsTypeTrait(const Matcher &matcher)
 {
-    return Field(&Synchronization::Type::traits, matcher);
+    return Field("Synchronization::Type::traits", &Synchronization::Type::traits, matcher);
 }
 
 MATCHER_P3(IsPropertyDeclaration,
@@ -189,11 +196,11 @@ protected:
     Synchronization::Types types;
     SourceId qmltypesFileSourceId{sourcePathCache.sourceId("path/to/types.qmltypes")};
     ModuleId qtQmlNativeModuleId = storage.moduleId("QtQml", ModuleKind::CppLibrary);
-    Synchronization::DirectoryInfo directoryInfo{qmltypesFileSourceId,
-                                             qmltypesFileSourceId,
-                                             qtQmlNativeModuleId,
-                                             Synchronization::FileType::QmlTypes};
-    SourceContextId qmltypesFileSourceContextId{qmltypesFileSourceId.contextId()};
+    Synchronization::DirectoryInfo directoryInfo{qmltypesFileSourceId.directoryPathId(),
+                                                 qmltypesFileSourceId,
+                                                 qtQmlNativeModuleId,
+                                                 Synchronization::FileType::QmlTypes};
+    DirectoryPathId qmltypesFileDirectoryPathId{qmltypesFileSourceId.directoryPathId()};
 };
 
 TEST_F(QmlTypesParser, imports)
@@ -203,7 +210,7 @@ TEST_F(QmlTypesParser, imports)
                         dependencies:
                           ["QtQuick 2.15", "QtQuick.Window 2.1", "QtFoo 6"]})"};
 
-    parser.parse(source, imports, types, directoryInfo);
+    parser.parse(source, imports, types, directoryInfo, Storage::IsInsideProject::No);
 
     ASSERT_THAT(imports,
                 UnorderedElementsAre(IsImport(storage.moduleId("QML", ModuleKind::CppLibrary),
@@ -230,7 +237,7 @@ TEST_F(QmlTypesParser, types)
                         Component { name: "QObject"}
                         Component { name: "QQmlComponent"}})"};
 
-    parser.parse(source, imports, types, directoryInfo);
+    parser.parse(source, imports, types, directoryInfo, Storage::IsInsideProject::No);
 
     ASSERT_THAT(types,
                 UnorderedElementsAre(IsType("QObject",
@@ -253,7 +260,7 @@ TEST_F(QmlTypesParser, prototype)
                         Component { name: "QQmlComponent"
                                     prototype: "QObject"}})"};
 
-    parser.parse(source, imports, types, directoryInfo);
+    parser.parse(source, imports, types, directoryInfo, Storage::IsInsideProject::No);
 
     ASSERT_THAT(types,
                 UnorderedElementsAre(IsType("QObject",
@@ -276,7 +283,7 @@ TEST_F(QmlTypesParser, extension)
                         Component { name: "QQmlComponent"
                                     extension: "QObject"}})"};
 
-    parser.parse(source, imports, types, directoryInfo);
+    parser.parse(source, imports, types, directoryInfo, Storage::IsInsideProject::No);
 
     ASSERT_THAT(types,
                 UnorderedElementsAre(IsType("QObject",
@@ -291,6 +298,26 @@ TEST_F(QmlTypesParser, extension)
                                             qmltypesFileSourceId)));
 }
 
+TEST_F(QmlTypesParser, ignore_java_script_extensions)
+{
+    QString source{R"(import QtQuick.tooling 1.2
+                      Module{
+                        Component { name: "QObject"}
+                        Component { name: "QQmlComponent"
+                                    extension: "QObject"
+                                    extensionIsJavaScript: true
+                                    }})"};
+
+    parser.parse(source, imports, types, directoryInfo, Storage::IsInsideProject::No);
+
+    ASSERT_THAT(types,
+                Contains(IsType("QQmlComponent",
+                                Synchronization::ImportedType{},
+                                Synchronization::ImportedType{},
+                                Storage::TypeTraitsKind::Reference,
+                                qmltypesFileSourceId)));
+}
+
 TEST_F(QmlTypesParser, exported_types)
 {
     QString source{R"(import QtQuick.tooling 1.2
@@ -301,7 +328,7 @@ TEST_F(QmlTypesParser, exported_types)
     ModuleId qmlModuleId = storage.moduleId("QML", ModuleKind::QmlLibrary);
     ModuleId qtQmlModuleId = storage.moduleId("QtQml", ModuleKind::QmlLibrary);
 
-    parser.parse(source, imports, types, directoryInfo);
+    parser.parse(source, imports, types, directoryInfo, Storage::IsInsideProject::No);
 
     ASSERT_THAT(
         types,
@@ -324,7 +351,7 @@ TEST_F(QmlTypesParser, properties)
                           Property { name: "targets"; type: "QQuickItem"; isList: true; isReadonly: true; isPointer: true }
                       }})"};
 
-    parser.parse(source, imports, types, directoryInfo);
+    parser.parse(source, imports, types, directoryInfo, Storage::IsInsideProject::No);
 
     ASSERT_THAT(types,
                 ElementsAre(Field(
@@ -358,11 +385,11 @@ TEST_F(QmlTypesParser, properties_with_qualified_types)
                           Property { name: "values2"; type: "Qt::Vector" }
                       }})"};
 
-    parser.parse(source, imports, types, directoryInfo);
+    parser.parse(source, imports, types, directoryInfo, Storage::IsInsideProject::No);
 
     ASSERT_THAT(types,
                 Contains(
-                    Field(&Synchronization::Type::propertyDeclarations,
+                    Field("Synchronization::Type::propertyDeclarations", &Synchronization::Type::propertyDeclarations,
                           UnorderedElementsAre(
                               IsPropertyDeclaration("values",
                                                     Synchronization::ImportedType{"Qt::Vector"},
@@ -384,11 +411,11 @@ TEST_F(QmlTypesParser, properties_without_type)
                           Property { name: "target"; type: "QObject"; isPointer: true }
                       }})"};
 
-    parser.parse(source, imports, types, directoryInfo);
+    parser.parse(source, imports, types, directoryInfo, Storage::IsInsideProject::No);
 
     ASSERT_THAT(types,
                 ElementsAre(
-                    Field(&Synchronization::Type::propertyDeclarations,
+                    Field("Synchronization::Type::propertyDeclarations", &Synchronization::Type::propertyDeclarations,
                           UnorderedElementsAre(
                               IsPropertyDeclaration("target",
                                                     Synchronization::ImportedType{"QObject"},
@@ -417,24 +444,24 @@ TEST_F(QmlTypesParser, functions)
                           }
                       }})"};
 
-    parser.parse(source, imports, types, directoryInfo);
+    parser.parse(source, imports, types, directoryInfo, Storage::IsInsideProject::No);
 
     ASSERT_THAT(types,
                 ElementsAre(Field(
                     &Synchronization::Type::functionDeclarations,
                     UnorderedElementsAre(
                         AllOf(IsFunctionDeclaration("advance", ""),
-                              Field(&Synchronization::FunctionDeclaration::parameters,
+                              Field("Synchronization::FunctionDeclaration::parameters", &Synchronization::FunctionDeclaration::parameters,
                                     UnorderedElementsAre(IsParameter("frames", "int"),
                                                          IsParameter("fps", "double")))),
                         AllOf(IsFunctionDeclaration("isImageLoading", "bool"),
-                              Field(&Synchronization::FunctionDeclaration::parameters,
+                              Field("Synchronization::FunctionDeclaration::parameters", &Synchronization::FunctionDeclaration::parameters,
                                     UnorderedElementsAre(IsParameter("url", "QUrl")))),
                         AllOf(IsFunctionDeclaration("getContext", ""),
-                              Field(&Synchronization::FunctionDeclaration::parameters,
+                              Field("Synchronization::FunctionDeclaration::parameters", &Synchronization::FunctionDeclaration::parameters,
                                     UnorderedElementsAre(IsParameter("args", "QQmlV4Function")))),
                         AllOf(IsFunctionDeclaration("movieUpdate", ""),
-                              Field(&Synchronization::FunctionDeclaration::parameters, IsEmpty()))))));
+                              Field("Synchronization::FunctionDeclaration::parameters", &Synchronization::FunctionDeclaration::parameters, IsEmpty()))))));
 }
 
 TEST_F(QmlTypesParser, skip_java_script_functions)
@@ -448,9 +475,9 @@ TEST_F(QmlTypesParser, skip_java_script_functions)
                           }
                       }})"};
 
-    parser.parse(source, imports, types, directoryInfo);
+    parser.parse(source, imports, types, directoryInfo, Storage::IsInsideProject::No);
 
-    ASSERT_THAT(types, ElementsAre(Field(&Synchronization::Type::functionDeclarations, IsEmpty())));
+    ASSERT_THAT(types, ElementsAre(Field("Synchronization::Type::functionDeclarations", &Synchronization::Type::functionDeclarations, IsEmpty())));
 }
 
 TEST_F(QmlTypesParser, functions_with_qualified_types)
@@ -468,14 +495,14 @@ TEST_F(QmlTypesParser, functions_with_qualified_types)
                           }
                       }})"};
 
-    parser.parse(source, imports, types, directoryInfo);
+    parser.parse(source, imports, types, directoryInfo, Storage::IsInsideProject::No);
 
     ASSERT_THAT(types,
                 Contains(
-                    Field(&Synchronization::Type::functionDeclarations,
+                    Field("Synchronization::Type::functionDeclarations", &Synchronization::Type::functionDeclarations,
                           UnorderedElementsAre(AllOf(
                               IsFunctionDeclaration("values", ""),
-                              Field(&Synchronization::FunctionDeclaration::parameters,
+                              Field("Synchronization::FunctionDeclaration::parameters", &Synchronization::FunctionDeclaration::parameters,
                                     UnorderedElementsAre(IsParameter("values", "Qt::Vector"),
                                                          IsParameter("items", "Qt::List"),
                                                          IsParameter("values2", "Qt::Vector"))))))));
@@ -503,20 +530,20 @@ TEST_F(QmlTypesParser, signals)
                           }
                       }})"};
 
-    parser.parse(source, imports, types, directoryInfo);
+    parser.parse(source, imports, types, directoryInfo, Storage::IsInsideProject::No);
 
     ASSERT_THAT(types,
-                ElementsAre(Field(&Synchronization::Type::signalDeclarations,
+                ElementsAre(Field("Synchronization::Type::signalDeclarations", &Synchronization::Type::signalDeclarations,
                                   UnorderedElementsAre(
                                       AllOf(IsSignalDeclaration("advance"),
-                                            Field(&Synchronization::SignalDeclaration::parameters,
+                                            Field("Synchronization::SignalDeclaration::parameters", &Synchronization::SignalDeclaration::parameters,
                                                   UnorderedElementsAre(IsParameter("frames", "int"),
                                                                        IsParameter("fps", "double")))),
                                       AllOf(IsSignalDeclaration("isImageLoading"),
-                                            Field(&Synchronization::SignalDeclaration::parameters,
+                                            Field("Synchronization::SignalDeclaration::parameters", &Synchronization::SignalDeclaration::parameters,
                                                   UnorderedElementsAre(IsParameter("url", "QUrl")))),
                                       AllOf(IsSignalDeclaration("getContext"),
-                                            Field(&Synchronization::SignalDeclaration::parameters,
+                                            Field("Synchronization::SignalDeclaration::parameters", &Synchronization::SignalDeclaration::parameters,
                                                   UnorderedElementsAre(
                                                       IsParameter("args", "QQmlV4Function"))))))));
 }
@@ -536,14 +563,14 @@ TEST_F(QmlTypesParser, signals_with_qualified_types)
                           }
                       }})"};
 
-    parser.parse(source, imports, types, directoryInfo);
+    parser.parse(source, imports, types, directoryInfo, Storage::IsInsideProject::No);
 
     ASSERT_THAT(types,
                 Contains(
-                    Field(&Synchronization::Type::signalDeclarations,
+                    Field("Synchronization::Type::signalDeclarations", &Synchronization::Type::signalDeclarations,
                           UnorderedElementsAre(AllOf(
                               IsSignalDeclaration("values"),
-                              Field(&Synchronization::SignalDeclaration::parameters,
+                              Field("Synchronization::SignalDeclaration::parameters", &Synchronization::SignalDeclaration::parameters,
                                     UnorderedElementsAre(IsParameter("values", "Qt::Vector"),
                                                          IsParameter("items", "Qt::List"),
                                                          IsParameter("values2", "Qt::Vector"))))))));
@@ -569,20 +596,20 @@ TEST_F(QmlTypesParser, enumerations)
                           }
                       }})"};
 
-    parser.parse(source, imports, types, directoryInfo);
+    parser.parse(source, imports, types, directoryInfo, Storage::IsInsideProject::No);
 
     ASSERT_THAT(types,
                 Contains(Field(
                     &Synchronization::Type::enumerationDeclarations,
                     UnorderedElementsAre(
                         AllOf(IsEnumeration("NamedColorSpace"),
-                              Field(&Synchronization::EnumerationDeclaration::enumeratorDeclarations,
+                              Field("Synchronization::EnumerationDeclaration::enumeratorDeclarations", &Synchronization::EnumerationDeclaration::enumeratorDeclarations,
                                     UnorderedElementsAre(IsEnumerator("Unknown"),
                                                          IsEnumerator("SRgb"),
                                                          IsEnumerator("AdobeRgb"),
                                                          IsEnumerator("DisplayP3")))),
                         AllOf(IsEnumeration("VerticalLayoutDirection"),
-                              Field(&Synchronization::EnumerationDeclaration::enumeratorDeclarations,
+                              Field("Synchronization::EnumerationDeclaration::enumeratorDeclarations", &Synchronization::EnumerationDeclaration::enumeratorDeclarations,
                                     UnorderedElementsAre(IsEnumerator("TopToBottom"),
                                                          IsEnumerator("BottomToTop"))))))));
 }
@@ -608,7 +635,7 @@ TEST_F(QmlTypesParser, enumeration_is_exported_as_type)
                           exports: ["QML/QtObject 1.0", "QtQml/QtObject 2.1"]
                       }})"};
 
-    parser.parse(source, imports, types, directoryInfo);
+    parser.parse(source, imports, types, directoryInfo, Storage::IsInsideProject::No);
     QmlDesigner::Storage::TypeTraits traits{QmlDesigner::Storage::TypeTraitsKind::Value};
     traits.isEnum = true;
 
@@ -620,7 +647,7 @@ TEST_F(QmlTypesParser, enumeration_is_exported_as_type)
                          Synchronization::ImportedType{},
                          traits,
                          qmltypesFileSourceId),
-                  Field(&Synchronization::Type::exportedTypes,
+                  Field("Synchronization::Type::exportedTypes", &Synchronization::Type::exportedTypes,
                         UnorderedElementsAre(IsExportedType(qtQmlNativeModuleId,
                                                             "QObject::NamedColorSpace",
                                                             QmlDesigner::Storage::Version{})))),
@@ -629,7 +656,7 @@ TEST_F(QmlTypesParser, enumeration_is_exported_as_type)
                          Synchronization::ImportedType{},
                          traits,
                          qmltypesFileSourceId),
-                  Field(&Synchronization::Type::exportedTypes,
+                  Field("Synchronization::Type::exportedTypes", &Synchronization::Type::exportedTypes,
                         UnorderedElementsAre(IsExportedType(qtQmlNativeModuleId,
                                                             "QObject::VerticalLayoutDirection",
                                                             QmlDesigner::Storage::Version{})))),
@@ -654,7 +681,7 @@ TEST_F(QmlTypesParser, enumeration_is_exported_as_type_with_alias)
                           exports: ["QML/QtObject 1.0", "QtQml/QtObject 2.1"]
                       }})"};
 
-    parser.parse(source, imports, types, directoryInfo);
+    parser.parse(source, imports, types, directoryInfo, Storage::IsInsideProject::No);
     QmlDesigner::Storage::TypeTraits traits{QmlDesigner::Storage::TypeTraitsKind::Value};
     traits.isEnum = true;
 
@@ -665,7 +692,7 @@ TEST_F(QmlTypesParser, enumeration_is_exported_as_type_with_alias)
                                  Synchronization::ImportedType{},
                                  traits,
                                  qmltypesFileSourceId),
-                          Field(&Synchronization::Type::exportedTypes,
+                          Field("Synchronization::Type::exportedTypes", &Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(qtQmlNativeModuleId,
                                                                     "QObject::NamedColorSpace",
                                                                     QmlDesigner::Storage::Version{}),
@@ -702,7 +729,7 @@ TEST_F(QmlTypesParser, enumeration_is_exported_as_type_with_alias_too)
                           exports: ["QML/QtObject 1.0", "QtQml/QtObject 2.1"]
                       }})"};
 
-    parser.parse(source, imports, types, directoryInfo);
+    parser.parse(source, imports, types, directoryInfo, Storage::IsInsideProject::No);
     QmlDesigner::Storage::TypeTraits traits{QmlDesigner::Storage::TypeTraitsKind::Value};
     traits.isEnum = true;
 
@@ -713,7 +740,7 @@ TEST_F(QmlTypesParser, enumeration_is_exported_as_type_with_alias_too)
                                  Synchronization::ImportedType{},
                                  traits,
                                  qmltypesFileSourceId),
-                          Field(&Synchronization::Type::exportedTypes,
+                          Field("Synchronization::Type::exportedTypes", &Synchronization::Type::exportedTypes,
                                 UnorderedElementsAre(IsExportedType(qtQmlNativeModuleId,
                                                                     "QObject::NamedColorSpace",
                                                                     QmlDesigner::Storage::Version{}),
@@ -740,10 +767,10 @@ TEST_F(QmlTypesParser, enumeration_is_referenced_by_qualified_name)
                           }
                       }})"};
 
-    parser.parse(source, imports, types, directoryInfo);
+    parser.parse(source, imports, types, directoryInfo, Storage::IsInsideProject::No);
 
     ASSERT_THAT(types,
-                Contains(Field(&Synchronization::Type::propertyDeclarations,
+                Contains(Field("Synchronization::Type::propertyDeclarations", &Synchronization::Type::propertyDeclarations,
                                ElementsAre(IsPropertyDeclaration(
                                    "colorSpace",
                                    Synchronization::ImportedType{"QObject::NamedColorSpace"},
@@ -768,10 +795,10 @@ TEST_F(QmlTypesParser, alias_enumeration_is_referenced_by_qualified_name)
                           }
                       }})"};
 
-    parser.parse(source, imports, types, directoryInfo);
+    parser.parse(source, imports, types, directoryInfo, Storage::IsInsideProject::No);
 
     ASSERT_THAT(types,
-                Contains(Field(&Synchronization::Type::propertyDeclarations,
+                Contains(Field("Synchronization::Type::propertyDeclarations", &Synchronization::Type::propertyDeclarations,
                                ElementsAre(IsPropertyDeclaration(
                                    "colorSpace",
                                    Synchronization::ImportedType{"QObject::NamedColorSpaces"},
@@ -785,7 +812,7 @@ TEST_F(QmlTypesParser, access_type_is_reference)
                         Component { name: "QObject"
                                     accessSemantics: "reference"}})"};
 
-    parser.parse(source, imports, types, directoryInfo);
+    parser.parse(source, imports, types, directoryInfo, Storage::IsInsideProject::No);
 
     ASSERT_THAT(types, ElementsAre(IsTypeTrait(Storage::TypeTraitsKind::Reference)));
 }
@@ -797,7 +824,7 @@ TEST_F(QmlTypesParser, access_type_is_value)
                         Component { name: "QObject"
                                     accessSemantics: "value"}})"};
 
-    parser.parse(source, imports, types, directoryInfo);
+    parser.parse(source, imports, types, directoryInfo, Storage::IsInsideProject::No);
 
     ASSERT_THAT(types, ElementsAre(IsTypeTrait(Storage::TypeTraitsKind::Value)));
 }
@@ -809,7 +836,7 @@ TEST_F(QmlTypesParser, access_type_is_sequence)
                         Component { name: "QObject"
                                     accessSemantics: "sequence"}})"};
 
-    parser.parse(source, imports, types, directoryInfo);
+    parser.parse(source, imports, types, directoryInfo, Storage::IsInsideProject::No);
 
     ASSERT_THAT(types, ElementsAre(IsTypeTrait(Storage::TypeTraitsKind::Sequence)));
 }
@@ -821,7 +848,7 @@ TEST_F(QmlTypesParser, access_type_is_none)
                         Component { name: "QObject"
                                     accessSemantics: "none"}})"};
 
-    parser.parse(source, imports, types, directoryInfo);
+    parser.parse(source, imports, types, directoryInfo, Storage::IsInsideProject::No);
 
     ASSERT_THAT(types, ElementsAre(IsTypeTrait(Storage::TypeTraitsKind::None)));
 }
@@ -833,7 +860,7 @@ TEST_F(QmlTypesParser, uses_custom_parser)
                         Component { name: "QObject"
                                     hasCustomParser: true }})"};
 
-    parser.parse(source, imports, types, directoryInfo);
+    parser.parse(source, imports, types, directoryInfo, Storage::IsInsideProject::No);
 
     ASSERT_THAT(types, ElementsAre(IsTypeTrait(UsesCustomParser(true))));
 }
@@ -845,7 +872,7 @@ TEST_F(QmlTypesParser, uses_no_custom_parser)
                         Component { name: "QObject"
                                     hasCustomParser: false }})"};
 
-    parser.parse(source, imports, types, directoryInfo);
+    parser.parse(source, imports, types, directoryInfo, Storage::IsInsideProject::No);
 
     ASSERT_THAT(types, ElementsAre(IsTypeTrait(UsesCustomParser(false))));
 }
@@ -857,25 +884,25 @@ TEST_F(QmlTypesParser, default_property)
                         Component { name: "QObject"
                                     defaultProperty: "children" }})"};
 
-    parser.parse(source, imports, types, directoryInfo);
+    parser.parse(source, imports, types, directoryInfo, Storage::IsInsideProject::No);
 
     ASSERT_THAT(types,
-                ElementsAre(Field(&Synchronization::Type::defaultPropertyName, Eq("children"))));
+                ElementsAre(Field("Synchronization::Type::defaultPropertyName", &Synchronization::Type::defaultPropertyName, Eq("children"))));
 }
 
 TEST_F(QmlTypesParser, skip_template_item)
 {
     ModuleId moduleId = storage.moduleId("QtQuick.Templates", ModuleKind::CppLibrary);
-    Synchronization::DirectoryInfo directoryInfo{qmltypesFileSourceId,
-                                             qmltypesFileSourceId,
-                                             moduleId,
-                                             Synchronization::FileType::QmlTypes};
+    Synchronization::DirectoryInfo directoryInfo{qmltypesFileSourceId.directoryPathId(),
+                                                 qmltypesFileSourceId,
+                                                 moduleId,
+                                                 Synchronization::FileType::QmlTypes};
     QString source{R"(import QtQuick.tooling 1.2
                       Module{
                         Component { name: "QQuickItem"}
                         Component { name: "QQmlComponent"}})"};
 
-    parser.parse(source, imports, types, directoryInfo);
+    parser.parse(source, imports, types, directoryInfo, Storage::IsInsideProject::No);
 
     ASSERT_THAT(types,
                 UnorderedElementsAre(IsType("QQmlComponent",
@@ -892,7 +919,7 @@ TEST_F(QmlTypesParser, is_singleton)
                         Component { name: "QObject"
                                     isSingleton: true}})"};
 
-    parser.parse(source, imports, types, directoryInfo);
+    parser.parse(source, imports, types, directoryInfo, Storage::IsInsideProject::No);
 
     ASSERT_THAT(types, ElementsAre(IsTypeTrait(IsSingleton(true))));
 }
@@ -904,7 +931,7 @@ TEST_F(QmlTypesParser, is_not_singleton)
                         Component { name: "QObject"
                                     isSingleton: false}})"};
 
-    parser.parse(source, imports, types, directoryInfo);
+    parser.parse(source, imports, types, directoryInfo, Storage::IsInsideProject::No);
 
     ASSERT_THAT(types, ElementsAre(IsTypeTrait(IsSingleton(false))));
 }
@@ -915,9 +942,31 @@ TEST_F(QmlTypesParser, is_by_default_not_singleton)
                       Module{
                         Component { name: "QObject"}})"};
 
-    parser.parse(source, imports, types, directoryInfo);
+    parser.parse(source, imports, types, directoryInfo, Storage::IsInsideProject::No);
 
     ASSERT_THAT(types, ElementsAre(IsTypeTrait(IsSingleton(false))));
+}
+
+TEST_F(QmlTypesParser, is_inside_project)
+{
+    QString source{R"(import QtQuick.tooling 1.2
+                      Module{
+                        Component { name: "QObject"}})"};
+
+    parser.parse(source, imports, types, directoryInfo, Storage::IsInsideProject::Yes);
+
+    ASSERT_THAT(types, ElementsAre(IsTypeTrait(IsInsideProject(true))));
+}
+
+TEST_F(QmlTypesParser, is_not_inside_project)
+{
+    QString source{R"(import QtQuick.tooling 1.2
+                      Module{
+                        Component { name: "QObject"}})"};
+
+    parser.parse(source, imports, types, directoryInfo, Storage::IsInsideProject::No);
+
+    ASSERT_THAT(types, ElementsAre(IsTypeTrait(IsInsideProject(false))));
 }
 
 } // namespace

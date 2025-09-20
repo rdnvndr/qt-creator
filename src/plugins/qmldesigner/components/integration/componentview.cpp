@@ -26,6 +26,8 @@ ComponentView::ComponentView(ExternalDependenciesInterface &externalDependencies
     , m_standardItemModel(new QStandardItemModel(this))
     , m_componentAction(new ComponentAction(this))
 {
+    connect(&m_ensureMatLibTimer, &QTimer::timeout, this, &ComponentView::ensureMatLibTriggered);
+    m_ensureMatLibTimer.setInterval(500);
 }
 
 void ComponentView::nodeAboutToBeRemoved(const ModelNode &removedNode)
@@ -161,6 +163,24 @@ bool ComponentView::isSubComponentNode(const ModelNode &node) const
                 && node.metaInfo().isGraphicalItem());
 }
 
+void ComponentView::ensureMatLibTriggered()
+{
+    if (!model() || !model()->rewriterView()
+        || model()->rewriterView()->hasIncompleteTypeInformation()
+        || !model()->rewriterView()->errors().isEmpty()) {
+        return;
+    }
+
+    m_ensureMatLibTimer.stop();
+    ModelNode matLib = Utils3D::materialLibraryNode(this);
+    if (matLib.isValid())
+        return;
+
+    DesignDocument *doc = QmlDesignerPlugin::instance()->currentDesignDocument();
+    if (doc && !doc->inFileComponentModelActive())
+        Utils3D::ensureMaterialLibraryNode(this);
+}
+
 void ComponentView::modelAttached(Model *model)
 {
     if (AbstractView::model() == model)
@@ -172,12 +192,19 @@ void ComponentView::modelAttached(Model *model)
     AbstractView::modelAttached(model);
 
     searchForComponentAndAddToList(rootModelNode());
+
+    if (model->hasImport("QtQuick3D")) {
+        // Creating the material library node on model attach causes errors as long as the type
+        // information is not complete yet, so we keep checking until type info is complete.
+        m_ensureMatLibTimer.start();
+    }
 }
 
 void ComponentView::modelAboutToBeDetached(Model *model)
 {
     QSignalBlocker blocker(m_componentAction);
     m_standardItemModel->clear();
+    m_ensureMatLibTimer.stop();
     AbstractView::modelAboutToBeDetached(model);
 }
 
@@ -221,32 +248,11 @@ void ComponentView::nodeReparented(const ModelNode &node, const NodeAbstractProp
     updateDescription(node);
 }
 
-void ComponentView::nodeIdChanged(const ModelNode& node, const QString& newId, const QString& oldId)
+void ComponentView::nodeIdChanged(const ModelNode &node,
+                                  [[maybe_unused]] const QString &newId,
+                                  [[maybe_unused]] const QString &oldId)
 {
     updateDescription(node);
-
-    if (oldId.isEmpty())
-        return;
-
-    // Material/texture id handling is done here as ComponentView is guaranteed to always be
-    // attached, unlike the views actually related to material/texture handling.
-
-    auto maybeSetAuxData = [this, &oldId, &newId](AuxiliaryDataKeyView key) {
-        auto rootNode = rootModelNode();
-        if (auto property = rootNode.auxiliaryData(key)) {
-            if (oldId == property->toString()) {
-                QTimer::singleShot(0, this, [rootNode, newId, key]() {
-                    rootNode.setAuxiliaryData(key, newId);
-                });
-            }
-        }
-    };
-
-    auto metaInfo = node.metaInfo();
-    if (metaInfo.isQtQuick3DMaterial())
-        maybeSetAuxData(Utils3D::matLibSelectedMaterialProperty);
-    else if (metaInfo.isQtQuick3DTexture())
-        maybeSetAuxData(Utils3D::matLibSelectedTextureProperty);
 }
 
 void ComponentView::nodeSourceChanged(const ModelNode &node, const QString &/*newNodeSource*/)
@@ -265,10 +271,18 @@ void ComponentView::nodeSourceChanged(const ModelNode &node, const QString &/*ne
 void ComponentView::customNotification(const AbstractView *,
                                        const QString &identifier,
                                        const QList<ModelNode> &nodeList,
-                                       const QList<QVariant> &)
+                                       const QList<QVariant> &data)
 {
-    if (identifier == "UpdateImported3DAsset" && nodeList.size() > 0) {
-        Import3dDialog::updateImport(this, nodeList[0],
+    if (identifier == "UpdateImported3DAsset") {
+        Utils::FilePath import3dQml;
+        if (!data.isEmpty())
+            import3dQml = Utils::FilePath::fromString(data[0].toString());
+
+        ModelNode node;
+        if (!nodeList.isEmpty())
+            node = nodeList[0];
+
+        Import3dDialog::updateImport(this, import3dQml, node,
                                      m_importableExtensions3DMap,
                                      m_importOptions3DMap);
     }
@@ -287,11 +301,11 @@ void ComponentView::updateImport3DSupport(const QVariantMap &supportMap)
         m_importableExtensions3DMap = extMap;
 
         AddResourceOperation import3DModelOperation = [this](const QStringList &fileNames,
-                                                             const QString &defaultDir,
+                                                             const QString &,
                                                              bool showDialog) -> AddFilesResult {
             Q_UNUSED(showDialog)
 
-            auto importDlg = new Import3dDialog(fileNames, defaultDir,
+            auto importDlg = new Import3dDialog(fileNames,
                                                 m_importableExtensions3DMap,
                                                 m_importOptions3DMap, {}, {},
                                                 this, Core::ICore::dialogParent());
@@ -359,6 +373,9 @@ void ComponentView::importsChanged(const Imports &addedImports, const Imports &r
             resetPuppet();
         }
     }
+
+    if (model()->hasImport("QtQuick3D"))
+        m_ensureMatLibTimer.start();
 }
 
 void ComponentView::possibleImportsChanged([[maybe_unused]] const Imports &possibleImports)

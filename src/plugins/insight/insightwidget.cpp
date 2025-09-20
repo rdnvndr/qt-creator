@@ -10,8 +10,6 @@
 #include <qmldesignerconstants.h>
 #include <qmldesignerplugin.h>
 
-#include <invalidqmlsourceexception.h>
-
 #include <coreplugin/messagebox.h>
 #include <coreplugin/icore.h>
 
@@ -105,7 +103,6 @@ void InsightWidget::reloadQmlSource()
 {
     QString statesListQmlFilePath = qmlSourcesPath() + QStringLiteral("/Main.qml");
     QTC_ASSERT(QFileInfo::exists(statesListQmlFilePath), return );
-    engine()->clearComponentCache();
     setSource(QUrl::fromLocalFile(statesListQmlFilePath));
 
     if (!rootObject()) {

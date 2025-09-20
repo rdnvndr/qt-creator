@@ -8,6 +8,8 @@
 
 #include <utils/filepath.h>
 
+#include <QVector3D>
+
 namespace QmlDesigner {
 
 class AddFilesResult
@@ -71,6 +73,8 @@ void paste(const SelectionContext &selectionState);
 void undo(const SelectionContext &selectionState);
 void redo(const SelectionContext &selectionState);
 void setVisible(const SelectionContext &selectionState);
+void isolateSelectedNodes(const SelectionContext &selectionState);
+void showAllNodes(const SelectionContext &selectionState);
 void setFillWidth(const SelectionContext &selectionState);
 void setFillHeight(const SelectionContext &selectionState);
 void resetSize(const SelectionContext &selectionState);
@@ -96,6 +100,7 @@ void addSignalHandlerOrGotoImplementation(const SelectionContext &selectionState
 void removeLayout(const SelectionContext &selectionContext);
 void removePositioner(const SelectionContext &selectionContext);
 void moveToComponent(const SelectionContext &selectionContext);
+void extractComponent(const SelectionContext &selectionContext);
 void add3DAssetToContentLibrary(const SelectionContext &selectionContext);
 PropertyName getIndexPropertyName(const ModelNode &modelNode);
 void addItemToStackedContainer(const SelectionContext &selectionContext);
@@ -138,10 +143,14 @@ bool validateEffect(const QString &effectPath);
 bool isEffectComposerActivated();
 
 QMLDESIGNERCOMPONENTS_EXPORT Utils::FilePath getImagesDefaultDirectory();
+Utils::FilePath getImported3dDefaultDirectory();
 
 //Item Library and Assets related drop operations
 QMLDESIGNERCOMPONENTS_EXPORT ModelNode handleItemLibraryEffectDrop(const QString &effectPath,
                                                                    const ModelNode &targetNode);
+ModelNode handleImported3dAssetDrop(const QString &assetPath,
+                                    const ModelNode &targetNode,
+                                    const QVector3D &position = {});
 void handleTextureDrop(const QMimeData *mimeData, const ModelNode &targetModelNode);
 void handleMaterialDrop(const QMimeData *mimeData, const ModelNode &targetNode);
 ModelNode handleItemLibraryImageDrop(const QString &imagePath,

@@ -44,6 +44,14 @@ inline constexpr char EDIT3D_EDIT_SHOW_CAMERA_FRUSTUM[]
     = "QmlDesigner.Editor3D.ToggleCameraFrustum";
 inline constexpr char EDIT3D_EDIT_SHOW_PARTICLE_EMITTER[]
     = "QmlDesigner.Editor3D.ToggleParticleEmitter";
+
+inline constexpr char EDIT3D_PRESETS[] = "QmlDesigner.Editor3D.Presets";
+inline constexpr char EDIT3D_PRESET_SINGLE[] = "QmlDesigner.Editor3D.Single";
+inline constexpr char EDIT3D_PRESET_QUAD[] = "QmlDesigner.Editor3D.Quad";
+inline constexpr char EDIT3D_PRESET_3LEFT1RIGHT[] = "QmlDesigner.Editor3D.3Left1Right";
+inline constexpr char EDIT3D_PRESET_2HORIZONTAL[] = "QmlDesigner.Editor3D.2Horizontal";
+inline constexpr char EDIT3D_PRESET_2VERTICAL[] = "QmlDesigner.Editor3D.2Vertical";
+
 inline constexpr char EDIT3D_RESET_VIEW[] = "QmlDesigner.Editor3D.ResetView";
 inline constexpr char EDIT3D_PARTICLE_MODE[] = "QmlDesigner.Editor3D.ParticleViewModeToggle";
 inline constexpr char EDIT3D_PARTICLES_PLAY[] = "QmlDesigner.Editor3D.ParticlesPlay";
@@ -59,6 +67,7 @@ inline constexpr char EDIT3D_SNAP_CONFIG[] = "QmlDesigner.Editor3D.SnapConfig";
 inline constexpr char EDIT3D_CAMERA_SPEED_CONFIG[] = "QmlDesigner.Editor3D.CameraSpeedConfig";
 
 inline constexpr char BUNDLE_JSON_FILENAME[] = "bundle.json";
+inline constexpr char CUSTOM_BUNDLES_JSON_FILENAME[] = "custom_bundles.json";
 inline constexpr char BUNDLE_SUFFIX[] = "qdsbundle";
 inline constexpr char COMPONENT_BUNDLES_EFFECT_BUNDLE_TYPE[] = "Effects";
 inline constexpr char COMPONENT_BUNDLES_ASSET_REF_FILE[] = "_asset_ref.json";
@@ -87,6 +96,7 @@ inline constexpr char MIME_TYPE_ASSET_TEXTURE3D[]
     = "application/vnd.qtdesignstudio.asset.texture3d";
 inline constexpr char MIME_TYPE_MODELNODE_LIST[] = "application/vnd.qtdesignstudio.modelnode.list";
 inline constexpr char MIME_TYPE_ASSET_EFFECT[] = "application/vnd.qtdesignstudio.asset.effect";
+inline constexpr char MIME_TYPE_ASSET_IMPORTED3D[] = "application/vnd.qtdesignstudio.asset.imported3d";
 
 // Menus
 inline constexpr char M_VIEW_WORKSPACES[] = "QmlDesigner.Menu.View.Workspaces";
@@ -115,7 +125,6 @@ inline constexpr char EVENT_CURVEDITOR_TIME[] = "curveEditor";
 inline constexpr char EVENT_STATESEDITOR_TIME[] = "statesEditor";
 inline constexpr char EVENT_DESIGNSYSTEM_TIME[] = "designSystem";
 inline constexpr char EVENT_TEXTEDITOR_TIME[] = "textEditor";
-inline constexpr char EVENT_TEXTUREEDITOR_TIME[] = "textureEditor";
 inline constexpr char EVENT_PROPERTYEDITOR_TIME[] = "propertyEditor";
 inline constexpr char EVENT_ASSETSLIBRARY_TIME[] = "assetsLibrary";
 inline constexpr char EVENT_EFFECTCOMPOSER_NODE[] = "effectComposerNode";
@@ -123,8 +132,6 @@ inline constexpr char EVENT_EFFECTCOMPOSER_TIME[] = "effectComposerTime";
 inline constexpr char EVENT_ITEMLIBRARY_TIME[] = "itemLibrary";
 inline constexpr char EVENT_TRANSLATIONVIEW_TIME[] = "translationView";
 inline constexpr char EVENT_NAVIGATORVIEW_TIME[] = "navigatorView";
-inline constexpr char EVENT_DESIGNMODE_TIME[] = "designMode";
-inline constexpr char EVENT_MATERIALEDITOR_TIME[] = "materialEditor";
 inline constexpr char EVENT_MATERIALBROWSER_TIME[] = "materialBrowser";
 inline constexpr char EVENT_CONTENTLIBRARY_TIME[] = "contentLibrary";
 inline constexpr char EVENT_INSIGHT_TIME[] = "insight";
@@ -154,6 +161,16 @@ inline constexpr char EVENT_DESIGNVIEWER_PROJECT_THUMBNAIL_DELETED[]
     = "DesignViewerProjectThumbnailDeleted";
 inline constexpr char EVENT_DESIGNVIEWER_PROJECT_THUMBNAIL_DOWNLOADED[]
     = "DesignViewerProjectThumbnailDownloaded";
+inline constexpr char EVENT_DEVICE_MANAGER_ANDROID_SET_ALIAS[] = "DeviceManagerAndroidSetAlias";
+inline constexpr char EVENT_DEVICE_MANAGER_ANDROID_SET_ACTIVE[] = "DeviceManagerAndroidSetActive";
+inline constexpr char EVENT_DEVICE_MANAGER_ANDROID_SET_DEVICE_IP[]
+    = "DeviceManagerAndroidSetDeviceIP";
+inline constexpr char EVENT_DEVICE_MANAGER_ANDROID_ADD_DEVICE[] = "DeviceManagerAndroidAddDevice";
+inline constexpr char EVENT_DEVICE_MANAGER_ANDROID_REMOVE_DEVICE[]
+    = "DeviceManagerAndroidRemoveDevice";
+inline constexpr char EVENT_DEVICE_MANAGER_ANDROID_RUN_PROJECT[] = "DeviceManagerAndroidRunProject";
+inline constexpr char EVENT_DEVICE_MANAGER_ANDROID_STOP_PROJECT[]
+    = "DeviceManagerAndroidStopProject";
 
 inline constexpr char PROPERTY_EDITOR_CLASSNAME_PROPERTY[] = "__classNamePrivateInternal";
 
@@ -167,10 +184,8 @@ inline constexpr char OBJECT_NAME_COMPONENT_LIBRARY[] = "QQuickWidgetComponentLi
 inline constexpr char OBJECT_NAME_DESIGN_SYSTEM[] = "QQuickWidgetDesignSystem";
 inline constexpr char OBJECT_NAME_EFFECT_COMPOSER[] = "QQuickWidgetEffectComposer";
 inline constexpr char OBJECT_NAME_MATERIAL_BROWSER[] = "QQuickWidgetMaterialBrowser";
-inline constexpr char OBJECT_NAME_MATERIAL_EDITOR[] = "QQuickWidgetMaterialEditor";
 inline constexpr char OBJECT_NAME_PROPERTY_EDITOR[] = "QQuickWidgetPropertyEditor";
 inline constexpr char OBJECT_NAME_STATES_EDITOR[] = "QQuickWidgetStatesEditor";
-inline constexpr char OBJECT_NAME_TEXTURE_EDITOR[] = "QQuickWidgetTextureEditor";
 inline constexpr char OBJECT_NAME_TOP_TOOLBAR[] = "QQuickWidgetTopToolbar";
 inline constexpr char OBJECT_NAME_STATUSBAR[] = "QQuickWidgetStatusbar";
 inline constexpr char OBJECT_NAME_TOP_FEEDBACK[] = "QQuickWidgetQDSFeedback";

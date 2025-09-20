@@ -197,10 +197,23 @@ void QMLRewriter::includeLeadingEmptyLine(int &start) const
     start = prevBlock.position();
 }
 
-// FIXME: duplicate code in the QmlJS::Rewriter class, remove this
-QmlJS::AST::UiObjectMemberList *QMLRewriter::searchMemberToInsertAfter(QmlJS::AST::UiObjectMemberList *members, const QmlDesigner::PropertyNameList &propertyOrder)
+namespace {
+int indexOf(Utils::span<const QmlDesigner::PropertyNameView> properties,
+            QmlDesigner::PropertyNameView name)
 {
-    const int objectDefinitionInsertionPoint = propertyOrder.indexOf(PropertyName()); // XXX ????
+    auto found = std::ranges::find(properties, name);
+    if (found == properties.end())
+        return -1;
+
+    return static_cast<int>(std::distance(properties.begin(), found));
+}
+} // namespace
+
+// FIXME: duplicate code in the QmlJS::Rewriter class, remove this
+QmlJS::AST::UiObjectMemberList *QMLRewriter::searchMemberToInsertAfter(
+    QmlJS::AST::UiObjectMemberList *members, Utils::span<const PropertyNameView> propertyOrder)
+{
+    const int objectDefinitionInsertionPoint = indexOf(propertyOrder, ""); // XXX ????
 
     QmlJS::AST::UiObjectMemberList *lastObjectDef = nullptr;
     QmlJS::AST::UiObjectMemberList *lastNonObjectDef = nullptr;
@@ -212,13 +225,13 @@ QmlJS::AST::UiObjectMemberList *QMLRewriter::searchMemberToInsertAfter(QmlJS::AS
         if (QmlJS::AST::cast<QmlJS::AST::UiObjectDefinition*>(member))
             lastObjectDef = iter;
         else if (auto arrayBinding = QmlJS::AST::cast<QmlJS::AST::UiArrayBinding*>(member))
-            idx = propertyOrder.indexOf(toString(arrayBinding->qualifiedId).toUtf8());
+            idx = indexOf(propertyOrder, toString(arrayBinding->qualifiedId).toUtf8());
         else if (auto objectBinding = QmlJS::AST::cast<QmlJS::AST::UiObjectBinding*>(member))
-            idx = propertyOrder.indexOf(toString(objectBinding->qualifiedId).toUtf8());
+            idx = indexOf(propertyOrder, toString(objectBinding->qualifiedId).toUtf8());
         else if (auto scriptBinding = QmlJS::AST::cast<QmlJS::AST::UiScriptBinding*>(member))
-            idx = propertyOrder.indexOf(toString(scriptBinding->qualifiedId).toUtf8());
+            idx = indexOf(propertyOrder, toString(scriptBinding->qualifiedId).toUtf8());
         else if (QmlJS::AST::cast<QmlJS::AST::UiPublicMember*>(member))
-            idx = propertyOrder.indexOf("property");
+            idx = indexOf(propertyOrder, "property");
 
         if (idx < objectDefinitionInsertionPoint)
             lastNonObjectDef = iter;
@@ -234,7 +247,7 @@ QmlJS::AST::UiObjectMemberList *QMLRewriter::searchMemberToInsertAfter(QmlJS::AS
 QmlJS::AST::UiObjectMemberList *QMLRewriter::searchMemberToInsertAfter(
     QmlJS::AST::UiObjectMemberList *members,
     PropertyNameView propertyName,
-    const QmlDesigner::PropertyNameList &propertyOrder)
+    Utils::span<const PropertyNameView> propertyOrder)
 {
     if (!members)
         return nullptr; // empty members
@@ -256,20 +269,60 @@ QmlJS::AST::UiObjectMemberList *QMLRewriter::searchMemberToInsertAfter(
             orderedMembers[QStringLiteral("property")] = iter;
     }
 
-    int idx = propertyOrder.indexOf(propertyName);
+    int idx = indexOf(propertyOrder, propertyName);
     if (idx == -1)
-        idx = propertyOrder.indexOf(PropertyName());
+        idx = indexOf(propertyOrder, "");
     if (idx == -1)
-        idx = propertyOrder.size() - 1;
+        idx = static_cast<int>(propertyOrder.size()) - 1;
 
     for (; idx > 0; --idx) {
-        const QString prop = QString::fromLatin1(propertyOrder.at(idx - 1));
-        QmlJS::AST::UiObjectMemberList *candidate = orderedMembers.value(prop, 0);
+        const QString prop = QString::fromLatin1(propertyOrder[static_cast<std::size_t>(idx - 1)]);
+        QmlJS::AST::UiObjectMemberList *candidate = orderedMembers.value(prop, nullptr);
         if (candidate != nullptr)
             return candidate;
     }
 
     return nullptr;
+}
+
+QmlJS::AST::UiObjectMemberList *QMLRewriter::searchChildrenToInsertAfter(
+    QmlJS::AST::UiObjectMemberList *members, Utils::span<const PropertyNameView> propertyOrder, int pos)
+{
+    // An empty property name should be available in the propertyOrder List, which is the right place
+    // to define the objects there.
+    const int objectDefinitionInsertionPoint = indexOf(propertyOrder, "");
+
+    QmlJS::AST::UiObjectMemberList *lastObjectDef = nullptr;
+    QmlJS::AST::UiObjectMemberList *lastNonObjectDef = nullptr;
+    int objectPos = 0;
+
+    for (QmlJS::AST::UiObjectMemberList *iter = members; iter; iter = iter->next) {
+        QmlJS::AST::UiObjectMember *member = iter->member;
+        int idx = -1;
+
+        if (QmlJS::AST::cast<QmlJS::AST::UiObjectDefinition *>(member)) {
+            if (pos < 0)
+                break;
+            lastObjectDef = iter;
+            if (objectPos++ == pos)
+                break;
+        } else if (auto arrayBinding = QmlJS::AST::cast<QmlJS::AST::UiArrayBinding *>(member))
+            idx = indexOf(propertyOrder, toString(arrayBinding->qualifiedId).toUtf8());
+        else if (auto objectBinding = QmlJS::AST::cast<QmlJS::AST::UiObjectBinding *>(member))
+            idx = indexOf(propertyOrder, toString(objectBinding->qualifiedId).toUtf8());
+        else if (auto scriptBinding = QmlJS::AST::cast<QmlJS::AST::UiScriptBinding *>(member))
+            idx = indexOf(propertyOrder, toString(scriptBinding->qualifiedId).toUtf8());
+        else if (QmlJS::AST::cast<QmlJS::AST::UiPublicMember *>(member))
+            idx = indexOf(propertyOrder, "property");
+
+        if (idx < objectDefinitionInsertionPoint)
+            lastNonObjectDef = iter;
+    }
+
+    if (lastObjectDef)
+        return lastObjectDef;
+    else
+        return lastNonObjectDef;
 }
 
 void QMLRewriter::dump(const ASTPath &path)

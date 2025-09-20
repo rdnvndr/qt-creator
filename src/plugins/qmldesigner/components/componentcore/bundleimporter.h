@@ -7,7 +7,9 @@
 
 #include <utils/filepath.h>
 
+#ifndef QDS_USE_PROJECTSTORAGE
 #include <QFuture>
+#endif
 #include <QTimer>
 #include <QVariantHash>
 
@@ -48,6 +50,14 @@ private:
     QTimer m_importTimer;
     int m_importTimerCount = 0;
     QString m_bundleId;
+#ifdef QDS_USE_PROJECTSTORAGE
+    struct ImportData
+    {
+        bool isImport = true; // false = unimport
+        TypeName type;
+    };
+    bool m_pendingFullReset = false; // Reset old QMLJS code model (it's used for code view warnings)
+#else
     struct ImportData
     {
         enum State {
@@ -66,8 +76,10 @@ private:
         State state = Starting;
     };
 
-    QHash<TypeName, ImportData> m_pendingImports;
     QMetaObject::Connection m_libInfoConnection;
+#endif
+
+    QHash<TypeName, ImportData> m_pendingImports;
 };
 
 } // namespace QmlDesigner

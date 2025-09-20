@@ -33,16 +33,17 @@
         \li Go to \uicontrol Analyze > \uicontrol {Performance Analyzer} to
             profile the current application.
 
-        \li Select \inlineimage icons/qtcreator-analyze-start-button.png
+        \li Select
+            \inlineimage {icons/qtcreator-analyze-start-button.png} {Start a performance analysis}
             (\uicontrol Start) to start the application from the
             \uicontrol {Performance Analyzer}.
 
-            \image {qtcreator-performance-analyzer-toolbar.png} {Performance Analyzer toolbar}
+            \image {qtcreator-performance-analyzer-toolbar.webp} {Performance Analyzer toolbar}
 
     \endlist
 
     \note If data collection does not start automatically, select
-    \inlineimage icons/recordfill.png
+    \inlineimage {icons/recordfill.png} {Start collecting profile data}
     (\uicontrol {Collect profile data}).
 
     When you start analyzing an application, the application is launched, and
@@ -53,7 +54,8 @@
     several seconds after it was generated. \uicontrol {Processing delay} shows
     an estimate of the delay.
 
-    Data is collected until you select \inlineimage icons/recordfill.png
+    Data is collected until you select
+    \inlineimage {icons/recordfill.png} {Stop collecting profile data}
     (\uicontrol {Stop collecting profile data}) or close the application.
 
     Select \uicontrol {Stop collecting profile data} to turn off the
@@ -68,7 +70,8 @@
     \list
         \li Go to \uicontrol Analyze > \uicontrol {Performance Analyzer Options}
             > \uicontrol {Create Memory Trace Points}.
-        \li Select \inlineimage icons/create-tracepoint.png
+        \li Select
+            \inlineimage {icons/create-tracepoint.png} {Create trace points for memory profiling on the target device}
             on the \uicontrol {Performance Analyzer} toolbar.
     \endlist
 
@@ -125,10 +128,10 @@
     \image {qtcreator-performance-analyzer-settings.png} {Performance Analyzer Settings}
 
     To edit the settings for the current run configuration, select the
-    drop down menu next to \inlineimage icons/recordfill.png on the
-    Performance Analyzer toolbar.
+    drop down menu next to \inlineimage {icons/recordfill.png}
+    {Toggle profile data collection} on the Performance Analyzer toolbar.
 
-    \image {qtcreator-performance-analyzer-toolbar.png} {Performance Analyzer toolbar}
+    \image {qtcreator-performance-analyzer-toolbar.webp} {Performance Analyzer toolbar}
 
     \section1 Choosing Event Types
 
@@ -266,7 +269,7 @@
      \uicontrol {View Event Information on Mouseover} (4).
 
     The outline (9) summarizes the period for which data was collected. Drag
-    the zoom range (7) or click the outline to move on the outline. You can
+    the zoom range (7) or select the outline to move on the outline. You can
     also move between events by selecting \uicontrol {Jump to Previous Event}
     and \uicontrol {Jump to Next Event} (1).
 
@@ -303,7 +306,7 @@
     encountered in at least once.
 
     For functions with debug information available, the details include the
-    location in source code and the name of the function. You can click on such
+    location in source code and the name of the function. You can select such
     events to move the cursor in the code editor to the part of the code the
     event is associated with.
 
@@ -357,7 +360,7 @@
     to optimize. A high number of occurrences might indicate that a function is
     triggered unnecessarily or takes very long to execute.
 
-    Click on a row to move to the respective function in the source code in the
+    Select a row to move to the respective function in the source code in the
     code editor.
 
     The \uicontrol Callers and \uicontrol Callees panes show dependencies
@@ -367,7 +370,7 @@
     summarizes the functions called from the function selected in the main
     view.
 
-    Click on a row to move to the respective function in the source code in the
+    Select a row to move to the respective function in the source code in the
     code editor and select it in the main view.
 
     To copy the contents of one view or row to the clipboard, select

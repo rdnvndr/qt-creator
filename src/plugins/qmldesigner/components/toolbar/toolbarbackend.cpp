@@ -48,6 +48,8 @@
 
 #include <QQmlEngine>
 
+#include <memory>
+
 namespace QmlDesigner {
 
 static Internal::DesignModeWidget *designModeWidget()
@@ -349,6 +351,10 @@ void ActionSubscriber::setupNotifier()
     emit tooltipChanged();
 }
 
+#ifdef DVCONNECTOR_ENABLED
+static std::unique_ptr<DesignViewer::DVConnector> s_designViewerConnector;
+#endif
+
 ToolBarBackend::ToolBarBackend(QObject *parent)
     : QObject(parent)
 {
@@ -387,13 +393,16 @@ ToolBarBackend::ToolBarBackend(QObject *parent)
             &ToolBarBackend::documentIndexChanged);
 
     connect(Core::EditorManager::instance(), &Core::EditorManager::currentEditorChanged, this, [this] {
-        static QMetaObject::Connection lastConnection;
-        disconnect(lastConnection);
+        disconnect(m_documentConnection);
 
         if (auto textDocument = qobject_cast<TextEditor::TextDocument *>(
                 Core::EditorManager::currentDocument())) {
-            lastConnection = connect(textDocument->document(), &QTextDocument::modificationChanged,
-                    this, &ToolBarBackend::isDocumentDirtyChanged);
+            m_documentConnection = connect(textDocument->document(),
+                                           &QTextDocument::modificationChanged,
+                                           this,
+
+                                           &ToolBarBackend::isDocumentDirtyChanged);
+
             emit isDocumentDirtyChanged();
         }
     });
@@ -486,6 +495,10 @@ ToolBarBackend::ToolBarBackend(QObject *parent)
             this,
             &ToolBarBackend::runTargetIndexChanged);
     connect(&QmlDesignerPlugin::runManager(),
+            &RunManager::runTargetTypeChanged,
+            this,
+            &ToolBarBackend::runTargetTypeChanged);
+    connect(&QmlDesignerPlugin::runManager(),
             &RunManager::stateChanged,
             this,
             &ToolBarBackend::runManagerStateChanged);
@@ -549,6 +562,8 @@ void ToolBarBackend::triggerModeChange()
         else if (qmlFileOpen)
             Core::ModeManager::activateMode(Core::Constants::MODE_DESIGN);
         else if (Core::ModeManager::currentModeId() == Core::Constants::MODE_WELCOME)
+            openUiFile();
+        else if (Core::ModeManager::currentModeId() == Core::Constants::MODE_EDIT)
             openUiFile();
         else
             Core::ModeManager::activateMode(Core::Constants::MODE_WELCOME);
@@ -838,6 +853,8 @@ int ToolBarBackend::currentStyle() const
 
 QStringList ToolBarBackend::kits() const
 {
+    if (!ProjectExplorer::KitManager::isLoaded())
+        return {};
     auto kits = Utils::filtered(ProjectExplorer::KitManager::kits(), [](ProjectExplorer::Kit *kit) {
         const auto qtVersion = QtSupport::QtKitAspect::qtVersion(kit);
         const auto dev = ProjectExplorer::RunDeviceKitAspect::device(kit);
@@ -909,6 +926,11 @@ int ToolBarBackend::runTargetIndex() const
     return QmlDesignerPlugin::runManager().currentTargetIndex();
 }
 
+int ToolBarBackend::runTargetType() const
+{
+    return QmlDesignerPlugin::runManager().currentTargetType();
+}
+
 int ToolBarBackend::runManagerState() const
 {
     return QmlDesignerPlugin::runManager().state();
@@ -927,7 +949,10 @@ QString ToolBarBackend::runManagerError() const
 #ifdef DVCONNECTOR_ENABLED
 DesignViewer::DVConnector *ToolBarBackend::designViewerConnector()
 {
-    return &m_designViewerConnector;
+    if (!s_designViewerConnector)
+        s_designViewerConnector = std::make_unique<DesignViewer::DVConnector>();
+
+    return s_designViewerConnector.get();
 }
 #endif
 

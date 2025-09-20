@@ -31,9 +31,9 @@ SourceIds FileSystem::directoryEntries(const QString &directoryPath) const
     return sourceIds;
 }
 
-QStringList FileSystem::qmlFileNames(const QString &directoryPath) const
+QStringList FileSystem::fileNames(const QString &directoryPath, const QStringList &nameFilters) const
 {
-    return QDir{directoryPath}.entryList({"*.qml"}, QDir::Files);
+    return QDir{directoryPath}.entryList(nameFilters, QDir::Files);
 }
 
 long long FileSystem::lastModified(SourceId sourceId) const
@@ -50,7 +50,9 @@ long long FileSystem::lastModified(SourceId sourceId) const
 
 FileStatus FileSystem::fileStatus(SourceId sourceId) const
 {
-    QFileInfo fileInfo(QString(m_sourcePathCache.sourcePath(sourceId)));
+    auto path = sourceId.fileNameId() ? m_sourcePathCache.sourcePath(sourceId)
+                                      : m_sourcePathCache.directoryPath(sourceId.directoryPathId());
+    QFileInfo fileInfo(QString{path});
 
     fileInfo.refresh();
 

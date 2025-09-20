@@ -20,14 +20,14 @@
     when using Qt 6 as the minimum Qt version and CMake as the build system.
 
     You will use the \l{Edit Mode}{Edit} mode to create an application
-    that moves a Qt logo between three rectangles when you click them.
+    that moves a Qt logo between three rectangles when you select them.
 
     \image {qtquick-tutorial.gif} {Transitions example}
 
     For more examples, see \l{Qt Quick Examples and Tutorials}.
 
     You can use a visual editor to develop Qt Quick applications in \QDS. For
-    more information, see \l{Qt Design Studio documentation}.
+    more information, see \l{\QDS documentation}.
 
     \include qtquick-tutorial-create-empty-project.qdocinc qtquick empty application
 
@@ -78,7 +78,8 @@
     When you start typing the QML type name, \QC suggests available types
     and properties to \l{Complete code}{complete the code}.
 
-    Select the light bulb icon \inlineimage icons/refactormarker.png next to the
+    Select the light bulb icon
+    \inlineimage {icons/refactormarker.png} {Light bulb icon} next to the
     type name to open a \l{Edit rectangles}{toolbar} that you can use to specify
     rectangle properties, such as color, transparency, and gradients.
 
@@ -120,7 +121,7 @@
 
     \section1 Connect mouse clicks to state changes
 
-    To make the image move between the rectangles when users click them, add
+    To make the image move between the rectangles when users select them, add
     states to the Page component where you change the values of the \c x and
     \c y properties of \e icon to match those of the middle right and top left
     rectangles. To make sure that the image stays within the rectangle
@@ -149,7 +150,7 @@
     \skipto import
     \printuntil /^\ {0}\}/
 
-    Select \key {Ctrl+R} to run the application, and click the rectangles to
+    Select \key {Ctrl+R} to run the application, and then select the rectangles to
     move the Qt logo from one rectangle to another.
 
     \section1 Animate transitions
@@ -180,6 +181,6 @@
 
     \printuntil /^\ {0}\}/
 
-    Select \key {Ctrl+R} to run the application, and click the rectangles to
+    Select \key {Ctrl+R} to run the application, and then select the rectangles to
     view the animated transitions.
 */

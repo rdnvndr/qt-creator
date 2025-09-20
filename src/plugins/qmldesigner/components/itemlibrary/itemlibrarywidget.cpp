@@ -35,7 +35,6 @@
 #include <utils/environment.h>
 #include <utils/filesystemwatcher.h>
 #include <utils/fileutils.h>
-#include <utils/flowlayout.h>
 #include <utils/qtcassert.h>
 #include <utils/stylehelper.h>
 #include <utils/utilsicons.h>
@@ -91,11 +90,18 @@ bool ItemLibraryWidget::eventFilter(QObject *obj, QEvent *event)
 
                 // For drag to be handled correctly, we must have the component properly imported
                 // beforehand, so we import the module immediately when the drag starts
+#ifdef QDS_USE_PROJECTSTORAGE
+                if (!entry.requiredImport().isEmpty()) {
+                    Import import = Import::createLibraryImport(entry.requiredImport());
+                    m_model->changeImports({import}, {});
+                }
+#else
                 if (!entry.requiredImport().isEmpty()
                     && !ModelUtils::addImportWithCheck(entry.requiredImport(), m_model)) {
                     qWarning() << __FUNCTION__ << "Required import adding failed:"
                                << entry.requiredImport();
                 }
+#endif
 
                 if (model) {
                     model->startDrag(m_itemLibraryModel->getMimeData(entry),
@@ -154,7 +160,7 @@ ItemLibraryWidget::ItemLibraryWidget(AsynchronousImageCache &imageCache)
     updateSearch();
 
     setStyleSheet(Theme::replaceCssColors(
-        QString::fromUtf8(::Utils::FileReader::fetchQrc(":/qmldesigner/stylesheet.css"))));
+        ::Utils::FileUtils::fetchQrc(":/qmldesigner/stylesheet.css")));
 
     m_qmlSourceUpdateShortcut = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_F5), this);
     connect(m_qmlSourceUpdateShortcut, &QShortcut::activated, this, &ItemLibraryWidget::reloadQmlSource);

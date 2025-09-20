@@ -13,10 +13,10 @@
 #include "qmldesignerexternaldependencies.h"
 #include "qmldesignerprojectmanager.h"
 #include "quick2propertyeditorview.h"
-#include "resourcegenerator.h"
 #include "settingspage.h"
 #include "shortcutmanager.h"
 #include "toolbar.h"
+#include "utils/checkablemessagebox.h"
 
 #include <colortool/colortool.h>
 #include <connectionview.h>
@@ -44,6 +44,7 @@
 #include <qmljstools/qmljstoolsconstants.h>
 
 #include <qmlprojectmanager/qmlproject.h>
+#include <qmlprojectmanager/qmlprojectexporter/resourcegenerator.h>
 
 #include <coreplugin/actionmanager/actioncontainer.h>
 #include <coreplugin/actionmanager/actionmanager.h>
@@ -86,8 +87,6 @@
 #include <QWindow>
 
 #include <modelnodecontextmenu_helper.h>
-
-#include <mutex>
 
 static Q_LOGGING_CATEGORY(qmldesignerLog, "qtc.qmldesigner", QtWarningMsg)
 
@@ -233,12 +232,6 @@ static bool documentIsAlreadyOpen(DesignDocument *designDocument, Core::IEditor 
            && designDocument->fileName() == editor->document()->filePath();
 }
 
-static bool shouldAssertInException()
-{
-    QProcessEnvironment processEnvironment = QProcessEnvironment::systemEnvironment();
-    return !processEnvironment.value("QMLDESIGNER_ASSERT_ON_EXCEPTION").isEmpty();
-}
-
 static bool warningsForQmlFilesInsteadOfUiQmlEnabled()
 {
     return QmlDesignerPlugin::settings().value(DesignerSettingsKey::WARNING_FOR_QML_FILES_INSTEAD_OF_UIQML_FILES).toBool();
@@ -247,18 +240,6 @@ static bool warningsForQmlFilesInsteadOfUiQmlEnabled()
 QmlDesignerPlugin::QmlDesignerPlugin()
 {
     m_instance = this;
-    // Exceptions should never ever assert: they are handled in a number of
-    // places where it is actually VALID AND EXPECTED BEHAVIOUR to get an
-    // exception.
-    // If you still want to see exactly where the exception originally
-    // occurred, then you have various ways to do this:
-    //  1. set a breakpoint on the constructor of the exception
-    //  2. in gdb: "catch throw" or "catch throw Exception"
-    //  3. set a breakpoint on __raise_exception()
-    // And with gdb, you can even do this from your ~/.gdbinit file.
-    // DnD is not working with gdb so this is still needed to get a good stacktrace
-
-    Exception::setShouldAssert(shouldAssertInException());
 }
 
 QmlDesignerPlugin::~QmlDesignerPlugin()
@@ -275,33 +256,42 @@ QmlDesignerPlugin::~QmlDesignerPlugin()
 // INHERITED FROM ExtensionSystem::Plugin
 //
 ////////////////////////////////////////////////////
-bool QmlDesignerPlugin::initialize(const QStringList & /*arguments*/, QString * /*errorMessage*/)
+Utils::Result<> QmlDesignerPlugin::initialize(const QStringList &)
 {
+#ifdef QDS_USE_PROJECTSTORAGE
+    auto specialSnapshotName = QGuiApplication::applicationDisplayName() + "(PROJECTSTORAGE)";
+    QGuiApplication::setApplicationDisplayName(specialSnapshotName);
+#endif
+
     if constexpr (isUsingQmlDesignerLite()) {
         if (!QmlDesignerBasePlugin::isLiteModeEnabled()) {
             QMessageBox::warning(Core::ICore::dialogParent(),
                                  tr("Qml Designer Lite"),
                                  tr("The Qml Designer Lite plugin is not enabled."));
-            return false;
+            return Utils::ResultError(tr("Qml Designer Lite initialization error: "
+                                         "The Qml Designer Lite plugin is not enabled."));
         }
     }
 
     Sqlite::LibraryInitializer::initialize();
     QDir{}.mkpath(Core::ICore::cacheResourcePath().toUrlishString());
 
-    QAction *action = new QAction(tr("Give Feedback..."), this);
-    Core::Command *cmd = Core::ActionManager::registerAction(action, "Help.GiveFeedback");
-    Core::ActionManager::actionContainer(Core::Constants::M_HELP)
-        ->addAction(cmd, Core::Constants::G_HELP_SUPPORT);
+    if (Core::ICore::isQtDesignStudio()) {
+        QAction *action = new QAction(tr("Give Feedback..."), this);
+        action->setVisible(false); // keep hidden unless UsageStatistic plugin activates it
+        Core::Command *cmd = Core::ActionManager::registerAction(action, "Help.GiveFeedback");
+        Core::ActionManager::actionContainer(Core::Constants::M_HELP)
+            ->addAction(cmd, Core::Constants::G_HELP_SUPPORT);
 
-    connect(action, &QAction::triggered, this, [this] {
-        lauchFeedbackPopupInternal(QGuiApplication::applicationDisplayName());
-    });
+        connect(action, &QAction::triggered, this, [this] {
+            launchFeedbackPopupInternal(QGuiApplication::applicationDisplayName());
+        });
+    }
 
     d = new QmlDesignerPluginPrivate;
     d->timer.start();
     if (Core::ICore::isQtDesignStudio())
-        ResourceGenerator::generateMenuEntry(this);
+        QmlProjectManager::QmlProjectExporter::ResourceGenerator::generateMenuEntry(this);
 
     const QString fontPath
         = Core::ICore::resourcePath(
@@ -327,17 +317,9 @@ bool QmlDesignerPlugin::initialize(const QStringList & /*arguments*/, QString * 
     if (Core::ICore::isQtDesignStudio()) {
         d->toolBar = ToolBar::create();
         d->statusBar = ToolBar::createStatusBar();
-
-        // uses simplified Telemetry settings page in case of Qt Design Studio
-        ExtensionSystem::PluginSpec *usageStatistic = Utils::findOrDefault(ExtensionSystem::PluginManager::plugins(), [](ExtensionSystem::PluginSpec *p) {
-            return p->id() == "usagestatistic";
-        });
-
-        if (usageStatistic && usageStatistic->plugin())
-            QMetaObject::invokeMethod(usageStatistic->plugin(), "useSimpleUi", true);
     }
 
-    return true;
+    return Utils::ResultOk;
 }
 
 bool QmlDesignerPlugin::delayedInitialize()
@@ -373,8 +355,22 @@ void QmlDesignerPlugin::extensionsInitialized()
 
 ExtensionSystem::IPlugin::ShutdownFlag QmlDesignerPlugin::aboutToShutdown()
 {
-    if (Core::ICore::isQtDesignStudio())
-        emitUsageStatistics("qdsShutdownCount");
+    Utils::QtcSettings *settings = Core::ICore::settings();
+
+    if (!Utils::CheckableDecider("FeedbackPopup").shouldAskAgain())
+        return SynchronousShutdown;
+
+    int shutdownCount = settings->value("ShutdownCount", 0).toInt();
+    settings->setValue("ShutdownCount", ++shutdownCount);
+
+    if (!settings->value("UsageStatistic/TrackingEnabled").toBool())
+        return SynchronousShutdown;
+
+    if (shutdownCount >= 5) {
+        m_shutdownPending = true;
+        launchFeedbackPopupInternal(QGuiApplication::applicationDisplayName());
+        return AsynchronousShutdown;
+    }
 
     return SynchronousShutdown;
 }
@@ -492,6 +488,26 @@ void QmlDesignerPlugin::setupDesigner()
     d->shortCutManager.updateUndoActions(currentDesignDocument());
 }
 
+static bool checkUiQMLNagScreen(const Utils::FilePath &fileName)
+{
+    const QStringList allUiQmlFiles = allUiQmlFilesforCurrentProject(fileName);
+    static bool doOnce = true;
+    if (doOnce && warningsForQmlFilesInsteadOfUiQmlEnabled() && !fileName.endsWith(".ui.qml")
+        && !allUiQmlFiles.isEmpty()) {
+        OpenUiQmlFileDialog dialog(Core::ICore::dialogParent());
+        dialog.setUiQmlFiles(projectPath(fileName), allUiQmlFiles);
+        dialog.exec();
+        if (dialog.uiFileOpened()) {
+            Core::ModeManager::activateMode(Core::Constants::MODE_EDIT);
+            Core::EditorManager::openEditorAt({Utils::FilePath::fromString(dialog.uiQmlFile()), 0, 0});
+            return true;
+        }
+        doOnce = false;
+    }
+
+    return false;
+}
+
 void QmlDesignerPlugin::showDesigner()
 {
     QTC_ASSERT(!d->documentManager.hasCurrentDesignDocument(), return);
@@ -500,20 +516,8 @@ void QmlDesignerPlugin::showDesigner()
 
     d->mainWidget.initialize();
 
-    const Utils::FilePath fileName = Core::EditorManager::currentEditor()->document()->filePath();
-    const QStringList allUiQmlFiles = allUiQmlFilesforCurrentProject(fileName);
-    if (warningsForQmlFilesInsteadOfUiQmlEnabled() && !fileName.endsWith(".ui.qml")
-        && !allUiQmlFiles.isEmpty()) {
-        OpenUiQmlFileDialog dialog(&d->mainWidget);
-        dialog.setUiQmlFiles(projectPath(fileName), allUiQmlFiles);
-        dialog.exec();
-        if (dialog.uiFileOpened()) {
-            Core::ModeManager::activateMode(Core::Constants::MODE_EDIT);
-            Core::EditorManager::openEditorAt(
-                {Utils::FilePath::fromString(dialog.uiQmlFile()), 0, 0});
-            return;
-        }
-    }
+    if (checkUiQMLNagScreen(Core::EditorManager::currentEditor()->document()->filePath()))
+        return;
 
     setupDesigner();
 
@@ -524,7 +528,6 @@ void QmlDesignerPlugin::hideDesigner()
 {
     clearDesigner();
     resetDesignerDocument();
-    emitUsageStatisticsTime(Constants::EVENT_DESIGNMODE_TIME, m_usageTimer.elapsed());
 }
 
 void QmlDesignerPlugin::changeEditor()
@@ -658,6 +661,7 @@ void QmlDesignerPlugin::enforceDelayedInitialize()
                            return (p / postfix).toFSPathString();
                          });
 
+
 #ifndef QDS_USE_PROJECTSTORAGE
     MetaInfo::initializeGlobal(pluginPaths, d->externalDependencies);
 #endif
@@ -679,9 +683,7 @@ void QmlDesignerPlugin::enforceDelayedInitialize()
     transitionEditorView->registerActions();
 
     if (QmlDesignerBasePlugin::experimentalFeaturesEnabled())
-        d->viewManager.registerView(
-            std::make_unique<DesignSystemView>(d->externalDependencies,
-                                               d->projectManager.projectStorageDependencies()));
+        d->viewManager.registerView(std::make_unique<DesignSystemView>(d->externalDependencies));
 
     d->viewManager.registerFormEditorTool(std::make_unique<SourceTool>());
     d->viewManager.registerFormEditorTool(std::make_unique<ColorTool>());
@@ -693,10 +695,8 @@ void QmlDesignerPlugin::enforceDelayedInitialize()
     if (Core::ICore::isQtDesignStudio()) {
         d->mainWidget.initialize();
 
-        emitUsageStatistics("StandaloneMode");
         if (QmlProjectManager::QmlProject::isQtDesignStudioStartedFromQtC())
             emitUsageStatistics("QDSlaunchedFromQtC");
-        emitUsageStatistics("qdsStartupCount");
 
         FoundLicense license = checkLicense();
         if (license == FoundLicense::enterprise)
@@ -834,10 +834,10 @@ void QmlDesignerPlugin::registerCombinedTracedPoints(const QString &identifierFi
                                                                             maxDuration));
 }
 
-void QmlDesignerPlugin::lauchFeedbackPopup(const QString &identifier)
+void QmlDesignerPlugin::launchFeedbackPopup(const QString &identifier)
 {
     if (Core::ModeManager::currentModeId() == Core::Constants::MODE_DESIGN)
-        lauchFeedbackPopupInternal(identifier);
+        launchFeedbackPopupInternal(identifier);
 }
 
 void QmlDesignerPlugin::handleFeedback(const QString &feedback, int rating)
@@ -846,7 +846,7 @@ void QmlDesignerPlugin::handleFeedback(const QString &feedback, int rating)
     emit usageStatisticsInsertFeedback(identifier, feedback, rating);
 }
 
-void QmlDesignerPlugin::lauchFeedbackPopupInternal(const QString &identifier)
+void QmlDesignerPlugin::launchFeedbackPopupInternal(const QString &identifier)
 {
     m_feedbackWidget = new QQuickWidget(Core::ICore::dialogParent());
     m_feedbackWidget->setObjectName(Constants::OBJECT_NAME_TOP_FEEDBACK);
@@ -854,6 +854,12 @@ void QmlDesignerPlugin::lauchFeedbackPopupInternal(const QString &identifier)
     const QString qmlPath = Core::ICore::resourcePath("qmldesigner/feedback/FeedbackPopup.qml").toUrlishString();
 
     m_feedbackWidget->setSource(QUrl::fromLocalFile(qmlPath));
+    if (Utils::HostOsInfo::isLinuxHost()) {
+        QPoint pos = Core::ICore::dialogParent()->pos();
+        int x = (Core::ICore::dialogParent()->width() - m_feedbackWidget->width()) / 2;
+        int y = (Core::ICore::dialogParent()->height() - m_feedbackWidget->height()) / 2;
+        m_feedbackWidget->move(pos.x() + x, pos.y() + y);
+    }
     if (!m_feedbackWidget->errors().isEmpty()) {
         qDebug() << qmlPath;
         qDebug() << m_feedbackWidget->errors().first().toString();
@@ -870,7 +876,7 @@ void QmlDesignerPlugin::lauchFeedbackPopupInternal(const QString &identifier)
     QTC_ASSERT(root, return );
 
     QObject *title = root->findChild<QObject *>("title");
-    QString name = Tr::tr("Enjoying the %1?").arg(identiferToDisplayString(identifier));
+    QString name = Tr::tr("Enjoying %1?").arg(identiferToDisplayString(identifier));
     title->setProperty("text", name);
     root->setProperty("identifier", identifier);
 
@@ -889,6 +895,11 @@ void QmlDesignerPlugin::closeFeedbackPopup()
     if (m_feedbackWidget) {
         m_feedbackWidget->deleteLater();
         m_feedbackWidget = nullptr;
+    }
+
+    if (m_shutdownPending) {
+        Utils::CheckableDecider("FeedbackPopup").doNotAskAgain();
+        emit asynchronousShutdownFinished();
     }
 }
 

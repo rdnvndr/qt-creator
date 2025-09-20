@@ -152,9 +152,9 @@ QWidget *DesignModeWidget::createProjectExplorerWidget(QWidget *parent)
     }
 
     if (navigationView.widget) {
-        QByteArray sheet = Utils::FileReader::fetchQrc(":/qmldesigner/stylesheet.css");
+        QString sheet = Utils::FileUtils::fetchQrc(":/qmldesigner/stylesheet.css");
         sheet += "QLabel { background-color: #4f4f4f; }";
-        navigationView.widget->setStyleSheet(Theme::replaceCssColors(QString::fromUtf8(sheet)));
+        navigationView.widget->setStyleSheet(Theme::replaceCssColors(sheet));
         navigationView.widget->setParent(parent);
     }
 
@@ -226,7 +226,7 @@ void DesignModeWidget::setup()
     m_dockManager->setWorkspacePresetsPath(
         Core::ICore::resourcePath("qmldesigner/workspacePresets/").toUrlishString());
 
-    QString sheet = QString::fromUtf8(Utils::FileReader::fetchQrc(":/qmldesigner/dockwidgets.css"));
+    QString sheet = Utils::FileUtils::fetchQrc(":/qmldesigner/dockwidgets.css");
     m_dockManager->setStyleSheet(Theme::replaceCssColors(sheet));
 
     connect(ProjectExplorer::ProjectManager::instance(),
@@ -314,9 +314,9 @@ void DesignModeWidget::setup()
         const QString uniqueId = idString.remove(" "); // title without whitespaces
 
         // Apply stylesheet to QWidget
-        QByteArray sheet = Utils::FileReader::fetchQrc(":/qmldesigner/stylesheet.css");
+        QString sheet = Utils::FileUtils::fetchQrc(":/qmldesigner/stylesheet.css");
         sheet += "QLabel { background-color: creatorTheme.DSsectionHeadBackground; }";
-        navigationView.widget->setStyleSheet(Theme::replaceCssColors(QString::fromUtf8(sheet)));
+        navigationView.widget->setStyleSheet(Theme::replaceCssColors(sheet));
 
         ensureMinimumSize(navigationView.widget);
 
@@ -330,6 +330,8 @@ void DesignModeWidget::setup()
         command->setAttribute(Core::Command::CA_Hide);
         viewCommands.append(command);
     }
+
+    viewManager().initializeWidgetInfos();
 
     // Afterwards get all the other widgets
     for (const auto &view : viewManager().views()) {
@@ -512,8 +514,11 @@ void DesignModeWidget::setup()
 
 static bool isMcuDisabledView(const QString viewId)
 {
-    static const QStringList mcuDisabledViews = {"Editor3D", "MaterialEditor", "MaterialBrowser",
-                                                 "TextureEditor", "EffectComposer"};
+    static const QStringList mcuDisabledViews = {
+        "Editor3D",
+        "MaterialBrowser",
+        "EffectComposer",
+    };
     return mcuDisabledViews.contains(viewId);
 }
 
