@@ -413,10 +413,10 @@ bool MultiTextCursor::handleMoveKeyEvent(
         } else if (multiCursorEvent(e, QKeySequence::SelectPreviousWord)) {
             op = QTextCursor::WordLeft;
             mode = QTextCursor::KeepAnchor;
-        } else if (multiCursorEvent(e, QKeySequence::SelectStartOfLine)) {
+        } else if (e == QKeySequence::SelectStartOfLine) {
             op = QTextCursor::StartOfLine;
             mode = QTextCursor::KeepAnchor;
-        } else if (multiCursorEvent(e, QKeySequence::SelectEndOfLine)) {
+        } else if (e == QKeySequence::SelectEndOfLine) {
             op = QTextCursor::EndOfLine;
             mode = QTextCursor::KeepAnchor;
         } else if (multiCursorEvent(e, QKeySequence::SelectStartOfBlock)) {

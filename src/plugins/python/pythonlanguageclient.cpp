@@ -93,7 +93,7 @@ static PythonLanguageServerState checkPythonLanguageServer(const FilePath &pytho
         bool pipAvailable = pipIsUsable(python);
 
         const FilePath pylsp = (lspPath / "bin" / "pylsp").withExecutableSuffix();
-        if (pylsp.exists()) {
+        if (FilePath("/usr/bin/pylsp").withExecutableSuffix().exists() || pylsp.exists()) {
             if (pipAvailable) {
                 Process pythonProcess;
                 Environment env = pylsp.deviceEnvironment();
